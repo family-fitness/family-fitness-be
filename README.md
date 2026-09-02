@@ -12,8 +12,8 @@
 
 | | |
 |---|---|
-| 백엔드 | [`backend/`](./backend) — Java 25 + Spring Boot 4.1.1. `./gradlew build` 통과, 테스트 14개 실제 DB 위에서 통과 |
-| ERD | [`docs/erd.md`](./docs/erd.md) — 테이블 14개 · 모듈 4개 |
+| 백엔드 | [`backend/`](./backend) — Kotlin + Spring Boot 4.1.1 (Java 25 툴체인). `./gradlew build` 통과, Testcontainers PostgreSQL 위에서 컨텍스트 로드 확인 |
+| ERD | [`docs/erd.md`](./docs/erd.md) — 테이블 19개 · 모듈 4개 (목표 스키마 초안) |
 | 유저 플로우 · API | [`docs/user-flow.md`](./docs/user-flow.md) |
 | FigJam 보드 | https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf |
 
