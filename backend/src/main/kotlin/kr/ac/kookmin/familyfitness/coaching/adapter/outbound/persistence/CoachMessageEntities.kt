@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.persistence
+package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence
 
 import jakarta.persistence.Column
 import jakarta.persistence.Embeddable

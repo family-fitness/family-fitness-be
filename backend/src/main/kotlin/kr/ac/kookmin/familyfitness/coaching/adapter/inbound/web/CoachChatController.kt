@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.web
+package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web
 
 import jakarta.validation.Valid
 import kr.ac.kookmin.familyfitness.coaching.application.ChatCommand

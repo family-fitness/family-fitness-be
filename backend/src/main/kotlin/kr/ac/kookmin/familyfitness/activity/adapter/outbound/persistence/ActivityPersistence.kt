@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.activity.adapter.out.persistence
+package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -56,7 +56,7 @@ interface ActivityDailyJpaRepository : JpaRepository<ActivityDailyEntity, UUID> 
 
     @Query(
         """
-        select new kr.ac.kookmin.familyfitness.activity.adapter.out.persistence.ActivitySums(
+        select new kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence.ActivitySums(
             sum(a.steps),
             sum(a.activeMinutes),
             sum(case when a.source in :verifiedSources then a.activeMinutes else 0 end))

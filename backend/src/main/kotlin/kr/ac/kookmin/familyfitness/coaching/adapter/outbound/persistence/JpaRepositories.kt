@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.persistence
+package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying

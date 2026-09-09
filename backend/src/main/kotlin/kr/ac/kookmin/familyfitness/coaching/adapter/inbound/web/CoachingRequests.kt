@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.web
+package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web
 
 import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin

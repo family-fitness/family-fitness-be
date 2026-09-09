@@ -1,6 +1,5 @@
-@file:Suppress("ktlint:standard:package-name")
 
-package kr.ac.kookmin.familyfitness.fitness.adapter.`in`.web
+package kr.ac.kookmin.familyfitness.fitness.adapter.inbound.web
 
 import jakarta.validation.Valid
 import jakarta.validation.constraints.DecimalMax

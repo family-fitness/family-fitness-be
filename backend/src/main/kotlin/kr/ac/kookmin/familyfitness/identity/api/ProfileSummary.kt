@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.api
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole
 import kr.ac.kookmin.familyfitness.shared.domain.Sex
@@ -36,6 +37,7 @@ data class ProfileSummary(
     /** 동의가 살아 있는가. 동의 불필요(성인)면 true */
     val consentGiven: Boolean,
 ) {
+    @get:JsonIgnore
     val isParent: Boolean get() = role == ProfileRole.PARENT
 }
 

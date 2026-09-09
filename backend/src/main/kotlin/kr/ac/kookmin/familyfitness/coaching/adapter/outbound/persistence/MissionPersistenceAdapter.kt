@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.persistence
+package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence
 
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission

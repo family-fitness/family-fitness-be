@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.fitness.adapter.out.persistence
+package kr.ac.kookmin.familyfitness.fitness.adapter.outbound.persistence
 
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository
 import kr.ac.kookmin.familyfitness.fitness.application.port.NormRepository

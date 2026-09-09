@@ -204,7 +204,7 @@ class StubAiGateway : AiGateway {
         const val SAMPLE_VIDEO_START = 96
         val SESSION_OFFSETS = listOf(0, 2, 4)
         val EXERCISES = listOf("다리 벌려 앞으로 상체 숙이기", "앉아서 윗몸 앞으로 굽히기", "무릎 펴고 발끝 잡기")
-        val MEDICAL_WORDS = listOf("통증", "부상", "약", "질환")
+        val MEDICAL_WORDS = listOf("통증", "부상", "약물", "질환", "아파", "다쳤")
         private val ITEM_NAME = mapOf("028" to "상대악력", "012" to "앉아윗몸앞으로굽히기", "009" to "윗몸말아올리기", "022" to "제자리멀리뛰기")
         private val UNIT_OF = mapOf("028" to "%", "012" to "cm", "009" to "회", "022" to "cm")
         private val FACTOR_OF = mapOf("028" to "근력", "012" to "유연성", "009" to "근지구력", "022" to "순발력")

@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.fitness.adapter.out.persistence
+package kr.ac.kookmin.familyfitness.fitness.adapter.outbound.persistence
 
 import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column

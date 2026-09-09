@@ -1,4 +1,4 @@
-package kr.ac.kookmin.familyfitness.coaching.adapter.web
+package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web
 
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery
 import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder
