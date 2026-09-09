@@ -15,6 +15,10 @@
 - 문구 규칙: 「부족」·「미달」·「하위」 금지. `band`/`factor` 같은 코드값을 그대로 노출하지 말고 `copy`·`disclaimer`·`notice` 같은 표시 문구는 고쳐 쓰지 않는다. 아이 화면에서 `parent_scope` 를 읽지 않는다.
 - AI 서비스로 이름·생년월일·연락처·계정 식별자를 보내지 않는다. 프로필은 `profile_ref` 로만. 측정 항목 `005`·`006`(혈압)은 입력으로 받지 않는다(400 `ITEM_NOT_ALLOWED`).
 
+### 구현 상태 (2026-09-09)
+Notion 백엔드 엔드포인트 27개 중 `GET /facilities` 를 뺀 26개 + 추가 4개(`auth/refresh` · `me` · `auth/dev-login` · `participants/{profileId}/confirm`) 구현. 서버의 `/v3/api-docs` 가 살아 있는 스키마다.
+명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자·동반자·응원)을 추가하고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges` 추가. 예측은 `MAINTAIN` 만.
+
 ### 공통 타입
 | 이름 | 값 |
 |---|---|
@@ -96,6 +100,7 @@
 - `POST /api/v1/auth/refresh {refreshToken}` → 같은 응답 모양. 401 `INVALID_REFRESH_TOKEN`.
 - `GET /api/v1/me` → `{userId, nextStep, profiles}`.
 - `POST /api/v1/auth/dev-login {providerUserId●, email?, claimCode?}` — `app.auth.dev-login.enabled=true`(local/compose/test)일 때만 빈 등록. 구글 없이 같은 응답.
+  시드 데모 계정 `demo-parent`(가족 데모네 · 프로필 3개, nextStep HOME) · `demo-parent-2`(프로필 없음, 초대코드 `K7M2QT` 로 claim 가능).
 
 ### POST /api/v1/families — 로그인
 요청 `{familyName●(1~20자), owner: {name●(1~20), birthDate●(미래 불가), sex●}}`. `role` 없음 — 만든 사람은 항상 PARENT·owner.

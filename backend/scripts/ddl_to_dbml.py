@@ -44,7 +44,7 @@ def parse_column(line: str) -> tuple[str, str, list[str]] | None:
     return name, typ, attrs
 
 
-for sql in sorted(ROOT.glob("V*.sql")):
+for sql in sorted(ROOT.glob("V*.sql"), key=lambda f: int(re.match(r"V(\d+)__", f.name).group(1))):
     text = sql.read_text(encoding="utf-8")
     for block in re.finditer(r"create table (\w+)\s*\((.*?)\n\);", text, re.S):
         tname, body = block.group(1), block.group(2)

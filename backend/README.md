@@ -29,11 +29,15 @@ JDK 25 는 Gradle 툴체인(foojay)이 자동으로 내려받는다.
 
 ## 프론트 연동
 
-1. 로컬에서는 구글 없이 시작한다.
+1. 로컬에서는 구글 없이 시작한다. 데모 가족이 시드로 들어 있어 가입 흐름 없이 바로 홈부터 볼 수 있다.
    ```bash
-   curl -s localhost:8080/api/v1/auth/dev-login -H 'Content-Type: application/json' \
-     -d '{"providerUserId":"parent-1","email":"parent@example.com"}'
-   # → {"accessToken":"...","refreshToken":"...","userId":"...","nextStep":"CREATE_FAMILY","profiles":[]}
+   # 데모 부모 (가족 「데모네」: 데모 엄마 PARENT · 데모 첫째 CHILD 유소년 · 데모 아빠 PARENT 미연결)
+   curl -s localhost:8080/api/v1/auth/dev-login -H 'Content-Type: application/json' -d '{"providerUserId":"demo-parent"}'
+   # → {"accessToken":"...","refreshToken":"...","userId":"...","nextStep":"HOME","profiles":[...]}
+
+   # 새 계정으로 가입 흐름부터 보려면 아무 providerUserId 나 쓴다 → nextStep CREATE_FAMILY
+   curl -s localhost:8080/api/v1/auth/dev-login -H 'Content-Type: application/json' -d '{"providerUserId":"parent-1"}'
+   # 초대 흐름: 두 번째 계정으로 dev-login 뒤 POST /api/v1/profiles/claim {"claimCode":"K7M2QT"} → 데모 아빠 프로필 연결
    ```
    운영에서는 `POST /api/v1/auth/google` 에 구글 인가코드와 redirectUri 를 보낸다. 응답 모양은 같다.
 2. 이후 모든 요청에 `Authorization: Bearer <accessToken>`. 만료되면 `POST /api/v1/auth/refresh {refreshToken}`.
@@ -67,3 +71,4 @@ local 기본값이 `stub` 이다. AI 가 서비스 테이블에 쓰는 경로는
 - 도메인 단위 테스트(순수 Kotlin) → 애플리케이션 테스트(포트 대역) → 웹 테스트(MockMvc, H2 위 실제 스택) 순서로 둔다.
 - `ModularityTests` 가 Spring Modulith 경계(순환 · 내부 패키지 접근 · 선언된 의존)를 검증한다.
 - 로컬 시드(`db/seed`)의 규준 값은 데모용 임의값이다(`source_year = 1900`). 실제 국민체력100 규준 적재는 후속 작업.
+- 현재 209개 테스트(도메인 · 애플리케이션 · MockMvc 웹 · AI HTTP 어댑터 · 모듈 경계). `PostgresMigrationTests` 는 Docker 없으면 건너뛴다.

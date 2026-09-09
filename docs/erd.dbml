@@ -211,6 +211,8 @@ Table coach_runs {
   failure_reason varchar(300)
   created_at timestamptz [not null]
   updated_at timestamptz [not null]
+  ai_refused boolean [not null]
+  ai_refusal_reason varchar(60)
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
   }
@@ -277,6 +279,7 @@ Table mission_participants {
   verified_at timestamptz
   confirmed_by_profile_id uuid
   updated_at timestamptz [not null]
+  coach_role varchar(10)
   indexes {
     (mission_id, profile_id) [pk]
     (profile_id) [name: 'ix_mission_participants_profile']
