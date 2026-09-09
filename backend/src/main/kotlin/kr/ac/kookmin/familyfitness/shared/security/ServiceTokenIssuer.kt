@@ -5,6 +5,7 @@ import kr.ac.kookmin.familyfitness.shared.domain.DomainException
 import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm
 import org.springframework.security.oauth2.jwt.JwsHeader
+import org.springframework.security.oauth2.jwt.JwtClaimNames
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.jwt.JwtEncoder
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters
@@ -62,7 +63,8 @@ class ServiceTokenIssuer(
             }
         val use = jwt.getClaimAsString(TokenClaims.TOKEN_USE_CLAIM)
         if (use != TokenClaims.REFRESH) throw InvalidRefreshTokenException("리프레시 토큰이 아닙니다")
-        if (jwt.issuer?.toString() != props.auth.jwt.issuer) throw InvalidRefreshTokenException("발급자가 다릅니다")
+        // `Jwt.issuer` 는 iss 를 URL 로 바꾸다 "familyfitness" 같은 값에서 예외를 던지므로 문자열로 비교한다.
+        if (jwt.getClaimAsString(JwtClaimNames.ISS) != props.auth.jwt.issuer) throw InvalidRefreshTokenException("발급자가 다릅니다")
         val exp = jwt.expiresAt ?: throw InvalidRefreshTokenException("만료 시각이 없습니다")
         if (exp.isBefore(clock.instant())) throw InvalidRefreshTokenException("만료된 리프레시 토큰입니다")
         return UUID.fromString(jwt.subject)
