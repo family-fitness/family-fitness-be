@@ -50,7 +50,7 @@ class JwtConfig {
 
     private object AccessTokenOnlyValidator : OAuth2TokenValidator<Jwt> {
         override fun validate(token: Jwt): OAuth2TokenValidatorResult =
-            if (token.getClaimAsString(ServiceTokens.TOKEN_USE_CLAIM) == ServiceTokens.ACCESS) {
+            if (token.getClaimAsString(TokenClaims.TOKEN_USE_CLAIM) == TokenClaims.ACCESS) {
                 OAuth2TokenValidatorResult.success()
             } else {
                 OAuth2TokenValidatorResult.failure(OAuth2Error("invalid_token", "액세스 토큰이 아니다", null))
@@ -59,7 +59,7 @@ class JwtConfig {
 }
 
 /** 토큰 클레임 이름과 값. 발급(identity)과 검증(shared)이 같은 상수를 본다. */
-object ServiceTokens {
+object TokenClaims {
     const val TOKEN_USE_CLAIM = "token_use"
     const val ACCESS = "access"
     const val REFRESH = "refresh"
