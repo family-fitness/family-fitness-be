@@ -62,4 +62,4 @@ flowchart LR
 
 - Flyway 마이그레이션(`backend/src/main/resources/db/migration`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
   양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID·시각은 애플리케이션이 채운다.
-- 로컬은 H2 인메모리 + 샘플 시드(`db/seed`, 임의값)로 외부 의존성 없이 뜬다. 실제 국민체력100 규준 적재는 후속 작업이다.
+- 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 샘플 영상 라벨)로 외부 의존성 없이 뜬다. 규준표는 국민체력100 공공데이터 산출물을 마이그레이션(V3)으로 적재한다.
