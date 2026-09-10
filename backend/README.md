@@ -5,7 +5,7 @@
 ## 실행
 
 ```bash
-./gradlew bootRun                    # local 프로필: H2 인메모리 + 샘플 시드 + 개발 로그인 + AI 스텁. 아무것도 설치할 필요 없다
+./gradlew bootRun                    # local 프로필: H2 인메모리 + 시드 + 자동 로그인 + AI 스텁. Docker·DB 불필요
 open http://localhost:8080/swagger-ui.html
 ```
 
@@ -15,7 +15,7 @@ open http://localhost:8080/swagger-ui.html
 | `./gradlew test` | 전체 테스트. Docker 없이 H2 로 돈다. PostgreSQL 마이그레이션 검증(`PostgresMigrationTests`)은 Docker 가 있을 때만 |
 | `./gradlew spotlessApply` | ktlint 포맷 교정. 커밋 전에 돌린다 (CI 는 `spotlessCheck`) |
 
-JDK 25 는 Gradle 툴체인(foojay)이 자동으로 내려받는다.
+Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌드에 쓰는 JDK 25 는 Gradle 툴체인(foojay)이 자동으로 내려받는다.
 
 ### 프로필
 
@@ -29,7 +29,8 @@ JDK 25 는 Gradle 툴체인(foojay)이 자동으로 내려받는다.
 
 ## 프론트 연동 — 로컬 실행 안내
 
-**필요한 것은 인터넷 연결 하나다.** Docker · JDK · DB 설치 불필요. JDK 25 는 첫 실행 때 Gradle 이 자동으로 내려받는다(수 분).
+**필요한 것: Git · JDK 17 이상(아무 버전, Temurin 21 권장) · 인터넷.** Docker · DB · 환경변수는 필요 없다.
+`./gradlew` 가 Gradle 을 띄우는 데 JDK 가 하나 있어야 하고, 빌드용 JDK 25 는 첫 실행 때 Gradle 이 자동으로 내려받는다(수 분).
 
 ```bash
 git clone https://github.com/family-fitness/family-fitness-be.git
