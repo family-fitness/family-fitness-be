@@ -1,11 +1,12 @@
-# docs
+# 문서
 
-| 파일 | 내용 |
+| 문서 | 내용 |
 |---|---|
-| [erd.md](./erd.md) | ERD — 모듈별 Mermaid 다이어그램 11장. 마이그레이션을 실제 PostgreSQL 에 적용한 뒤 information_schema 에서 역생성 |
-| [erd.dbml](./erd.dbml) | 같은 ERD 의 DBML. [dbdiagram.io](https://dbdiagram.io) 에 통째로 붙여넣으면 관계선까지 그려집니다 |
-| [user-flow.md](./user-flow.md) | 사이트맵 · 화면별 상세 플로우 · API 명세 요약 · 미확정 항목 목록 |
-| [DDD·헥사고날 전환 가이드](./ddd-hexagonal-guide.md) | 유비쿼터스 언어 · 바운디드 컨텍스트 · 점진적 전환 순서 |
-| [ADR-001](./adr/ADR-001-ddd-hexagonal-and-relational-data.md) | JSONB 제거와 최소 테이블의 트레이드오프 · DDD·헥사고날 결정 |
+| [api-contract.md](./api-contract.md) | API 계약 통합본 — Notion 「API 명세서」·AI 인터페이스 명세·Figma 보드를 합쳐 구현 기준으로 삼은 것. 엔드포인트별 요청·응답·오류 코드·불변식 |
+| [architecture.md](./architecture.md) | 모듈 경계(Spring Modulith)·계층·모듈 간 호출 규칙·AI 서비스 경계 |
+| [erd.dbml](./erd.dbml) | 실제 Flyway 스키마와 같은 ERD (dbdiagram.io 에 붙여넣기) |
+| [adr/](./adr/) | 구조 결정 기록 |
 
-FigJam 보드(같은 내용의 시각화): https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf
+원본 설계는 Notion(API 명세서 · 인터페이스 명세)과 [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf)에 있다.
+계약이 바뀌면 Notion 을 먼저 고치고 `api-contract.md` 와 코드를 맞춘다.
+살아 있는 API 문서는 서버의 Swagger UI(`/swagger-ui.html`)다.

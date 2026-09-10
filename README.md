@@ -3,36 +3,29 @@
 국민체력100 공개데이터 기반 가족 체력 서비스.
 국민대학교 2026-2학기 학생설계형 알파프로젝트 / 한국스포츠정책과학원 공공데이터 활용 경진대회 출품작.
 
-> 아이와 부모가 함께 운동하는 웹 서비스(PWA). 국민체력100 세대별 데이터로 "우리 가족 체력 지도"를 그리고,
-> AI 코치가 아이 수준에 맞는 운동 영상을 골라 주고, 보호자가 승인해야 미션이 만들어집니다.
+> 계정은 로그인 수단이고 프로필이 사람이다. 아이는 계정 없이 부모 계정 아래 프로필로 존재하고,
+> 측정값은 저장 시점에 백분위로 굳으며, AI 코치의 제안은 보호자가 승인하기 전에는 미션이 되지 않는다.
 
-## 지금 상태
+## 상태
 
-착수 직후입니다. 백엔드 뼈대와 스키마가 서 있고, 화면·API 설계가 문서와 보드에 정리돼 있습니다.
+Notion 「API 명세서」의 백엔드 엔드포인트 27개 중 26개를 구현했다(`GET /facilities` 는 공공데이터 출처 미확정으로 제외).
+프론트는 `cd backend && ./gradlew bootRun` 한 줄로 뜬 서버(H2 · 개발 로그인 · AI 스텁)에 바로 붙을 수 있다.
+연동 방법은 [backend/README.md](./backend/README.md), 계약은 [docs/api-contract.md](./docs/api-contract.md).
 
 | | |
 |---|---|
-| 백엔드 | [`backend/`](./backend) — Kotlin + Spring Boot 4.1.1 (Java 25 툴체인). `./gradlew build` 통과, Testcontainers PostgreSQL 위에서 컨텍스트 로드 확인 |
-| ERD | [`docs/erd.md`](./docs/erd.md) — 테이블 19개 · 모듈 4개 (목표 스키마 초안) |
-| 유저 플로우 · API | [`docs/user-flow.md`](./docs/user-flow.md) |
-| FigJam 보드 | https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf |
-
-구현 진행 상황은 [`backend/README.md`](./backend/README.md) 의 모듈 표에 있습니다.
-
-## 개발 시작하기
-
-```bash
-cd backend
-./gradlew bootRun --args='--spring.profiles.active=local'   # Docker 만 있으면 됩니다
-open http://localhost:8080/swagger-ui.html
-```
+| 백엔드 | [`backend/`](./backend) — Kotlin · Spring Boot 4.1 · Spring Modulith · Java 25 (툴체인 자동 설치) |
+| API 계약 | [`docs/api-contract.md`](./docs/api-contract.md) · 서버의 `/swagger-ui.html` |
+| 구조 | [`docs/architecture.md`](./docs/architecture.md) · [`docs/erd.dbml`](./docs/erd.dbml) |
+| 설계 원본 | Notion(API 명세서 · AI 인터페이스 명세) · [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf) |
+| AI 서비스 | `family-fitness-ai` (FastAPI). 아직 `/v1/*` 미구현이라 백엔드는 기본으로 스텁을 쓴다 |
 
 ## 구조
 
 ```
-backend/    Spring Boot (모듈러 모놀리스, Spring Modulith)
-docs/       ERD · 유저 플로우 · API 명세
-.github/    CI (Gradle 빌드 + 포맷 검사)
+backend/    Spring Boot 모듈러 모놀리스 (identity · fitness · activity · coaching)
+docs/       API 계약 · 아키텍처 · ERD · ADR
+.github/    CI (포맷 검사 + 빌드·테스트)
 ```
 
 ## 팀
