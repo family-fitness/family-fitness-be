@@ -11,14 +11,24 @@ data class AppProperties(
     val auth: Auth = Auth(),
     val ai: Ai = Ai(),
 ) {
+    /** `*` 하나면 모든 출처를 허용한다(로컬). 운영은 프론트 도메인만 나열한다. */
     data class Cors(
         val allowedOrigins: List<String> = emptyList(),
-    )
+    ) {
+        val allowAll: Boolean get() = allowedOrigins.any { it.trim() == "*" }
+    }
 
     data class Auth(
         val jwt: Jwt = Jwt(),
         val devLogin: DevLogin = DevLogin(),
+        val devAutoLogin: DevAutoLogin = DevAutoLogin(),
         val google: Google = Google(),
+    )
+
+    /** local 시연용. 토큰 없는 요청을 [userId] 로 인증한다. 운영에서는 항상 꺼져 있다. */
+    data class DevAutoLogin(
+        val enabled: Boolean = false,
+        val userId: String = "",
     )
 
     data class Jwt(

@@ -21,30 +21,50 @@ JDK 25 는 Gradle 툴체인(foojay)이 자동으로 내려받는다.
 
 | 프로필 | DB | 로그인 | AI |
 |---|---|---|---|
-| `local` (기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `POST /api/v1/auth/dev-login` + 구글 | 스텁 |
-| `compose` | Docker Compose PostgreSQL | dev-login + 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) |
+| `local` (기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | 토큰 없으면 데모 부모 자동 인증 · dev-login · 구글 | 스텁 |
+| `compose` | Docker Compose PostgreSQL | 자동 인증 · dev-login · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) |
 | `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글만 | http (`APP_AI_BASE_URL`) |
 
 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`.
 
-## 프론트 연동
+## 프론트 연동 — 로컬 실행 안내
 
-1. 로컬에서는 구글 없이 시작한다. 데모 가족이 시드로 들어 있어 가입 흐름 없이 바로 홈부터 볼 수 있다.
-   ```bash
-   # 데모 부모 (가족 「데모네」: 데모 엄마 PARENT · 데모 첫째 CHILD 유소년 · 데모 아빠 PARENT 미연결)
-   curl -s localhost:8080/api/v1/auth/dev-login -H 'Content-Type: application/json' -d '{"providerUserId":"demo-parent"}'
-   # → {"accessToken":"...","refreshToken":"...","userId":"...","nextStep":"HOME","profiles":[...]}
+**필요한 것은 인터넷 연결 하나다.** Docker · JDK · DB 설치 불필요. JDK 25 는 첫 실행 때 Gradle 이 자동으로 내려받는다(수 분).
 
-   # 새 계정으로 가입 흐름부터 보려면 아무 providerUserId 나 쓴다 → nextStep CREATE_FAMILY
-   curl -s localhost:8080/api/v1/auth/dev-login -H 'Content-Type: application/json' -d '{"providerUserId":"parent-1"}'
-   # 초대 흐름: 두 번째 계정으로 dev-login 뒤 POST /api/v1/profiles/claim {"claimCode":"K7M2QT"} → 데모 아빠 프로필 연결
-   ```
-   운영에서는 `POST /api/v1/auth/google` 에 구글 인가코드와 redirectUri 를 보낸다. 응답 모양은 같다.
-2. 이후 모든 요청에 `Authorization: Bearer <accessToken>`. 만료되면 `POST /api/v1/auth/refresh {refreshToken}`.
-   앱 진입 시 `GET /api/v1/me` 로 `nextStep`(`CREATE_FAMILY` · `CLAIM` · `HOME`)과 프로필 목록을 받는다.
-3. 실패는 항상 `{"error": {"code": "...", "message": "..."}}`. `code` 로 분기하고 `message` 는 화면에 그대로 띄우지 않는다.
-   엔드포인트별 코드는 [docs/api-contract.md](../docs/api-contract.md), 스키마는 Swagger UI 에 있다.
-4. CORS 허용 출처 기본값은 `http://localhost:5173`, `http://localhost:3000` (`APP_CORS_ALLOWED_ORIGINS`).
+```bash
+git clone https://github.com/family-fitness/family-fitness-be.git
+cd family-fitness-be/backend
+./gradlew bootRun          # Windows: gradlew.bat bootRun
+# "Started FamilyfitnessApplication" 이 뜨면 http://localhost:8080
+```
+
+| 주소 | 무엇 |
+|---|---|
+| `http://localhost:8080/api/v1/...` | API. 기본 경로는 [docs/api-contract.md](../docs/api-contract.md) |
+| `http://localhost:8080/swagger-ui.html` | 요청·응답 스키마, 브라우저에서 바로 호출 |
+| `http://localhost:8080/h2-console` | DB 내용 보기 (JDBC URL `jdbc:h2:mem:familyfitness`, 사용자 `sa`, 비밀번호 없음) |
+
+로컬(기본 `local` 프로필)에서 시연을 위해 다음이 켜져 있다. 운영(`prod`)에서는 전부 꺼진다.
+
+1. **로그인 없이 동작한다.** `Authorization` 헤더가 없으면 시드의 데모 부모(`demo-parent`, userId `…0001`)로 인증된다.
+   다른 계정이 되려면 `X-Dev-User-Id: 00000000-0000-4000-8000-000000000002`(아직 가족이 없는 두 번째 부모) 헤더를 보낸다.
+   로그인 화면을 붙일 때는 `POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"}` 로 토큰을 받아
+   `Authorization: Bearer <accessToken>` 을 보내면 된다. 운영에서는 `POST /api/v1/auth/google` 이 같은 응답을 준다.
+2. **CORS 전부 허용.** 어느 포트·호스트에서 불러도 막지 않는다 (`app.cors.allowed-origins=*`).
+3. **AI 서버는 스텁.** `family-fitness-ai` 는 아직 `/v1/*` 가 없으므로 코치 제안·대화·예측을 결정적인 가짜 응답으로 낸다
+   (`app.ai.mode=stub`). AI 서버가 생기면 `--app.ai.mode=http --app.ai.base-url=http://…:8000` 으로 바꾸면 된다.
+   AI 주소가 죽어 있어도 코치 제안은 영상 라벨·규준 근거로 대체 편성되어 빈 화면이 나지 않는다.
+4. **시드 데이터.** 데모 가족 「데모네」(데모 엄마 PARENT·FULL, 데모 첫째 CHILD 11세·측정 1회 있음, 데모 아빠 PARENT 미연결·초대코드 `K7M2QT`),
+   국민체력100 규준(실제 공공데이터), 샘플 영상 5편. 서버를 재시작하면 H2 인메모리라 시연 중 만든 데이터는 사라지고 시드만 남는다.
+
+자주 쓰는 첫 호출:
+```bash
+curl localhost:8080/api/v1/me                                                        # nextStep HOME · 내 프로필
+curl localhost:8080/api/v1/families/00000000-0000-4000-8000-000000000010/fitness-map # 홈 화면 한 번에
+curl localhost:8080/api/v1/families/00000000-0000-4000-8000-000000000010/profiles    # 구성원
+curl -X POST localhost:8080/api/v1/families/00000000-0000-4000-8000-000000000010/coach/runs -H 'Content-Type: application/json' -d '{}'
+```
+실패는 항상 `{"error": {"code": "...", "message": "..."}}`. `code` 로 분기하고 `message` 는 화면에 그대로 띄우지 않는다.
 
 ## 모듈
 

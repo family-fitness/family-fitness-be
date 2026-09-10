@@ -44,3 +44,19 @@ select '00000000-0000-4000-8000-000000000013', '00000000-0000-4000-8000-00000000
        'K7M2QT', timestamp with time zone '2099-12-31 00:00:00+09', null, null, null, null, null,
        timestamp with time zone '2026-09-01 09:00:00+09', timestamp with time zone '2026-09-01 09:00:00+09'
 where not exists (select 1 from profiles where id = '00000000-0000-4000-8000-000000000013');
+
+-- 데모 첫째의 측정 1회 (2026-09-07, 만 11세 · 유소년 F). 백분위는 V3 규준으로 앱이 계산한 값을 그대로 굳힌 것.
+-- 홈 체력 지도·코치 실행이 측정 없이도 바로 시연되게 한다.
+insert into fitness_tests (id, profile_id, tested_on, source, age_at_test, height_cm, weight_kg, created_at)
+select '00000000-0000-4000-8000-000000000021', '00000000-0000-4000-8000-000000000012', date '2026-09-07', 'SELF_INPUT', 11, 148.0, 41.0,
+       timestamp with time zone '2026-09-07 18:00:00+09'
+where not exists (select 1 from fitness_tests where id = '00000000-0000-4000-8000-000000000021');
+insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentile, grade, band)
+select '00000000-0000-4000-8000-000000000021', '012', 4.0, 24, '참가', 'growth'
+where not exists (select 1 from fitness_test_items where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '012');
+insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentile, grade, band)
+select '00000000-0000-4000-8000-000000000021', '020', 70, 79, '2등급', 'strength'
+where not exists (select 1 from fitness_test_items where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '020');
+insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentile, grade, band)
+select '00000000-0000-4000-8000-000000000021', '028', 41.3, 50, '3등급', 'steady'
+where not exists (select 1 from fitness_test_items where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '028');

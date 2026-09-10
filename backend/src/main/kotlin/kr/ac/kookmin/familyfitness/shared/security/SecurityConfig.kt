@@ -12,6 +12,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter
 import org.springframework.security.web.AuthenticationEntryPoint
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.access.AccessDeniedHandler
@@ -21,6 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 import tools.jackson.databind.json.JsonMapper
+import java.util.UUID
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSecurity
@@ -30,6 +32,7 @@ class SecurityConfig {
         http: HttpSecurity,
         jwtDecoder: JwtDecoder,
         jsonMapper: JsonMapper,
+        props: AppProperties,
     ): SecurityFilterChain {
         val entryPoint =
             AuthenticationEntryPoint { _, response, _ ->
@@ -60,6 +63,11 @@ class SecurityConfig {
                 it.authenticationEntryPoint(entryPoint)
                 it.accessDeniedHandler(deniedHandler)
             }
+        val autoLogin = props.auth.devAutoLogin
+        if (autoLogin.enabled) {
+            require(autoLogin.userId.isNotBlank()) { "app.auth.dev-auto-login.user-id 가 비어 있다" }
+            http.addFilterBefore(DevAutoLoginFilter(UUID.fromString(autoLogin.userId)), BearerTokenAuthenticationFilter::class.java)
+        }
         return http.build()
     }
 
@@ -67,9 +75,10 @@ class SecurityConfig {
     fun corsConfigurationSource(props: AppProperties): CorsConfigurationSource {
         val config =
             CorsConfiguration().apply {
-                allowedOrigins = props.cors.allowedOrigins
+                if (props.cors.allowAll) allowedOriginPatterns = listOf("*") else allowedOrigins = props.cors.allowedOrigins
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                allowedHeaders = listOf("Authorization", "Content-Type", "Accept")
+                allowedHeaders = listOf("*")
+                exposedHeaders = listOf("Location")
                 maxAge = 3600
             }
         return UrlBasedCorsConfigurationSource().apply { registerCorsConfiguration("/**", config) }
