@@ -5,6 +5,7 @@ import kr.ac.kookmin.familyfitness.fitness.application.port.NormRepository
 import kr.ac.kookmin.familyfitness.fitness.application.port.PredictionRepository
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource
+import kr.ac.kookmin.familyfitness.fitness.domain.NormAgeUnit
 import kr.ac.kookmin.familyfitness.fitness.domain.NormPoint
 import kr.ac.kookmin.familyfitness.fitness.domain.Prediction
 import kr.ac.kookmin.familyfitness.fitness.domain.PredictionPoint
@@ -29,6 +30,7 @@ class NormRepositoryAdapter(
                 percentile = it.percentile,
                 value = it.normValue.toDouble(),
                 sourceYear = it.sourceYear,
+                ageUnit = NormAgeUnit.of(it.ageUnit),
             )
         }
 }

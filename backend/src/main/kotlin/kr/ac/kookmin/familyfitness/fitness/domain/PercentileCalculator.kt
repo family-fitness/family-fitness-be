@@ -17,8 +17,9 @@ class PercentileCalculator(
         sex: Sex,
         age: Int,
         value: Double,
+        ageMonths: Int = age * 12,
     ): Int? {
-        val bucket = table.bucket(item.code, sex, age) ?: return null
+        val bucket = table.bucket(item.code, sex, age, ageMonths) ?: return null
         if (bucket.points.isEmpty()) return null
         val raw = interpolate(bucket.points, value, item.higherIsBetter)
         return raw.roundToInt().coerceIn(MIN, MAX)

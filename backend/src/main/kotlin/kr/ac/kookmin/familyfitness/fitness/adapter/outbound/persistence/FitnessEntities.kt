@@ -30,6 +30,8 @@ class FitnessNormEntity(
     var itemCode: String,
     @Column(name = "sex", nullable = false, length = 1)
     var sex: String,
+    @Column(name = "age_unit", nullable = false, length = 4)
+    var ageUnit: String,
     @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "age_from", nullable = false)
     var ageFrom: Int,

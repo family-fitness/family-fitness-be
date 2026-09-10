@@ -2,6 +2,19 @@ package kr.ac.kookmin.familyfitness.fitness.domain
 
 import kr.ac.kookmin.familyfitness.shared.domain.Sex
 
+/** 규준 구간의 나이 단위. 유아기 규준은 개월(48~83개월) 단위다. */
+enum class NormAgeUnit(
+    val wire: String,
+) {
+    YEARS("세"),
+    MONTHS("개월"),
+    ;
+
+    companion object {
+        fun of(wire: String): NormAgeUnit = entries.firstOrNull { it.wire == wire } ?: throw IllegalArgumentException("알 수 없는 나이 단위: $wire")
+    }
+}
+
 /** `fitness_norms` 한 행. [value] 는 그 백분위에 해당하는 측정값(↓ 항목은 백분위가 오를수록 값이 작아진다). */
 data class NormPoint(
     val itemCode: String,
@@ -11,6 +24,7 @@ data class NormPoint(
     val percentile: Int,
     val value: Double,
     val sourceYear: Int,
+    val ageUnit: NormAgeUnit = NormAgeUnit.YEARS,
 )
 
 /** 한 (항목, 성별, 나이 구간)의 백분위 포인트들. 백분위 오름차순. */
@@ -38,19 +52,26 @@ class NormTable private constructor(
     private data class Key(
         val itemCode: String,
         val sex: Sex,
+        val unit: NormAgeUnit,
     )
 
     val size: Int get() = buckets.values.sumOf { it.size }
 
-    /** age_from ≤ age ≤ age_to 인 구간. 겹치면 좁은 구간을 고른다. 없으면 null. */
+    /**
+     * 개월 구간(유아기)이 [ageMonths] 를 덮으면 그것을, 아니면 연 구간에서 [ageYears] 를 덮는 것을 고른다.
+     * 겹치면 좁은 구간. 없으면 null.
+     */
     fun bucket(
         itemCode: String,
         sex: Sex,
+        ageYears: Int,
+        ageMonths: Int = ageYears * 12,
+    ): NormBucket? = bucket(Key(itemCode, sex, NormAgeUnit.MONTHS), ageMonths) ?: bucket(Key(itemCode, sex, NormAgeUnit.YEARS), ageYears)
+
+    private fun bucket(
+        key: Key,
         age: Int,
-    ): NormBucket? =
-        buckets[Key(itemCode, sex)]
-            ?.filter { it.covers(age) }
-            ?.minByOrNull { it.ageTo - it.ageFrom }
+    ): NormBucket? = buckets[key]?.filter { it.covers(age) }?.minByOrNull { it.ageTo - it.ageFrom }
 
     companion object {
         val EMPTY = NormTable(emptyMap())
@@ -58,7 +79,7 @@ class NormTable private constructor(
         fun of(points: Collection<NormPoint>): NormTable {
             val byBucket =
                 points
-                    .groupBy { Key(it.itemCode, it.sex) }
+                    .groupBy { Key(it.itemCode, it.sex, it.ageUnit) }
                     .mapValues { (_, rows) ->
                         rows
                             .groupBy { it.ageFrom to it.ageTo }

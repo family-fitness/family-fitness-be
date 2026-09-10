@@ -70,5 +70,5 @@ local 기본값이 `stub` 이다. AI 가 서비스 테이블에 쓰는 경로는
 
 - 도메인 단위 테스트(순수 Kotlin) → 애플리케이션 테스트(포트 대역) → 웹 테스트(MockMvc, H2 위 실제 스택) 순서로 둔다.
 - `ModularityTests` 가 Spring Modulith 경계(순환 · 내부 패키지 접근 · 선언된 의존)를 검증한다.
-- 로컬 시드(`db/seed`)의 규준 값은 데모용 임의값이다(`source_year = 1900`). 실제 국민체력100 규준 적재는 후속 작업.
+- 규준표(`fitness_norms`)는 국민체력100 공공데이터 2024-07~2026-07 전수에서 AI 팀이 낸 분위수 산출물(`family-fitness-ai/data/release/age_band_value_quantiles.csv`)을 `V3__fitness_norms_kspo_2024_2026.sql` 로 적재한다. API 키가 필요 없다. 산출물이 갱신되면 `scripts/kspo_norms_to_sql.py` 로 다시 만든다. 데이터가 있는 구간: 유아기 48~83개월 · 유소년 11~12세 · 청소년 13~18세 · 성인 19~64세. 만 7~10세는 공공데이터에 측정이 없어 백분위가 `null` 이다.
 - 현재 209개 테스트(도메인 · 애플리케이션 · MockMvc 웹 · AI HTTP 어댑터 · 모듈 경계). `PostgresMigrationTests` 는 Docker 없으면 건너뛴다.

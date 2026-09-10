@@ -55,6 +55,7 @@ class FitnessTestService(
         if (command.testedOn.isAfter(today)) throw FutureTestDateException(command.testedOn)
 
         val ageAtTest = Ages.fullYears(details.birthDate, command.testedOn)
+        val ageMonthsAtTest = Ages.fullMonths(details.birthDate, command.testedOn)
         if (ageAtTest < Ages.MEASURABLE_FROM_YEARS) throw NotMeasurableException()
         requireConsent(summary)
 
@@ -71,7 +72,7 @@ class FitnessTestService(
                 heightCm = command.heightCm,
                 weightKg = command.weightKg,
                 measurements = command.measurements,
-                scorer = { item, value -> calculator.percentile(item, details.sex, ageAtTest, value.toDouble()) },
+                scorer = { item, value -> calculator.percentile(item, details.sex, ageAtTest, value.toDouble(), ageMonthsAtTest) },
                 createdAt = clock.instant(),
             )
         return tests.save(test)

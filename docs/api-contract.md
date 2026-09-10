@@ -78,7 +78,7 @@ Notion 백엔드 엔드포인트 27개 중 `GET /facilities` 를 뺀 26개 + 추
 - `range`(프론트 검증용, 잠정): 009 0~120 · 010 0~120 · 012 -30~40 · 013 5~60 · 014 0~2 · 017 0~120 · 019 0~120 · 020 0~150 · 021 5~60 · 022 0~350 · 028 0~150 · 035/037 10~90 · 040 0~5 · 041 0~2 · 043 0~120 · 050 5~60 · 051 0~60.
 
 ### 백분위·등급 계산 (`PercentileCalculator`)
-- `fitness_norms(item_code, sex, age_from, age_to, percentile, norm_value, source_year)` 를 부팅 시 메모리 적재. 측정값을 같은 (item, sex, 나이 구간) 규준의 percentile 포인트 사이에서 선형 보간, 표 밖은 끝점으로 자름. ↓ 항목은 방향 반전.
+- `fitness_norms(item_code, sex, age_unit, age_from, age_to, percentile, norm_value, source_year)` 를 부팅 시 메모리 적재. 유아기 구간은 개월 단위. 데이터 출처는 국민체력100 공공데이터 2024-07~2026-07 전수(AI 팀 분위수 산출물). 만 7~10세는 측정이 없어 백분위 `null`. 측정값을 같은 (item, sex, 나이 구간) 규준의 percentile 포인트 사이에서 선형 보간, 표 밖은 끝점으로 자름. ↓ 항목은 방향 반전.
 - 결과 백분위는 정수 1~99 로 잘라 저장(0·100 금지). 규준 없으면 `null`.
 - `grade`·`band` 는 백분위에서 파생(계산은 한 군데). `topPercentText` = `상위 ${100 - percentile}%` (백분위 24 → "상위 76%").
 - 저장 시점 값으로 굳힌다(규준 연도가 바뀌어도 과거 불변).

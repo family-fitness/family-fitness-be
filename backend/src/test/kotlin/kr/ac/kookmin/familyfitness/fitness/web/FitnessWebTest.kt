@@ -42,7 +42,7 @@ import java.time.ZoneId
 import java.util.UUID
 
 /**
- * H2 + Flyway(V1 + 샘플 규준 시드 source_year=1900) 위에서 fitness 웹 어댑터를 끝까지 돈다.
+ * H2 + Flyway(V1~V3, 국민체력100 규준 2024-07~2026-07) 위에서 fitness 웹 어댑터를 끝까지 돈다.
  * identity·AI 는 목: 같은 가족 판단과 프로필 상세, 예측 응답을 흉내 낸다.
  */
 @SpringBootTest
@@ -72,7 +72,7 @@ class FitnessWebTest {
     private val testedOn: LocalDate = today.minusDays(1)
 
     /** 항상 만 9세(유소년)가 되도록 생년월일을 오늘 기준으로 잡는다. */
-    private val birthDate: LocalDate = today.minusYears(9).minusMonths(4)
+    private val birthDate: LocalDate = today.minusYears(11).minusMonths(4)
 
     @BeforeEach
     fun setUp() {
@@ -138,27 +138,27 @@ class FitnessWebTest {
     }
 
     @Test
-    fun `유소년 여아 측정을 등록하면 샘플 규준으로 백분위가 붙는다`() {
+    fun `유소년 여아 11세 측정을 등록하면 국민체력100 규준으로 백분위가 붙는다`() {
         registerYouthTest()
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.fitnessTestId").isNotEmpty)
             .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
             .andExpect(jsonPath("$.items", hasSize<Any>(4)))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(50)))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(48)))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("참가")))
             .andExpect(jsonPath("$.items[?(@.itemCode=='012')].band", contains("steady")))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 50%")))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(50)))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 52%")))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(35)))
             .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(75)))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='022')].band", contains("strength")))
-            .andExpect(jsonPath("$.items[?(@.itemCode=='028')].percentile", contains(25)))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(63)))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='022')].band", contains("steady")))
+            .andExpect(jsonPath("$.items[?(@.itemCode=='028')].percentile", contains(10)))
             .andExpect(jsonPath("$.items[?(@.itemCode=='028')].unit", contains("%")))
             .andExpect(jsonPath("$.weakest.itemCode").value("028"))
             .andExpect(jsonPath("$.weakest.factor").value("근력"))
-            .andExpect(jsonPath("$.weakest.percentile").value(25))
+            .andExpect(jsonPath("$.weakest.percentile").value(10))
             .andExpect(jsonPath("$.strongest.itemCode").value("022"))
-            .andExpect(jsonPath("$.strongest.percentile").value(75))
+            .andExpect(jsonPath("$.strongest.percentile").value(63))
             .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER))
     }
 
@@ -258,11 +258,11 @@ class FitnessWebTest {
             .andExpect(jsonPath("$.fitnessTestId").isNotEmpty)
             .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
             .andExpect(jsonPath("$.radar[*].factor", contains("근력", "근지구력", "유연성", "심폐지구력", "순발력")))
-            .andExpect(jsonPath("$.radar[0].percentile").value(25))
+            .andExpect(jsonPath("$.radar[0].percentile").value(10))
             .andExpect(jsonPath("$.radar[1].percentile").value(nullValue()))
-            .andExpect(jsonPath("$.radar[2].percentile").value(50))
-            .andExpect(jsonPath("$.radar[3].percentile").value(50))
-            .andExpect(jsonPath("$.radar[4].percentile").value(75))
+            .andExpect(jsonPath("$.radar[2].percentile").value(48))
+            .andExpect(jsonPath("$.radar[3].percentile").value(35))
+            .andExpect(jsonPath("$.radar[4].percentile").value(63))
             .andExpect(jsonPath("$.items", hasSize<Any>(4)))
             .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("참가")))
             .andExpect(jsonPath("$.weakest.itemCode").value("028"))
@@ -281,9 +281,9 @@ class FitnessWebTest {
                 unit = "%",
                 bands =
                     listOf(
-                        TrajectoryResponse.Band(9, 28.0, 36.0, 44.0, 120),
-                        TrajectoryResponse.Band(12, 32.0, 40.0, 50.0, 110),
-                        TrajectoryResponse.Band(19, 45.0, 60.0, 75.0, 90),
+                        TrajectoryResponse.Band(11, 28.0, 36.0, 44.0, 120),
+                        TrajectoryResponse.Band(14, 32.0, 40.0, 50.0, 110),
+                        TrajectoryResponse.Band(21, 45.0, 60.0, 75.0, 90),
                     ),
                 notice = Copy.TRAJECTORY_NOTICE,
                 lowSample = false,

@@ -82,6 +82,7 @@ Table fitness_norms {
   percentile smallint [not null]
   norm_value numeric(8,3) [not null]
   source_year smallint [not null]
+  age_unit varchar(4) [not null]
   indexes {
     (item_code, sex, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
   }
