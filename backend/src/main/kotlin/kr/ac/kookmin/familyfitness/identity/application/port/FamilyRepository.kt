@@ -9,6 +9,8 @@ import java.util.UUID
 interface FamilyRepository {
     fun findById(familyId: UUID): Family?
 
+    fun allIds(): List<UUID>
+
     fun findByProfileId(profileId: UUID): Family?
 
     /** 정규화된(대문자) 코드로 찾는다. */

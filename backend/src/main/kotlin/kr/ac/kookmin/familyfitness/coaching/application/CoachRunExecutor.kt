@@ -9,6 +9,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery
 import kr.ac.kookmin.familyfitness.shared.ai.AiGateway
+import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunRequest
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef
@@ -35,8 +36,19 @@ class CoachRunPipeline(
     private val videos: ExerciseVideoRepository,
     private val jsonMapper: JsonMapper,
     private val time: AppTime,
+    private val fallbackPlanner: LabelBasedProposalPlanner,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** AI 장애 시 라벨 기반 대체 편성. 실행 파라미터는 run 에 저장된 값을 쓴다. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    fun planFallback(
+        runId: UUID,
+        reason: String,
+    ): CoachRunResult? {
+        val run = runs.findById(runId) ?: throw CoachRunNotFoundException(runId)
+        return fallbackPlanner.plan(run.familyId, run.weekStart, run.daysPerWeek, run.minutesPerSession, time.today(), reason)
+    }
 
     /** 가족 프로필과 최신 측정으로 AI 요청을 만든다. AI 로 이름·생년월일은 나가지 않는다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
@@ -158,10 +170,27 @@ class CoachRunExecutor(
                     pipeline.fail(runId, "failed: AI run status=${result.status}", steps(result), false, null)
                 }
             }
+        } catch (e: AiUnavailableException) {
+            log.warn("AI 서비스 장애 → 라벨 기반 대체 편성: run={} ({})", runId, e.message)
+            runCatching { fallbackOrFail(runId, e.message ?: "unavailable") }
+                .onFailure { log.error("대체 편성도 실패: run={}", runId, it) }
         } catch (e: Exception) {
             log.error("코치 실행 실패: run={}", runId, e)
             runCatching { pipeline.fail(runId, "${e.javaClass.simpleName}: ${e.message}", null, false, null) }
                 .onFailure { log.error("실패 기록도 실패: run={}", runId, it) }
+        }
+    }
+
+    /** 보드 F3 「LLM 없이도 돈다」 — 라벨만으로 편성. 근거를 만들 측정이 없으면 FAILED. */
+    private fun fallbackOrFail(
+        runId: UUID,
+        reason: String,
+    ) {
+        val result = pipeline.planFallback(runId, reason)
+        if (result == null) {
+            pipeline.fail(runId, "AI 장애($reason) 이고 대체 편성 근거(측정)도 없다", null, false, null)
+        } else {
+            pipeline.complete(runId, result)
         }
     }
 

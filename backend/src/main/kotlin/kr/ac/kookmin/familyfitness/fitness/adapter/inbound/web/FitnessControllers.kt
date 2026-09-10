@@ -2,6 +2,7 @@
 package kr.ac.kookmin.familyfitness.fitness.adapter.inbound.web
 
 import jakarta.validation.Valid
+import kr.ac.kookmin.familyfitness.fitness.application.FitnessMapService
 import kr.ac.kookmin.familyfitness.fitness.application.FitnessTestService
 import kr.ac.kookmin.familyfitness.fitness.application.PredictCommand
 import kr.ac.kookmin.familyfitness.fitness.application.PredictionService
@@ -63,6 +64,19 @@ class FitnessTestController(
         user: CurrentUser,
         @PathVariable profileId: UUID,
     ): LatestFitnessResponse = LatestFitnessResponse.of(service.latest(user.userId, profileId))
+}
+
+/** GET /api/v1/families/{familyId}/fitness-map — 로그인(가족 구성원). 홈 화면 한 번의 조회(보드 F0 `/home` 가족 체력 지도). */
+@RestController
+@RequestMapping("/api/v1/families/{familyId}/fitness-map")
+class FitnessMapController(
+    private val service: FitnessMapService,
+) {
+    @GetMapping
+    fun fitnessMap(
+        user: CurrentUser,
+        @PathVariable familyId: UUID,
+    ): FitnessMapResponse = FitnessMapResponse.of(service.of(user.userId, familyId))
 }
 
 /** POST /api/v1/profiles/{profileId}/predictions — 로그인(같은 가족). */

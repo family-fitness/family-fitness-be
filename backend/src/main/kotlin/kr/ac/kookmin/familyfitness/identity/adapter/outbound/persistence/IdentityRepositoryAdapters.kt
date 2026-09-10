@@ -55,6 +55,8 @@ class FamilyRepositoryAdapter(
     private val em: EntityManager,
     private val clock: Clock,
 ) : FamilyRepository {
+    override fun allIds(): List<UUID> = familyJpa.findAll().map { it.id }
+
     override fun findById(familyId: UUID): Family? = familyJpa.findById(familyId).map { it.toDomain() }.orElse(null)
 
     override fun findByProfileId(profileId: UUID): Family? =

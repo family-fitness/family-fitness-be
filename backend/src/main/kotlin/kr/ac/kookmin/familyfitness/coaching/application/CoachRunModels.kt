@@ -10,9 +10,14 @@ import java.util.UUID
 
 data class StartCoachRunCommand(
     val weekStart: LocalDate?,
-    val daysPerWeek: Int = 3,
-    val minutesPerSession: Int = 15,
-)
+    val daysPerWeek: Int = DEFAULT_DAYS_PER_WEEK,
+    val minutesPerSession: Int = DEFAULT_MINUTES_PER_SESSION,
+) {
+    companion object {
+        const val DEFAULT_DAYS_PER_WEEK = 3
+        const val DEFAULT_MINUTES_PER_SESSION = 15
+    }
+}
 
 /** 202 응답. */
 data class CoachRunAcceptedView(

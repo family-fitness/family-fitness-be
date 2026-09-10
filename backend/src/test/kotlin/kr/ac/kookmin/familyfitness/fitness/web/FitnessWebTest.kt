@@ -71,7 +71,7 @@ class FitnessWebTest {
     private val today: LocalDate = LocalDate.now(ZoneId.of("Asia/Seoul"))
     private val testedOn: LocalDate = today.minusDays(1)
 
-    /** 항상 만 9세(유소년)가 되도록 생년월일을 오늘 기준으로 잡는다. */
+    /** 항상 만 11세(유소년, 실측 규준이 있는 나이)가 되도록 생년월일을 오늘 기준으로 잡는다. */
     private val birthDate: LocalDate = today.minusYears(11).minusMonths(4)
 
     @BeforeEach
@@ -268,6 +268,31 @@ class FitnessWebTest {
             .andExpect(jsonPath("$.weakest.itemCode").value("028"))
             .andExpect(jsonPath("$.strongest.itemCode").value("022"))
             .andExpect(jsonPath("$.coachDirection").value("GROWTH"))
+    }
+
+    @Test
+    fun `가족 체력 지도는 구성원 카드에 한 줄 요약과 최신 측정 요약을 싣고, 미측정 구성원은 null 로 둔다`() {
+        val parentId = UUID.randomUUID()
+        val child = summaryOf(childId, familyId, AgeGroup.YOUTH)
+        val parent = summaryOf(parentId, familyId, AgeGroup.ADULT).copy(role = kr.ac.kookmin.familyfitness.shared.domain.ProfileRole.PARENT)
+        `when`(familyAccess.requireMember(userId, familyId)).thenReturn(parent)
+        `when`(profileQuery.summariesOfFamily(familyId)).thenReturn(listOf(parent, child))
+        `when`(profileQuery.familyName(familyId)).thenReturn("데모네")
+        registerYouthTest().andExpect(status().isCreated)
+
+        mvc
+            .perform(get("/api/v1/families/$familyId/fitness-map").header(HttpHeaders.AUTHORIZATION, bearer()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.familyName").value("데모네"))
+            .andExpect(jsonPath("$.members", hasSize<Any>(2)))
+            .andExpect(jsonPath("$.members[0].profileId").value(parentId.toString()))
+            .andExpect(jsonPath("$.members[0].headline").value(nullValue()))
+            .andExpect(jsonPath("$.members[0].latest").value(nullValue()))
+            .andExpect(jsonPath("$.members[1].headline").value("유소년 상위 61%"))
+            .andExpect(jsonPath("$.members[1].latest.overallPercentile").value(39))
+            .andExpect(jsonPath("$.members[1].latest.weakest.itemCode").value("028"))
+            .andExpect(jsonPath("$.members[1].latest.coachDirection").value("GROWTH"))
+            .andExpect(jsonPath("$.disclaimer").isNotEmpty)
     }
 
     @Test

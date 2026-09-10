@@ -212,3 +212,62 @@ data class PredictionResponse(
             )
     }
 }
+
+/** 홈 화면 응답. 구성원 카드마다 프로필 요약 필드 + headline + latest(없으면 null · 404 아님). */
+data class FitnessMapResponse(
+    val familyId: UUID,
+    val familyName: String?,
+    val members: List<Member>,
+    val disclaimer: String = Copy.FITNESS_DISCLAIMER,
+) {
+    data class Member(
+        val profileId: UUID,
+        val name: String,
+        val role: kr.ac.kookmin.familyfitness.shared.domain.ProfileRole,
+        val ageGroup: kr.ac.kookmin.familyfitness.shared.domain.AgeGroup,
+        val hasAccount: Boolean,
+        val supportMode: kr.ac.kookmin.familyfitness.shared.domain.SupportMode?,
+        val measurable: Boolean,
+        val consentRequired: Boolean,
+        val consentGiven: Boolean,
+        /** 예: `유소년 상위 37%`. 측정이 없으면 null → "첫 측정을 등록하면 지도가 그려져요" */
+        val headline: String?,
+        val latest: Latest?,
+    )
+
+    data class Latest(
+        val fitnessTestId: UUID,
+        val testedOn: LocalDate,
+        val overallPercentile: Int?,
+        val weakest: FactorPoint?,
+        val strongest: FactorPoint?,
+        val coachDirection: CoachDirection,
+    )
+
+    companion object {
+        fun of(map: kr.ac.kookmin.familyfitness.fitness.application.FitnessMap): FitnessMapResponse =
+            FitnessMapResponse(
+                familyId = map.familyId,
+                familyName = map.familyName,
+                members =
+                    map.members.map { m ->
+                        Member(
+                            profileId = m.profile.profileId,
+                            name = m.profile.name,
+                            role = m.profile.role,
+                            ageGroup = m.profile.ageGroup,
+                            hasAccount = m.profile.hasAccount,
+                            supportMode = m.profile.supportMode,
+                            measurable = m.profile.measurable,
+                            consentRequired = m.profile.consentRequired,
+                            consentGiven = m.profile.consentGiven,
+                            headline = m.headline,
+                            latest =
+                                m.latest?.let {
+                                    Latest(it.fitnessTestId, it.testedOn, it.overallPercentile, it.weakest, it.strongest, it.coachDirection)
+                                },
+                        )
+                    },
+            )
+    }
+}

@@ -16,7 +16,8 @@
 - AI 서비스로 이름·생년월일·연락처·계정 식별자를 보내지 않는다. 프로필은 `profile_ref` 로만. 측정 항목 `005`·`006`(혈압)은 입력으로 받지 않는다(400 `ITEM_NOT_ALLOWED`).
 
 ### 구현 상태 (2026-09-09)
-Notion 백엔드 엔드포인트 27개 중 `GET /facilities` 를 뺀 26개 + 추가 4개(`auth/refresh` · `me` · `auth/dev-login` · `participants/{profileId}/confirm`) 구현. 서버의 `/v3/api-docs` 가 살아 있는 스키마다.
+Notion 백엔드 엔드포인트 27개 중 `GET /facilities` 를 뺀 26개 + 추가 5개(`auth/refresh` · `me` · `auth/dev-login` · `participants/{profileId}/confirm` · `families/{familyId}/fitness-map`) 구현. 서버의 `/v3/api-docs` 가 살아 있는 스키마다.
+피그잼 F3 의 「일요일 20:00 자동 실행」(SCHEDULE 트리거, `app.coach.schedule.cron`)과 「AI 장애 시 라벨 기반 편성」(`LabelBasedProposalPlanner`, steps[1] 이 `partial`)도 구현.
 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자·동반자·응원)을 추가하고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges` 추가. 예측은 `MAINTAIN` 만.
 
 ### 공통 타입
@@ -157,6 +158,10 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 ### GET /api/v1/profiles/{profileId}/fitness-tests/latest — 로그인(같은 가족)
 응답 200 (이력 없으면 `fitnessTestId:null, testedOn:null, radar:[5요인 percentile:null], items:[], weakest:null, strongest:null, coachDirection:"GROWTH", disclaimer` — **404 아님**).
 `radar`: 근력·근지구력·유연성·심폐지구력·순발력 `{factor, percentile|null}` (요인에 항목 여럿이면 평균). `items[]`: `{itemCode, itemLabel, unit, value, percentile, grade, band, topPercentText}`. `weakest/strongest`: `{factor, itemCode, percentile}`. `coachDirection`: weakest 백분위 > 75 → `STRENGTHEN`, 아니면 `GROWTH`.
+
+### GET /api/v1/families/{familyId}/fitness-map — 로그인(가족 구성원) (명세 외 추가 · 피그잼 F0 `/home` 가족 체력 지도 ★메인)
+홈 화면 한 번의 조회. 응답 200 `{familyId, familyName, members:[{profileId, name, role, ageGroup, hasAccount, supportMode, measurable, consentRequired, consentGiven, headline|null("유소년 상위 49%"), latest|null:{fitnessTestId, testedOn, overallPercentile(항목 백분위 평균), weakest, strongest, coachDirection}}], disclaimer}`.
+`latest=null` 이면 "첫 측정을 등록하면 지도가 그려져요", `measurable=false` 면 측정 버튼을 띄우지 않는다. 구성원 사이 순위·비교는 내보내지 않는다.
 
 ### POST /api/v1/profiles/{profileId}/predictions — 로그인(같은 가족)
 요청 `{fitnessTestId?(생략=최신), horizonYears?(1~10, 기본 10), itemCode?(기본 028)}`.

@@ -8,6 +8,7 @@ import kr.ac.kookmin.familyfitness.activity.api.DailyActivity
 import kr.ac.kookmin.familyfitness.coaching.application.AppTime
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoLabel
+import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery
@@ -115,6 +116,8 @@ class FakeIdentity(
 
     override fun familyName(familyId: UUID): String? = families.firstOrNull { it.familyId == familyId }?.let { "가족" }
 
+    override fun allFamilyIds(): List<UUID> = families.map { it.familyId }
+
     override fun requireMember(
         userId: UUID,
         familyId: UUID,
@@ -160,6 +163,8 @@ class FakeFitness : FitnessQuery {
     fun measured(
         profileId: UUID,
         vararg items: Pair<String, Double>,
+        weakest: FactorPoint? = null,
+        strongest: FactorPoint? = null,
     ) {
         latest[profileId] =
             LatestFitness(
@@ -169,8 +174,8 @@ class FakeFitness : FitnessQuery {
                 heightCm = BigDecimal("140.5"),
                 weightKg = BigDecimal("35.0"),
                 measurements = items.associate { it.first to BigDecimal.valueOf(it.second) },
-                weakest = null,
-                strongest = null,
+                weakest = weakest,
+                strongest = strongest,
             )
     }
 

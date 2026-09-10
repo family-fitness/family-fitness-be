@@ -39,6 +39,8 @@ class ProfileQueryService(
     override fun summariesOfUser(userId: UUID): List<ProfileSummary> = families.profilesOfUser(userId).map(summaries::summary)
 
     override fun familyName(familyId: UUID): String? = families.findById(familyId)?.name
+
+    override fun allFamilyIds(): List<UUID> = families.allIds()
 }
 
 /** 가족 단위 권한 판단([FamilyAccess]) 구현. HTTP 요청의 role·familyId 를 믿지 않는다. */

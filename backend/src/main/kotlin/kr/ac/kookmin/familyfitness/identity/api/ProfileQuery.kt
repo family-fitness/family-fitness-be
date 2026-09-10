@@ -17,6 +17,9 @@ interface ProfileQuery {
     fun summariesOfUser(userId: UUID): List<ProfileSummary>
 
     fun familyName(familyId: UUID): String?
+
+    /** 전 가족 ID. 주간 코치 스케줄러가 가족 단위로 돈다. */
+    fun allFamilyIds(): List<UUID>
 }
 
 /**

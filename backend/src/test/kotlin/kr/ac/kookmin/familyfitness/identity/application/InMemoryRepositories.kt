@@ -17,6 +17,8 @@ import java.util.UUID
 class InMemoryFamilyRepository : FamilyRepository {
     val families = linkedMapOf<UUID, Family>()
 
+    override fun allIds(): List<UUID> = families.keys.toList()
+
     /** 조건부 UPDATE 를 흉내낸다. 테스트가 `false` 로 바꾸면 "다른 계정이 먼저 가져간" 상황이 된다. */
     var attachSucceeds: Boolean = true
     val attachCalls = mutableListOf<Triple<UUID, UUID, Instant>>()

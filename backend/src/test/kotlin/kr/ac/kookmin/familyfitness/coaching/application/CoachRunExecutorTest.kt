@@ -11,9 +11,11 @@ import kr.ac.kookmin.familyfitness.coaching.support.Fixed
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachRunRepository
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository
 import kr.ac.kookmin.familyfitness.coaching.support.Videos
+import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -26,14 +28,16 @@ class CoachRunExecutorTest {
     private val fitness = FakeFitness().apply { measured(family.child.profileId, "012" to 8.0, "028" to 45.0) }
     private val runs = InMemoryCoachRunRepository()
     private val gateway = FakeAiGateway()
+    private val videos = InMemoryExerciseVideoRepository(Videos.seed())
     private val pipeline =
         CoachRunPipeline(
             runs,
             identity,
             fitness,
-            InMemoryExerciseVideoRepository(Videos.seed()),
+            videos,
             JsonMapper.builder().build(),
             Fixed.time(),
+            LabelBasedProposalPlanner(identity, fitness, videos),
         )
     private val executor = CoachRunExecutor(pipeline, gateway, pollIntervalMs = 0, maxPolls = 3)
 
@@ -114,7 +118,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    fun `게이트웨이 예외는 FAILED 로 끝나고 상태 전이는 한 번만 일어난다`() {
+    fun `AI 장애인데 약점 판정이 없으면 FAILED 로 끝나고 상태 전이는 한 번만 일어난다`() {
         val run = runningRun()
         gateway.onStart = { throw AiUnavailableException("연결 실패") }
 
@@ -122,10 +126,37 @@ class CoachRunExecutorTest {
 
         val saved = runs.findById(run.id)!!
         assertThat(saved.status).isEqualTo(CoachRunStatus.FAILED)
-        assertThat(saved.failureReason).contains("AiUnavailableException")
+        assertThat(saved.failureReason).contains("AI 장애")
 
         executor.execute(run.id)
         assertThat(runs.findById(run.id)!!.status).isEqualTo(CoachRunStatus.FAILED)
+    }
+
+    @Test
+    fun `AI 장애여도 측정 약점이 있으면 영상 라벨과 규준 근거로 대체 편성해 AWAITING_APPROVAL`() {
+        fitness.measured(
+            family.child.profileId,
+            "012" to 8.0,
+            weakest = FactorPoint(FitnessFactor.FLEXIBILITY, "012", 24),
+            strongest = FactorPoint(FitnessFactor.CARDIO, "020", 80),
+        )
+        val run = runningRun()
+        gateway.onStart = { throw AiUnavailableException("연결 실패") }
+
+        executor.execute(run.id)
+
+        val saved = runs.findById(run.id)!!
+        assertThat(saved.status).isEqualTo(CoachRunStatus.AWAITING_APPROVAL)
+        assertThat(saved.aiRunId).isNull()
+        assertThat(saved.steps.map { it.status }).containsExactly("ok", "partial", "ok", "ok")
+        assertThat(saved.steps[1].summary).contains("AI 서비스 장애")
+        val item = saved.proposals.single()
+        assertThat(item.title).contains("유연성")
+        assertThat(item.targetMetric).isEqualTo("TIMER_MINUTES")
+        assertThat(item.targetValue).isEqualTo(45)
+        assertThat(item.video!!.videoId).isEqualTo("IdpXx2gm90o")
+        assertThat(item.citations.map { it.label }).anyMatch { it.startsWith("국민체력100 규준") }
+        assertThat(item.participants.map { it.coachRole }).containsExactlyInAnyOrder("주행자", "동반자")
     }
 
     @Test

@@ -72,6 +72,16 @@ class FitnessTest private constructor(
 
     val weakest: FactorPoint? get() = scoredItems.minByOrNull { it.percentile!! }?.toFactorPoint()
 
+    /** 측정 항목 백분위의 평균(반올림, 1~99). 규준이 붙은 항목이 없으면 null. 가족 체력 지도 카드의 한 줄 요약에 쓴다. */
+    val overallPercentile: Int?
+        get() =
+            scoredItems
+                .takeIf { it.isNotEmpty() }
+                ?.map { it.percentile!! }
+                ?.average()
+                ?.roundToInt()
+                ?.coerceIn(1, 99)
+
     val strongest: FactorPoint? get() = scoredItems.maxByOrNull { it.percentile!! }?.toFactorPoint()
 
     val coachDirection: CoachDirection

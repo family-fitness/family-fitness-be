@@ -72,6 +72,25 @@ class CoachRunServiceTest {
     }
 
     @Test
+    fun `스케줄 실행은 SCHEDULE 트리거 · 기본 3회 15분 · 요청자 없이 시작하고, 이미 실행 중이거나 측정이 없으면 조용히 건너뛴다`() {
+        val runId = service.startScheduled(family.familyId)
+
+        val run = runs.findById(runId!!)!!
+        assertThat(run.triggerType).isEqualTo(TriggerType.SCHEDULE)
+        assertThat(run.requestedBy).isNull()
+        assertThat(run.daysPerWeek).isEqualTo(3)
+        assertThat(run.minutesPerSession).isEqualTo(15)
+        assertThat(events).containsExactly(CoachRunRequested(run.id))
+
+        assertThat(service.startScheduled(family.familyId)).isNull()
+
+        val other = Family()
+        identity.families += other
+        assertThat(service.startScheduled(other.familyId)).isNull()
+        assertThat(events).hasSize(1)
+    }
+
+    @Test
     fun `weekStart 는 아무 요일이나 받아 그 주 월요일로 맞춘다`() {
         val accepted = service.start(family.parentUser, family.familyId, command.copy(weekStart = LocalDate.of(2026, 9, 17)))
 

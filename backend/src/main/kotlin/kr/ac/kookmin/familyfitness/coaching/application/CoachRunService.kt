@@ -78,6 +78,34 @@ class CoachRunService(
         return CoachRunAcceptedView(run.id, run.status, CoachRun.POLL_AFTER_MS)
     }
 
+    /**
+     * 일요일 20:00 스케줄(보드 F3 `trigger = SCHEDULE`). 사람이 아무것도 안 해도 주 1회 제안이 만들어진다.
+     * 실행 중·이번 주 결정된 run 이 있거나 측정된 구성원이 없으면 조용히 건너뛴다(예외가 아니다).
+     */
+    @Transactional
+    fun startScheduled(familyId: UUID): UUID? {
+        val weekStart = time.thisWeekStart()
+        if (runs.existsByFamilyAndStatus(familyId, CoachRunStatus.RUNNING)) return null
+        if (runs.existsByFamilyAndWeekAndStatusIn(familyId, weekStart, DECIDED_OR_AWAITING)) return null
+        val memberIds = profileQuery.summariesOfFamily(familyId).map { it.profileId }
+        if (memberIds.isEmpty() || !fitnessQuery.hasAnyTest(memberIds)) return null
+
+        val run =
+            CoachRun.start(
+                id = UUID.randomUUID(),
+                familyId = familyId,
+                weekStart = weekStart,
+                triggerType = TriggerType.SCHEDULE,
+                daysPerWeek = StartCoachRunCommand.DEFAULT_DAYS_PER_WEEK,
+                minutesPerSession = StartCoachRunCommand.DEFAULT_MINUTES_PER_SESSION,
+                requestedBy = null,
+                at = time.now(),
+            )
+        runs.save(run)
+        events.publishEvent(CoachRunRequested(run.id))
+        return run.id
+    }
+
     @Transactional(readOnly = true)
     fun get(
         userId: UUID,
