@@ -14,7 +14,7 @@ Notion 「API 명세서」의 백엔드 엔드포인트 27개 중 26개를 구�
 
 | | |
 |---|---|
-| 백엔드 | [`backend/`](./backend) — Kotlin · Spring Boot 4.1 · Spring Modulith · Java 25 (툴체인 자동 설치) |
+| 백엔드 | [`backend/`](./backend) — Java · Spring Boot 4.1 · Spring Modulith · Java 25 (툴체인 자동 설치) |
 | API 계약 | [`docs/api-contract.md`](./docs/api-contract.md) · 서버의 `/swagger-ui.html` |
 | 구조 | [`docs/architecture.md`](./docs/architecture.md) · [`docs/erd.dbml`](./docs/erd.dbml) |
 | 설계 원본 | Notion(API 명세서 · AI 인터페이스 명세) · [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf) |
