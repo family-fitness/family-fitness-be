@@ -43,23 +43,21 @@ class ProposalConverterTest {
     fun `미션은 위치·제목·부모 문구·TIMER_MINUTES·분 합계·첫 영상·역매핑 참여자·evidence 인용으로 바뀐다`() {
         val mission =
             CoachRunResult.Mission(
-                title = "같이 늘이는 한 주",
-                startDate = "2026-09-07",
-                endDate = "2026-09-13",
-                participants =
-                    listOf(
-                        CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId), "주행자"),
-                        CoachRunResult.ParticipantRef(ProfileRef.of(family.parent.profileId), "동반자"),
-                        CoachRunResult.ParticipantRef("p_unknown", "주행자"),
-                    ),
-                sessions =
-                    listOf(
-                        session(0, 15, null, listOf(1)),
-                        session(2, 15, CoachRunResult.Video("IdpXx2gm90o", 96), listOf(1, 2)),
-                        session(4, 20, CoachRunResult.Video("other", 0), emptyList()),
-                    ),
-                copyChild = "아이 문구",
-                copyParent = "부모 문구",
+                "같이 늘이는 한 주",
+                "2026-09-07",
+                "2026-09-13",
+                listOf(
+                    CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId), "주행자"),
+                    CoachRunResult.ParticipantRef(ProfileRef.of(family.parent.profileId), "동반자"),
+                    CoachRunResult.ParticipantRef("p_unknown", "주행자"),
+                ),
+                listOf(
+                    session(0, 15, null, listOf(1)),
+                    session(2, 15, CoachRunResult.Video("IdpXx2gm90o", 96), listOf(1, 2)),
+                    session(4, 20, CoachRunResult.Video("other", 0), emptyList()),
+                ),
+                "아이 문구",
+                "부모 문구",
             )
 
         val item = converter.convert(proposal(listOf(mission))).single()
@@ -83,13 +81,13 @@ class ProposalConverterTest {
     fun `evidence 가 하나도 없으면 실행 전체 인용을 붙이고, 모르는 영상은 버린다`() {
         val mission =
             CoachRunResult.Mission(
-                title = "t",
-                startDate = "2026-09-07",
-                endDate = "2026-09-13",
-                participants = listOf(CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId), "")),
-                sessions = listOf(session(0, 0, CoachRunResult.Video("unknown", null), emptyList())),
-                copyChild = "",
-                copyParent = "",
+                "t",
+                "2026-09-07",
+                "2026-09-13",
+                listOf(CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId), "")),
+                listOf(session(0, 0, CoachRunResult.Video("unknown", null), emptyList())),
+                "",
+                "",
             )
 
         val item = converter.convert(proposal(listOf(mission))).single()
@@ -110,12 +108,12 @@ class ProposalConverterTest {
         assertThat(profile.ageUnit).isEqualTo("개월")
         assertThat(profile.sex).isEqualTo("M")
         assertThat(profile.measurements).containsOnlyKeys("012")
-        assertThat(profile.inputLevel).isEqualTo("L2")
+        assertThat(profile.inputLevel()).isEqualTo("L2")
 
         val child = AiProfileFactory.of(family.child, emptyMap(), BigDecimal("140.5"), BigDecimal("35"), Fixed.TODAY)
         assertThat(child.age).isEqualTo(11)
         assertThat(child.ageUnit).isEqualTo("세")
-        assertThat(child.inputLevel).isEqualTo("L1")
+        assertThat(child.inputLevel()).isEqualTo("L1")
         assertThat(AiProfileFactory.participant(family.child, child).role).isEqualTo("주행자")
         assertThat(AiProfileFactory.participant(family.parent, child).role).isEqualTo("동반자")
         assertThat(AiProfileFactory.participant(family.cheerParent, child).role).isEqualTo("응원")

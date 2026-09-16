@@ -39,7 +39,14 @@ class IdentityServicesTest {
     private val families = InMemoryFamilyRepository()
     private val cheers = InMemoryCheerRepository()
     private val summaries = ProfileSummaries(identityClock)
-    private val props = AppProperties(frontendBaseUrl = "https://app.example.com/")
+    private val props =
+        AppProperties(
+            "Asia/Seoul",
+            "https://app.example.com/",
+            AppProperties.Cors(),
+            AppProperties.Auth(),
+            AppProperties.Ai(),
+        )
 
     private val familyService = FamilyService(families, summaries, identityClock)
     private val inviteService = InviteService(families, props, identityClock)

@@ -26,7 +26,21 @@ class AuthServiceTest {
     private val summaries = ProfileSummaries(identityClock)
     private val props =
         AppProperties(
-            auth = AppProperties.Auth(jwt = AppProperties.Jwt(secret = "test-only-secret-test-only-secret-0123456789")),
+            "Asia/Seoul",
+            "http://localhost:5173",
+            AppProperties.Cors(),
+            AppProperties.Auth(
+                AppProperties.Jwt(
+                    "familyfitness",
+                    "test-only-secret-test-only-secret-0123456789",
+                    java.time.Duration.ofHours(1),
+                    java.time.Duration.ofDays(30),
+                ),
+                AppProperties.DevLogin(),
+                AppProperties.DevAutoLogin(),
+                AppProperties.Google(),
+            ),
+            AppProperties.Ai(),
         )
     private val key =
         SecretKeySpec(

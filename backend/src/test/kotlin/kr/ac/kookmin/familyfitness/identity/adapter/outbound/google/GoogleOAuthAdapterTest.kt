@@ -24,15 +24,21 @@ import java.time.Instant
 class GoogleOAuthAdapterTest {
     private val props =
         AppProperties(
-            auth =
-                AppProperties.Auth(
-                    google =
-                        AppProperties.Google(
-                            clientId = "client-id",
-                            clientSecret = "client-secret",
-                            tokenUri = "https://oauth2.example/token",
-                        ),
+            "Asia/Seoul",
+            "http://localhost:5173",
+            AppProperties.Cors(),
+            AppProperties.Auth(
+                AppProperties.Jwt(),
+                AppProperties.DevLogin(),
+                AppProperties.DevAutoLogin(),
+                AppProperties.Google(
+                    "client-id",
+                    "client-secret",
+                    "https://oauth2.example/token",
+                    "https://www.googleapis.com/oauth2/v3/certs",
                 ),
+            ),
+            AppProperties.Ai(),
         )
     private val builder = RestClient.builder()
     private val server = MockRestServiceServer.bindTo(builder).build()

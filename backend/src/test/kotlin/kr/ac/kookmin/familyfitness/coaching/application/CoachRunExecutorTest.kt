@@ -81,7 +81,7 @@ class CoachRunExecutorTest {
         val child = request.profiles.first { it.profile.profileRef == ProfileRef.of(family.child.profileId) }
         assertThat(child.profile.age).isEqualTo(11)
         assertThat(child.profile.measurements).containsKeys("012", "028")
-        assertThat(child.profile.inputLevel).isEqualTo("L2")
+        assertThat(child.profile.inputLevel()).isEqualTo("L2")
         assertThat(request.toString()).doesNotContain("민준")
     }
 

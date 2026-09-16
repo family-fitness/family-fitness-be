@@ -85,13 +85,13 @@ class PredictionServiceTest {
 
     private fun aiResponse(vararg bands: TrajectoryResponse.Band) =
         TrajectoryResponse(
-            basis = "cross_sectional_group_distribution",
-            itemCode = "028",
-            itemName = "상대악력",
-            unit = "%",
-            bands = bands.toList(),
-            notice = "집단 분포를 바탕으로 한 참고 범위입니다. 개인의 변화를 나타내지 않습니다.",
-            lowSample = false,
+            "cross_sectional_group_distribution",
+            "028",
+            "상대악력",
+            "%",
+            bands.toList(),
+            "집단 분포를 바탕으로 한 참고 범위입니다. 개인의 변화를 나타내지 않습니다.",
+            false,
         )
 
     private fun band(
@@ -140,7 +140,7 @@ class PredictionServiceTest {
         assertThat(request.profile.heightCm).isEqualTo(136.2)
         assertThat(request.profile.weightKg).isEqualTo(31.5)
         assertThat(request.profile.measurements).containsExactlyInAnyOrderEntriesOf(mapOf("028" to 40.5, "012" to 9.0))
-        assertThat(request.profile.inputLevel).isEqualTo("L2")
+        assertThat(request.profile.inputLevel()).isEqualTo("L2")
 
         assertThat(prediction.fitnessTestId).isEqualTo(test.id)
         assertThat(prediction.modelVersion).isEqualTo(Prediction.MODEL_VERSION)

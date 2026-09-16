@@ -300,18 +300,17 @@ class FitnessWebTest {
         registerYouthTest().andExpect(status().isCreated)
         `when`(ai.trajectory(anyArg())).thenReturn(
             TrajectoryResponse(
-                basis = "cross_sectional_group_distribution",
-                itemCode = "028",
-                itemName = "상대악력",
-                unit = "%",
-                bands =
-                    listOf(
-                        TrajectoryResponse.Band(11, 28.0, 36.0, 44.0, 120),
-                        TrajectoryResponse.Band(14, 32.0, 40.0, 50.0, 110),
-                        TrajectoryResponse.Band(21, 45.0, 60.0, 75.0, 90),
-                    ),
-                notice = Copy.TRAJECTORY_NOTICE,
-                lowSample = false,
+                "cross_sectional_group_distribution",
+                "028",
+                "상대악력",
+                "%",
+                listOf(
+                    TrajectoryResponse.Band(11, 28.0, 36.0, 44.0, 120),
+                    TrajectoryResponse.Band(14, 32.0, 40.0, 50.0, 110),
+                    TrajectoryResponse.Band(21, 45.0, 60.0, 75.0, 90),
+                ),
+                Copy.TRAJECTORY_NOTICE,
+                false,
             ),
         )
 
