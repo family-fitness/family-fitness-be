@@ -64,33 +64,33 @@ class Family(
         userId: UUID?,
         supportMode: SupportMode?,
     ) = ProfileDetails(
-        profileId = UUID.randomUUID(),
-        familyId = familyId,
-        userId = userId,
-        name = name,
-        role = role,
-        birthDate = birthDate,
-        sex = sex,
-        heightCm = null,
-        weightKg = null,
-        supportMode = supportMode,
-        consentGiven = true,
+        UUID.randomUUID(),
+        familyId,
+        userId,
+        name,
+        role,
+        birthDate,
+        sex,
+        null,
+        null,
+        supportMode,
+        true,
     )
 }
 
 fun ProfileDetails.summary(on: LocalDate = Fixed.TODAY): ProfileSummary =
     ProfileSummary(
-        profileId = profileId,
-        familyId = familyId,
-        name = name,
-        role = role,
-        ageGroup = AgeGroup.of(birthDate, on),
-        hasAccount = userId != null,
-        inviteStatus = if (userId != null) InviteStatus.CLAIMED else InviteStatus.NONE,
-        supportMode = supportMode,
-        measurable = true,
-        consentRequired = false,
-        consentGiven = consentGiven,
+        profileId,
+        familyId,
+        name,
+        role,
+        AgeGroup.of(birthDate, on),
+        userId != null,
+        if (userId != null) InviteStatus.CLAIMED else InviteStatus.NONE,
+        supportMode,
+        true,
+        false,
+        consentGiven,
     )
 
 /** identity 공개 API 의 결정적 가짜. 여러 가족을 등록할 수 있다. */
@@ -168,11 +168,11 @@ class FakeFitness : FitnessQuery {
     ) {
         latest[profileId] =
             LatestFitness(
-                profileId = profileId,
+                profileId,
                 fitnessTestId = UUID.randomUUID(),
                 testedOn = Fixed.TODAY.minusDays(3),
-                heightCm = BigDecimal("140.5"),
-                weightKg = BigDecimal("35.0"),
+                BigDecimal("140.5"),
+                BigDecimal("35.0"),
                 measurements = items.associate { it.first to BigDecimal.valueOf(it.second) },
                 weakest = weakest,
                 strongest = strongest,

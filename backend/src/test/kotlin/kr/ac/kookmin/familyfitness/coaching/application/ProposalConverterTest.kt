@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.coaching.application
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo
 import kr.ac.kookmin.familyfitness.coaching.support.Family
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed
+import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails
 import kr.ac.kookmin.familyfitness.shared.ai.Citation
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef
@@ -100,7 +101,21 @@ class ProposalConverterTest {
 
     @Test
     fun `AI 프로필은 이름 없이 ref·나이·성별·측정만 담고 유아기는 개월로 센다`() {
-        val toddler = family.child.copy(birthDate = Fixed.TODAY.minusYears(3).minusMonths(2))
+        val base = family.child
+        val toddler =
+            ProfileDetails(
+                base.profileId,
+                base.familyId,
+                base.userId,
+                base.name,
+                base.role,
+                Fixed.TODAY.minusYears(3).minusMonths(2),
+                base.sex,
+                base.heightCm,
+                base.weightKg,
+                base.supportMode,
+                base.consentGiven,
+            )
         val profile = AiProfileFactory.of(toddler, mapOf("012" to BigDecimal("5.5"), "005" to BigDecimal("80")), null, null, Fixed.TODAY)
 
         assertThat(profile.profileRef).isEqualTo(ProfileRef.of(toddler.profileId))

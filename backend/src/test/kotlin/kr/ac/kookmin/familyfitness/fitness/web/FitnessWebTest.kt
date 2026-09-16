@@ -6,6 +6,7 @@ import kr.ac.kookmin.familyfitness.identity.api.CheerQuery
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary
 import kr.ac.kookmin.familyfitness.shared.ai.AiGateway
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException
 import kr.ac.kookmin.familyfitness.shared.ai.TrajectoryResponse
@@ -274,7 +275,21 @@ class FitnessWebTest {
     fun `가족 체력 지도는 구성원 카드에 한 줄 요약과 최신 측정 요약을 싣고, 미측정 구성원은 null 로 둔다`() {
         val parentId = UUID.randomUUID()
         val child = summaryOf(childId, familyId, AgeGroup.YOUTH)
-        val parent = summaryOf(parentId, familyId, AgeGroup.ADULT).copy(role = kr.ac.kookmin.familyfitness.shared.domain.ProfileRole.PARENT)
+        val parentBase = summaryOf(parentId, familyId, AgeGroup.ADULT)
+        val parent =
+            ProfileSummary(
+                parentBase.profileId,
+                parentBase.familyId,
+                parentBase.name,
+                kr.ac.kookmin.familyfitness.shared.domain.ProfileRole.PARENT,
+                parentBase.ageGroup,
+                parentBase.hasAccount,
+                parentBase.inviteStatus,
+                parentBase.supportMode,
+                parentBase.measurable,
+                parentBase.consentRequired,
+                parentBase.consentGiven,
+            )
         `when`(familyAccess.requireMember(userId, familyId)).thenReturn(parent)
         `when`(profileQuery.summariesOfFamily(familyId)).thenReturn(listOf(parent, child))
         `when`(profileQuery.familyName(familyId)).thenReturn("데모네")
