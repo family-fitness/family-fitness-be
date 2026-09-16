@@ -169,13 +169,13 @@ class FakeFitness : FitnessQuery {
         latest[profileId] =
             LatestFitness(
                 profileId,
-                fitnessTestId = UUID.randomUUID(),
-                testedOn = Fixed.TODAY.minusDays(3),
+                UUID.randomUUID(),
+                Fixed.TODAY.minusDays(3),
                 BigDecimal("140.5"),
                 BigDecimal("35.0"),
-                measurements = items.associate { it.first to BigDecimal.valueOf(it.second) },
-                weakest = weakest,
-                strongest = strongest,
+                items.associate { it.first to BigDecimal.valueOf(it.second) },
+                weakest,
+                strongest,
             )
     }
 
