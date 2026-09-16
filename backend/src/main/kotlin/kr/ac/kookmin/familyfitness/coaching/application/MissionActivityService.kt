@@ -76,7 +76,7 @@ class MissionActivityService(
         val participant = policy.refreshParticipant(mission, command.profileId, time.now()).participantOf(command.profileId)
         return StepsRecordedView(
             source = ActivitySource.MANUAL,
-            serverVerified = ActivitySource.MANUAL.serverVerified,
+            serverVerified = ActivitySource.MANUAL.isServerVerified,
             verifiedBy = VerifiedBy.SELF_REPORT,
             missionProgress = participant.progress,
             missionCompleted = participant.completed,
@@ -105,7 +105,7 @@ class MissionActivityService(
         return TimerRecordedView(
             activityDate = activityDate,
             source = ActivitySource.TIMER,
-            serverVerified = ActivitySource.TIMER.serverVerified,
+            serverVerified = ActivitySource.TIMER.isServerVerified,
             totalActiveMinutes = activityQuery.activeMinutesOn(command.profileId, activityDate),
             missionProgress = participant.progress,
             missionCompleted = participant.completed,

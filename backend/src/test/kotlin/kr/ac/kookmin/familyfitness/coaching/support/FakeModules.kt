@@ -226,9 +226,9 @@ class FakeActivity :
     ): ActivityTotals {
         val inRange = rows.values.filter { it.profileId == profileId && !it.activityDate.isBefore(from) && !it.activityDate.isAfter(to) }
         return ActivityTotals(
-            steps = inRange.sumOf { it.steps },
-            activeMinutes = inRange.sumOf { it.activeMinutes },
-            verifiedMinutes = inRange.filter { it.source.serverVerified }.sumOf { it.activeMinutes },
+            inRange.sumOf { it.steps },
+            inRange.sumOf { it.activeMinutes },
+            inRange.filter { it.source.isServerVerified }.sumOf { it.activeMinutes },
         )
     }
 

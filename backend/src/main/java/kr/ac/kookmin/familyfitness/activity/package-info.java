@@ -2,4 +2,5 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "activity",
         allowedDependencies = {"identity::api"})
+@org.jspecify.annotations.NullMarked
 package kr.ac.kookmin.familyfitness.activity;
