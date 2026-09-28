@@ -45,6 +45,7 @@ public final class FitnessFakes {
                 "아이",
                 ProfileRole.CHILD,
                 ageGroup,
+                Sex.F,
                 false,
                 InviteStatus.NONE,
                 null,

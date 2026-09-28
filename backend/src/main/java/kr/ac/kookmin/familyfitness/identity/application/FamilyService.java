@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyNotFoundException;
@@ -37,6 +38,7 @@ public class FamilyService {
         return new CreatedFamily(family.getId(), family.getName(), summaries.summary(single(family.getProfiles())));
     }
 
+    /** 키 · 몸무게는 가입 때 적은 값이다. 프로필에만 두고 요약(응답)에는 싣지 않는다. */
     public ProfileSummary addMember(
             UUID userId,
             UUID familyId,
@@ -44,10 +46,12 @@ public class FamilyService {
             LocalDate birthDate,
             Sex sex,
             ProfileRole role,
+            @Nullable BigDecimal heightCm,
+            @Nullable BigDecimal weightKg,
             @Nullable GuardianConsent guardianConsent) {
         Family family = load(familyId);
-        Profile profile =
-                family.addMember(userId, name, birthDate, sex, role, guardianConsent, clock.now(), clock.today());
+        Profile profile = family.addMember(
+                userId, name, birthDate, sex, role, heightCm, weightKg, guardianConsent, clock.now(), clock.today());
         families.save(family);
         return summaries.summary(profile);
     }

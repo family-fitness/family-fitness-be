@@ -20,6 +20,7 @@ public final class Summaries {
                 details.name(),
                 details.role(),
                 AgeGroup.of(details.birthDate(), on),
+                details.sex(),
                 details.userId() != null,
                 details.userId() != null ? InviteStatus.CLAIMED : InviteStatus.NONE,
                 details.supportMode(),

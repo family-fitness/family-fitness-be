@@ -8,10 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.support.TestAuth;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +48,9 @@ class IdentityApiTest {
 
     @Autowired
     private TestAuth testAuth;
+
+    @Autowired
+    private ProfileQuery profileQuery;
 
     private final LocalDate today = LocalDate.now();
 
@@ -128,6 +135,11 @@ class IdentityApiTest {
             @Nullable boolean[] consent,
             String sex)
             throws Exception {
+        return postMember(session, familyId, memberBody(name, birthDate, role, consent, sex));
+    }
+
+    private Map<String, Object> memberBody(
+            String name, LocalDate birthDate, String role, @Nullable boolean[] consent, String sex) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", name);
         body.put("birthDate", birthDate.toString());
@@ -136,7 +148,33 @@ class IdentityApiTest {
         if (consent != null) {
             body.put("guardianConsent", Map.of("personalData", consent[0], "healthData", consent[1]));
         }
+        return body;
+    }
+
+    private ResultActions postMember(Session session, String familyId, Map<String, Object> body) throws Exception {
         return mvc.perform(json(auth(post("/api/v1/families/" + familyId + "/profiles"), session), body));
+    }
+
+    /** 상태 코드와 오류 봉투의 code 를 한 줄로. 예: `400 BAD_REQUEST`, 성공이면 `201`. */
+    private String outcome(ResultActions action) throws Exception {
+        String body = action.andReturn().getResponse().getContentAsString();
+        int status = action.andReturn().getResponse().getStatus();
+        JsonNode error = body.isBlank() ? null : json.readTree(body).get("error");
+        return error == null
+                ? String.valueOf(status)
+                : status + " " + error.get("code").asString();
+    }
+
+    private Map<String, Object> without(Map<String, Object> body, String key) {
+        Map<String, Object> copy = new LinkedHashMap<>(body);
+        copy.remove(key);
+        return copy;
+    }
+
+    private Map<String, Object> with(Map<String, Object> body, String key, Object value) {
+        Map<String, Object> copy = new LinkedHashMap<>(body);
+        copy.put(key, value);
+        return copy;
     }
 
     private ResultActions invite(Session session, String profileId) throws Exception {
@@ -510,5 +548,173 @@ class IdentityApiTest {
         mvc.perform(json(auth(post("/api/v1/profiles/claim"), parent), Map.of("claimCode", " ")))
                 .andExpect(status().isBadRequest());
         mvc.perform(auth(post("/api/v1/profiles/not-a-uuid/invite"), parent)).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("필수 칸이 빠지면 500 이 아니라 400 BAD_REQUEST 다 — 가족 만들기 · 구성원 추가 · 참여 수준 · 응원")
+    void 필수_칸이_빠지면_500_이_아니라_400_BAD_REQUEST_다() throws Exception {
+        Session parent = devLogin();
+        Map<String, Object> owner = Map.of("name", "엄마", "birthDate", "1988-03-01", "sex", "F");
+        Map<String, String> outcomes = new LinkedHashMap<>();
+        outcomes.put(
+                "가족 만들기 · owner 없음",
+                outcome(mvc.perform(json(auth(post("/api/v1/families"), parent), Map.of("familyName", "가")))));
+        for (String key : List.of("birthDate", "sex")) {
+            outcomes.put(
+                    "가족 만들기 · owner." + key + " 없음",
+                    outcome(mvc.perform(json(
+                            auth(post("/api/v1/families"), parent),
+                            Map.of("familyName", "가", "owner", without(owner, key))))));
+        }
+
+        String familyId = createFamily(parent).get("familyId").asString();
+        String ownerId = read(mvc.perform(auth(get("/api/v1/me"), parent)))
+                .get("profiles")
+                .get(0)
+                .get("profileId")
+                .asString();
+        Map<String, Object> member = memberBody("첫째", today.minusYears(8), "CHILD", new boolean[] {true, true}, "M");
+        String childId = read(postMember(parent, familyId, member).andExpect(status().isCreated()))
+                .get("profileId")
+                .asString();
+        for (String key : List.of("birthDate", "sex", "role")) {
+            outcomes.put("구성원 추가 · " + key + " 없음", outcome(postMember(parent, familyId, without(member, key))));
+        }
+
+        Map<String, Object> nullMode = new HashMap<>();
+        nullMode.put("supportMode", null);
+        outcomes.put(
+                "참여 수준 · supportMode 없음",
+                outcome(mvc.perform(json(auth(patch("/api/v1/profiles/" + ownerId + "/support-mode"), parent), "{}"))));
+        outcomes.put(
+                "참여 수준 · supportMode null",
+                outcome(mvc.perform(
+                        json(auth(patch("/api/v1/profiles/" + ownerId + "/support-mode"), parent), nullMode))));
+        outcomes.put(
+                "응원 · fromProfileId 없음",
+                outcome(cheer(parent, familyId, Map.of("toProfileId", childId, "message", "힘내"))));
+        outcomes.put(
+                "응원 · toProfileId 없음",
+                outcome(cheer(parent, familyId, Map.of("fromProfileId", ownerId, "message", "힘내"))));
+
+        Map<String, String> expected = new LinkedHashMap<>();
+        outcomes.keySet().forEach(key -> expected.put(key, "400 BAD_REQUEST"));
+        assertThat(outcomes).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("프로필 요약에 성별(M · F)이 실린다 — 가족 만들기 · 구성원 추가 · 구성원 목록 · /me")
+    void 프로필_요약에_성별이_실린다() throws Exception {
+        Session parent = devLogin();
+        JsonNode family = createFamily(parent);
+        String familyId = family.get("familyId").asString();
+        JsonNode child =
+                read(addMember(parent, familyId, "첫째", today.minusYears(8), "CHILD", new boolean[] {true, true}, "M")
+                        .andExpect(status().isCreated()));
+        JsonNode listed = read(mvc.perform(auth(get("/api/v1/families/" + familyId + "/profiles"), parent))
+                        .andExpect(status().isOk()))
+                .get("profiles");
+        JsonNode me = read(mvc.perform(auth(get("/api/v1/me"), parent)).andExpect(status().isOk()));
+
+        Map<String, String> sexes = new LinkedHashMap<>();
+        sexes.put("가족 만들기 ownerProfile", sexOf(family.get("ownerProfile")));
+        sexes.put("구성원 추가 응답", sexOf(child));
+        listed.forEach(it -> sexes.put("구성원 목록 " + it.get("name").asString(), sexOf(it)));
+        sexes.put("/me profiles[0]", sexOf(me.get("profiles").get(0)));
+
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("가족 만들기 ownerProfile", "F");
+        expected.put("구성원 추가 응답", "M");
+        expected.put("구성원 목록 엄마", "F");
+        expected.put("구성원 목록 첫째", "M");
+        expected.put("/me profiles[0]", "F");
+        assertThat(sexes).isEqualTo(expected);
+    }
+
+    private static String sexOf(JsonNode profile) {
+        JsonNode sex = profile.get("sex");
+        return sex == null ? "(칸 없음)" : sex.asString();
+    }
+
+    @Test
+    @DisplayName("다시 로그인하거나 리프레시한 응답의 userId · nextStep · profiles 는 /me 와 같다")
+    void 다시_로그인하거나_리프레시한_응답의_userId_nextStep_profiles_는_me_와_같다() throws Exception {
+        String providerUserId = "dev-" + UUID.randomUUID();
+        Session parent = devLogin(providerUserId, null);
+        createFamily(parent);
+
+        JsonNode me = read(mvc.perform(auth(get("/api/v1/me"), parent)).andExpect(status().isOk()));
+        JsonNode login = devLogin(providerUserId, null).body();
+        JsonNode refreshed =
+                read(mvc.perform(json(post("/api/v1/auth/refresh"), Map.of("refreshToken", parent.refreshToken())))
+                        .andExpect(status().isOk()));
+
+        assertThat(me.get("nextStep").asString()).isEqualTo("HOME");
+        assertThat(me.get("profiles").size()).isEqualTo(1);
+        for (JsonNode session : List.of(login, refreshed)) {
+            assertThat(session.get("userId")).isEqualTo(me.get("userId"));
+            assertThat(session.get("nextStep")).isEqualTo(me.get("nextStep"));
+            assertThat(session.get("profiles")).isEqualTo(me.get("profiles"));
+        }
+    }
+
+    @Test
+    @DisplayName("구성원 추가는 키 · 몸무게를 받아 프로필에 저장하고, 응답에는 싣지 않는다")
+    void 구성원_추가는_키_몸무게를_받아_프로필에_저장하고_응답에는_싣지_않는다() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        Map<String, Object> base = memberBody("첫째", today.minusYears(8), "CHILD", new boolean[] {true, true}, "M");
+
+        JsonNode measured = read(postMember(parent, familyId, with(with(base, "heightCm", 128.5), "weightKg", 27.3))
+                .andExpect(status().isCreated()));
+        JsonNode unmeasured =
+                read(postMember(parent, familyId, with(base, "name", "둘째")).andExpect(status().isCreated()));
+
+        assertThat(measured.has("heightCm")).isFalse();
+        assertThat(measured.has("weightKg")).isFalse();
+        ProfileDetails saved = profileQuery.findDetails(
+                UUID.fromString(measured.get("profileId").asString()));
+        assertThat(saved).isNotNull();
+        assertThat(saved.heightCm()).isEqualByComparingTo("128.5");
+        assertThat(saved.weightKg()).isEqualByComparingTo("27.3");
+        ProfileDetails blank = profileQuery.findDetails(
+                UUID.fromString(unmeasured.get("profileId").asString()));
+        assertThat(blank).isNotNull();
+        assertThat(blank.heightCm()).isNull();
+        assertThat(blank.weightKg()).isNull();
+    }
+
+    @Test
+    @DisplayName("구성원 추가의 키 · 몸무게 범위는 측정 등록과 같다 — 키 30~230 · 몸무게 5~250, 0 은 범위 밖")
+    void 구성원_추가의_키_몸무게_범위는_측정_등록과_같다() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        Map<String, Object> base = memberBody("아이", today.minusYears(8), "CHILD", new boolean[] {true, true}, "M");
+        Map<String, Object[]> cases = new LinkedHashMap<>();
+        cases.put("키 29.9", new Object[] {"heightCm", 29.9});
+        cases.put("키 230.1", new Object[] {"heightCm", 230.1});
+        cases.put("키 0", new Object[] {"heightCm", 0});
+        cases.put("몸무게 4.9", new Object[] {"weightKg", 4.9});
+        cases.put("몸무게 250.1", new Object[] {"weightKg", 250.1});
+        cases.put("몸무게 0", new Object[] {"weightKg", 0});
+        cases.put("키 30", new Object[] {"heightCm", 30});
+        cases.put("키 230", new Object[] {"heightCm", 230});
+        cases.put("몸무게 5", new Object[] {"weightKg", 5});
+        cases.put("몸무게 250", new Object[] {"weightKg", 250});
+
+        Map<String, String> outcomes = new LinkedHashMap<>();
+        for (Map.Entry<String, Object[]> it : cases.entrySet()) {
+            Object[] field = it.getValue();
+            outcomes.put(it.getKey(), outcome(postMember(parent, familyId, with(base, (String) field[0], field[1]))));
+        }
+
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (String outside : List.of("키 29.9", "키 230.1", "키 0", "몸무게 4.9", "몸무게 250.1", "몸무게 0")) {
+            expected.put(outside, "400 BAD_REQUEST");
+        }
+        for (String edge : List.of("키 30", "키 230", "몸무게 5", "몸무게 250")) {
+            expected.put(edge, "201");
+        }
+        assertThat(outcomes).isEqualTo(expected);
     }
 }

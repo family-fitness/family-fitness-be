@@ -305,6 +305,7 @@ class FitnessWebTest {
                 parentBase.name(),
                 ProfileRole.PARENT,
                 parentBase.ageGroup(),
+                Sex.M,
                 parentBase.hasAccount(),
                 parentBase.inviteStatus(),
                 parentBase.supportMode(),
@@ -321,6 +322,8 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.familyName").value("데모네"))
                 .andExpect(jsonPath("$.members", hasSize(2)))
                 .andExpect(jsonPath("$.members[0].profileId").value(parentId.toString()))
+                .andExpect(jsonPath("$.members[0].sex").value("M"))
+                .andExpect(jsonPath("$.members[1].sex").value("F"))
                 .andExpect(jsonPath("$.members[0].headline").value(nullValue()))
                 .andExpect(jsonPath("$.members[0].latest").value(nullValue()))
                 .andExpect(jsonPath("$.members[1].headline").value("유소년 상위 61%"))
