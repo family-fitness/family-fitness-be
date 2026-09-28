@@ -14,6 +14,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /** 미션 메모리 저장소. 칸 끝 저장소를 넘기면 잡힌 날 셈(spansOf)이 칸을 끝낸 날을 읽는다. */
 public class InMemoryMissionRepository implements MissionRepository {
@@ -39,6 +40,20 @@ public class InMemoryMissionRepository implements MissionRepository {
     @Override
     public @Nullable Mission findById(UUID id) {
         return missions.get(id);
+    }
+
+    @Override
+    public @Nullable Mission findByIdForUpdate(UUID id) {
+        return missions.get(id);
+    }
+
+    /** DB 처럼 칸 끝 기록이 남아 있으면 외래 키 위반을 던진다. */
+    @Override
+    public void delete(UUID id) {
+        if (!completions.findByMission(id).isEmpty()) {
+            throw new DataIntegrityViolationException("fk_mission_session_completions_mission: " + id);
+        }
+        missions.remove(id);
     }
 
     @Override

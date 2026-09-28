@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.coaching.api.MissionCreated;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
@@ -25,6 +26,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.NoMeasuredMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
+import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
@@ -42,6 +44,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -545,6 +548,78 @@ class CoachRunServiceTest {
 
         assertThat(service.approve(family.parentUser, run.getId()).createdMissions())
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("승인은 기간이 지난 제안 항목(끝날 < 오늘)을 건너뛰고 나머지만 미션으로 만들며, 만든 미션마다 MissionCreated 를 낸다")
+    void 승인은_기간이_지난_항목을_건너뛰고_나머지만_만든다() {
+        CoachRun run = runs.save(Runs.awaiting(
+                family.familyId,
+                family.child.profileId(),
+                Fixed.TODAY,
+                family.parent.profileId(),
+                Fixed.NOW,
+                List.of(itemOn(0, Fixed.TODAY.minusDays(1)), itemOn(1, Fixed.TODAY))));
+        events.clear();
+
+        ApproveCoachRunView approved = service.approve(family.parentUser, run.getId());
+
+        assertThat(approved.createdMissions())
+                .singleElement()
+                .extracting(CreatedMissionView::title)
+                .isEqualTo("하루 운동 1");
+        UUID missionId = approved.createdMissions().getFirst().missionId();
+        assertThat(missions.missions).hasSize(1);
+        assertThat(events)
+                .containsExactly(new MissionCreated(
+                        missionId,
+                        family.familyId,
+                        "하루 운동 1",
+                        Fixed.TODAY,
+                        Fixed.TODAY,
+                        List.of(family.child.profileId()),
+                        Fixed.NOW));
+    }
+
+    @Test
+    @DisplayName("만들 항목의 기간이 모두 지났으면 승인은 409 PROPOSAL_EXPIRED 이고 실행은 승인 대기 그대로, 조회의 canApprove 는 false")
+    void 기간이_모두_지난_제안은_PROPOSAL_EXPIRED() {
+        CoachRun run = runs.save(Runs.awaiting(
+                family.familyId,
+                family.child.profileId(),
+                Fixed.TODAY.minusDays(1),
+                family.parent.profileId(),
+                Fixed.NOW.minusSeconds(86_400),
+                List.of(itemOn(0, Fixed.TODAY.minusDays(1)))));
+        events.clear();
+
+        assertThat(service.get(family.parentUser, run.getId()).canApprove()).isFalse();
+        ProposalExpiredException e =
+                assertThrows(ProposalExpiredException.class, () -> service.approve(family.parentUser, run.getId()));
+
+        assertThat(e.getCode()).isEqualTo("PROPOSAL_EXPIRED");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.CONFLICT);
+        assertThat(runs.currentStatus(run.getId())).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(missions.missions).isEmpty();
+        assertThat(events).isEmpty();
+    }
+
+    /** 참여자가 아이 한 명인 그날 하루짜리 20분 제안 항목. */
+    private CoachProposalItem itemOn(int position, LocalDate day) {
+        return new CoachProposalItem(
+                position,
+                "하루 운동 " + position,
+                "TIMER_MINUTES",
+                20,
+                null,
+                null,
+                day,
+                day,
+                List.of(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자")),
+                null,
+                List.of(),
+                null,
+                null);
     }
 
     private CoachRun awaitingOfWeek() {

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
+import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeActivity;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
@@ -33,7 +34,14 @@ class WeeklyReportServiceTest {
     private final MissionCompletionPolicy policy =
             new MissionCompletionPolicy(activity, new InMemoryVideoInteractionRepository(), missions, completions);
     private final MissionService missionService = new MissionService(
-            missions, completions, new InMemoryExerciseVideoRepository(), identity, identity, policy, Fixed.time());
+            missions,
+            completions,
+            new InMemoryExerciseVideoRepository(),
+            identity,
+            identity,
+            policy,
+            event -> {},
+            Fixed.time());
     private final WeeklyReportService service =
             new WeeklyReportService(runs, missions, identity, identity, activity, identity, policy, Fixed.time());
 
@@ -58,7 +66,7 @@ class WeeklyReportServiceTest {
                 family.familyId,
                 new CreateMissionCommand(
                         "타이머",
-                        Fixed.WEEK_START,
+                        Fixed.TODAY,
                         Fixed.WEEK_START.plusDays(6),
                         TargetMetric.TIMER_MINUTES,
                         20,
@@ -75,17 +83,20 @@ class WeeklyReportServiceTest {
                         5000,
                         null,
                         List.of(family.child.profileId(), family.parent.profileId())));
-        missionService.create(
-                family.parentUser,
+        // 지난 날짜는 직접 만들기가 막으므로(422 INVALID_DATE) 저장소에 바로 넣는다
+        missions.save(Mission.manual(
+                UUID.randomUUID(),
                 family.familyId,
-                new CreateMissionCommand(
-                        "지난주",
-                        Fixed.WEEK_START.minusDays(7),
-                        Fixed.WEEK_START.minusDays(1),
-                        TargetMetric.STEPS,
-                        5000,
-                        null,
-                        List.of(family.child.profileId())));
+                "지난주",
+                TargetMetric.STEPS,
+                5000,
+                null,
+                Fixed.WEEK_START.minusDays(7),
+                Fixed.WEEK_START.minusDays(1),
+                List.of(family.child.profileId()),
+                List.of(),
+                family.parent.profileId(),
+                Fixed.NOW));
         activity.addActiveMinutes(family.child.profileId(), Fixed.TODAY, ActivitySource.TIMER, 25);
         activity.overwriteSteps(family.child.profileId(), Fixed.TODAY, 3000);
         activity.addActiveMinutes(family.parent.profileId(), Fixed.WEEK_START.minusDays(1), ActivitySource.TIMER, 40);

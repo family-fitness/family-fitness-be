@@ -14,6 +14,8 @@ public interface SessionCompletionRepository {
     /**
      * 한 행을 넣고 곧바로 DB 에 내보낸다. 같은 (미션, 칸, 사람)이 이미 있으면 기본 키에 걸려
      * {@link org.springframework.dao.DataIntegrityViolationException} 이 난다 — 부르는 쪽이 먼저 {@link #find} 로 본다.
+     * 부르는 쪽이 미션을 읽은 뒤 그 미션이 지워졌으면(보호자의 지우기가 먼저 커밋) 미션 외래 키에 걸리고, 이것은
+     * {@link kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException}(404)으로 바꿔 던진다.
      */
     void insert(SessionCompletion completion);
 
