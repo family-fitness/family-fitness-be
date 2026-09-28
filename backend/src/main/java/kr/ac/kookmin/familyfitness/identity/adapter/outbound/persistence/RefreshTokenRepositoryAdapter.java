@@ -7,6 +7,7 @@ import kr.ac.kookmin.familyfitness.identity.application.port.RefreshTokenReposit
 import kr.ac.kookmin.familyfitness.identity.domain.RefreshToken;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class RefreshTokenRepositoryAdapter implements RefreshTokenRepository {
@@ -44,6 +45,13 @@ public class RefreshTokenRepositoryAdapter implements RefreshTokenRepository {
     @Override
     public int revokeFamily(UUID familyId, Instant at) {
         return jpa.revokeActiveOfFamily(familyId, at);
+    }
+
+    /** 스케줄러가 트랜잭션 없이 부르므로 여기서 연다. */
+    @Override
+    @Transactional
+    public int deleteExpiredOrRevoked(Instant expiredBefore, Instant revokedBefore) {
+        return jpa.deleteExpiredOrRevoked(expiredBefore, revokedBefore);
     }
 
     private static RefreshToken toDomain(RefreshTokenEntity entity) {

@@ -27,4 +27,21 @@ public interface RefreshTokenJpaRepository extends JpaRepository<RefreshTokenEnt
              where t.familyId = :familyId and t.revokedAt is null
             """)
     int revokeActiveOfFamily(@Param("familyId") UUID familyId, @Param("at") Instant at);
+
+    /**
+     * 정리. revoked_at 이 null 인 행은 {@code <} 비교가 참이 되지 않아 두 번째 조건에 걸리지 않는다.
+     *
+     * <p>expires_at · revoked_at 에 인덱스를 걸지 않아 표 전체를 한 번 읽는다(Seq Scan). 조건이 OR 라서 expires_at 한 칸
+     * 인덱스나 (expires_at, revoked_at) 복합 인덱스로는 계획이 바뀌지 않고, 두 칸에 따로 걸어야 BitmapOr 가 된다. 그러면
+     * refresh 요청마다 인덱스 쓰기가 둘 늘어난다. 이 표에는 최근 refresh-ttl 동안의 발급 기록만 남으므로 하루 한 번 전체를 읽는
+     * 쪽을 골랐다. 정리에 걸린 시간은 {@code RefreshTokenSweeper} 로그에 남는다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            delete from RefreshTokenEntity t
+             where t.expiresAt < :expiredBefore
+                or t.revokedAt < :revokedBefore
+            """)
+    int deleteExpiredOrRevoked(
+            @Param("expiredBefore") Instant expiredBefore, @Param("revokedBefore") Instant revokedBefore);
 }

@@ -21,4 +21,10 @@ public interface RefreshTokenRepository {
 
     /** 한 묶음(familyId)에서 아직 살아 있는 토큰을 모두 폐기하고, 바꾼 행 수를 돌려준다. */
     int revokeFamily(UUID familyId, Instant at);
+
+    /**
+     * expires_at 이 {@code expiredBefore} 보다 이르거나 revoked_at 이 {@code revokedBefore} 보다 이른 행을 지우고,
+     * 지운 행 수를 돌려준다. 폐기되지 않은 행(revoked_at null)은 두 번째 조건에 걸리지 않는다.
+     */
+    int deleteExpiredOrRevoked(Instant expiredBefore, Instant revokedBefore);
 }

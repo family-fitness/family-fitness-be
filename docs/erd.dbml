@@ -62,15 +62,21 @@ Table cheers {
   from_profile_id uuid [not null]
   to_profile_id uuid [not null]
   mission_id uuid
-  emoji varchar(20)
+  sticker_id varchar(20)
   message varchar(200)
   created_at timestamptz [not null]
+  kind varchar(10) [not null]
+  reply_to_cheer_id uuid
   indexes {
     (family_id, created_at) [name: 'ix_cheers_family_created']
     (from_profile_id, to_profile_id, created_at) [name: 'ix_cheers_to_created']
+    (reply_to_cheer_id) [unique, name: 'ux_cheers_reply_to']
+    (to_profile_id, created_at) [name: 'ix_cheers_to_profile_created']
   }
   Note: '''(from_profile_id <> to_profile_id)
-(emoji is not null or message is not null)'''
+(sticker_id is not null or message is not null)
+(kind in ('DONE', 'PRAISE', 'THANKS'))
+(reply_to_cheer_id is null or kind = 'THANKS')'''
 }
 
 Table fitness_norms {
@@ -84,9 +90,10 @@ Table fitness_norms {
   source_year smallint [not null]
   age_unit varchar(4) [not null]
   indexes {
-    (item_code, sex, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
+    (item_code, sex, age_unit, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
   }
-  Note: '''(sex in ('M', 'F'))'''
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))'''
 }
 
 Table fitness_tests {
@@ -135,6 +142,9 @@ Table prediction_points {
   scenario varchar(20) [not null]
   item_code varchar(3) [not null]
   years_from_now smallint [not null]
+  p10 numeric(8,3)
+  p50 numeric(8,3)
+  p90 numeric(8,3)
   indexes {
     (prediction_id, scenario, item_code, years_from_now) [pk]
   }
@@ -221,15 +231,19 @@ Table coach_runs {
   focus_factor varchar(20)
   with_parent boolean
   lock_key varchar(60)
+  failure_code varchar(20)
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
     (status, created_at) [name: 'ix_coach_runs_status_created']
+    (lock_key) [unique, name: 'ux_coach_runs_lock_key']
     (subject_profile_id, run_date) [name: 'ix_coach_runs_subject_date']
   }
   Note: '''(trigger_type in ('SCHEDULE', 'MANUAL'))
 (status in ('RUNNING', 'AWAITING_APPROVAL', 'APPROVED', 'REJECTED', 'FAILED'))
 ((approved_by is null) = (approved_at is null))
-(status <> 'APPROVED' or approved_at is not null)'''
+(status <> 'APPROVED' or approved_at is not null)
+(place in ('HOME', 'OUTDOOR'))
+(failure_code in ('NO_CITATIONS', 'AI_FAILED', 'CONSENT_REQUIRED', 'BUSY', 'STALE', 'ERROR'))'''
 }
 
 Table coach_run_proposal_items {
@@ -349,8 +363,8 @@ Table video_exercises {
   }
   Note: '''(start_sec >= 0 and end_sec > start_sec)
 (phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
-(fitness_factor is null or fitness_factor in
-(age_group is null or age_group in'''
+(fitness_factor is null or fitness_factor in ('CARDIO', 'STRENGTH', 'MUSCULAR_ENDURANCE', 'FLEXIBILITY', 'AGILITY', 'POWER', 'COORDINATION', 'BALANCE'))
+(age_group is null or age_group in ('TODDLER', 'YOUTH', 'ADOLESCENT', 'ADULT', 'SENIOR'))'''
 }
 
 Table mission_sessions {
@@ -376,6 +390,60 @@ Table mission_sessions {
 (end_sec is null or end_sec > start_sec)'''
 }
 
+Table coach_run_proposal_sessions {
+  coach_run_id uuid [not null]
+  item_position smallint [not null]
+  position smallint [not null]
+  phase varchar(10) [not null]
+  title varchar(120) [not null]
+  factor varchar(20)
+  minutes smallint [not null]
+  video_id varchar(32)
+  start_sec int
+  end_sec int
+  clip_title varchar(120)
+  indexes {
+    (coach_run_id, item_position, position) [pk]
+  }
+  Note: '''(position >= 1)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(minutes >= 1)
+((video_id is null) = (start_sec is null))
+(video_id is not null or (end_sec is null and clip_title is null))
+(start_sec is null or start_sec >= 0)
+(end_sec is null or end_sec > start_sec)'''
+}
+
+Table rest_cards {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  rest_date date [not null]
+  rest_month date [not null]
+  card_no smallint [not null]
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (family_id, rest_date) [unique, name: 'ux_rest_cards_family_date']
+    (family_id, rest_month, card_no) [unique, name: 'ux_rest_cards_family_card']
+  }
+  Note: '''(extract(day from rest_month) = 1)
+(card_no >= 1)'''
+}
+
+Table refresh_tokens {
+  jti uuid [pk, not null]
+  user_id uuid [not null]
+  family_id uuid [not null]
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  replaced_by uuid
+  created_at timestamptz [not null]
+  indexes {
+    (family_id) [name: 'ix_refresh_tokens_family']
+    (user_id) [name: 'ix_refresh_tokens_user']
+  }
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id
@@ -393,10 +461,8 @@ Ref: video_interactions.video_id > exercise_videos.video_id
 Ref: coach_runs.family_id > families.id
 Ref: coach_runs.approved_by > profiles.id
 Ref: coach_run_proposal_items.coach_run_id > coach_runs.id
-Ref: coach_run_proposal_items.video_id > exercise_videos.video_id
 Ref: missions.family_id > families.id
 Ref: missions.coach_run_id > coach_runs.id
-Ref: missions.video_id > exercise_videos.video_id
 Ref: missions.created_by > profiles.id
 Ref: mission_participants.mission_id > missions.id
 Ref: mission_participants.profile_id > profiles.id
@@ -405,3 +471,9 @@ Ref: coach_messages.profile_id > profiles.id
 Ref: coach_message_citations.coach_message_id > coach_messages.id
 Ref: video_exercises.video_id > exercise_videos.video_id
 Ref: mission_sessions.mission_id > missions.id
+Ref: coach_runs.subject_profile_id > profiles.id
+Ref: coach_run_proposal_sessions.(coach_run_id, item_position) > coach_run_proposal_items.(coach_run_id, position)
+Ref: cheers.reply_to_cheer_id > cheers.id
+Ref: rest_cards.family_id > families.id
+Ref: rest_cards.created_by > profiles.id
+Ref: refresh_tokens.user_id > users.id

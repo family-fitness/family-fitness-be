@@ -49,6 +49,17 @@ class InMemoryRefreshTokenRepository implements RefreshTokenRepository {
         return active.size();
     }
 
+    @Override
+    public int deleteExpiredOrRevoked(Instant expiredBefore, Instant revokedBefore) {
+        List<UUID> gone = tokens.values().stream()
+                .filter(it -> it.expiresAt().isBefore(expiredBefore)
+                        || (it.revokedAt() != null && it.revokedAt().isBefore(revokedBefore)))
+                .map(RefreshToken::id)
+                .toList();
+        gone.forEach(tokens::remove);
+        return gone.size();
+    }
+
     private static RefreshToken revoked(RefreshToken token, Instant at, @Nullable UUID replacedBy) {
         return new RefreshToken(
                 token.id(), token.userId(), token.familyId(), token.createdAt(), token.expiresAt(), at, replacedBy);
