@@ -443,6 +443,7 @@ class MissionServiceTest {
                 s.name(),
                 s.role(),
                 s.ageGroup(),
+                s.sex(),
                 s.hasAccount(),
                 s.inviteStatus(),
                 s.supportMode(),
