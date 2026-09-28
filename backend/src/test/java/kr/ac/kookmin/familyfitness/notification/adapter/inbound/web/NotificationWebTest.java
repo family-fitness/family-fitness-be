@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -316,6 +317,23 @@ class NotificationWebTest {
 
         tx.executeWithoutResult(
                 status -> events.publishEvent(new MissionCancelled(squat.getId(), familyId, Instant.now())));
+        assertThat(count(sibling)).isZero();
+    }
+
+    @Test
+    @DisplayName("보호자가 미션을 지우면(DELETE /missions/{id}) 그 미션 알림도 지워진다 — 미션 규칙이 낸 MissionCancelled 를 커밋 뒤에 받는다")
+    void 미션을_지우면_알림도_지워진다() throws Exception {
+        Mission squat = mission("스쿼트", TargetMetric.TIMER_MINUTES, kst(today.minusDays(1), 20), kid, sibling);
+        writer.missionReadyForFamily(
+                familyId, today, today.atTime(7, 30).atZone(KST).toInstant());
+        assertThat(count(kid)).isEqualTo(1);
+        assertThat(count(sibling)).isEqualTo(1);
+
+        mvc.perform(delete("/api/v1/missions/{missionId}", squat.getId())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(user)))
+                .andExpect(status().isNoContent());
+
+        assertThat(count(kid)).isZero();
         assertThat(count(sibling)).isZero();
     }
 
