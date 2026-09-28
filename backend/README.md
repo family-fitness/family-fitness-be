@@ -34,6 +34,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 - 개발용 기능(dev-login · 자동 로그인 · H2 콘솔)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
+- 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
 - 정해진 시각에 도는 일(모두 KST)은 설정으로 바꾼다: 리프레시 토큰 정리 `app.auth.refresh-token-cleanup.cron`(매일 04:00) · 알림 `app.notification.mission-ready-cron`(07:30) · `app.notification.remeasure-cron`(09:00) · 리그 정산 `app.league.settle-cron`(매월 1일 00:10). 표는 [docs/api-contract.md](../docs/api-contract.md) 0장.
 
 ## 프론트 연동 — 로컬 실행 안내
@@ -140,7 +141,7 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V149` 이고 다음은 `V150` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V152` 이고 다음은 `V153` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

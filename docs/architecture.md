@@ -1,7 +1,7 @@
 # 아키텍처
 
 Spring Boot 하나의 모듈러 모놀리스(Spring Modulith). 업무 모듈은 일곱 개다. 모듈 = 패키지 = ERD 묶음이며, 각 모듈은
-`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 develop `062e552`(2026-09-29)다.
+`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 develop `a880ad4`(2026-09-29)다.
 
 ## 모듈과 의존
 
@@ -73,24 +73,34 @@ flowchart LR
 
 - **경험치(progress)는 같은 트랜잭션에서 동기로 듣는다**(`@EventListener`). 원장은 줄지 않는 값이라 빠진 적립을 되살릴 길이 없다.
   같은 트랜잭션이면 적립과 원래 일(응원 · 측정)이 함께 저장되거나 함께 되돌려진다. FE 가 곧바로 다시 읽는 레벨에도 이미 반영돼 있다.
+  원장 · 업적 넣기는 `ON CONFLICT DO NOTHING` 이다. 두 요청이 같은 적립을 동시에 넣어도 늦은 쪽은 건너뛸 뿐, 원래 요청이 되돌려지지 않는다.
 - **알림(notification)은 커밋 뒤에 듣는다**(`@TransactionalEventListener(AFTER_COMMIT, fallbackExecution = true)`). 알림이 실패해도
-  원래 일은 되돌아가지 않는다. 같은 스레드에서 받고 `NotificationWriter` 가 새 트랜잭션에서 쓴다(`@Async` 가 아니다). 그래서 응답 전에
-  저장돼 있다. 실패는 로그만 남긴다.
+  원래 일은 되돌아가지 않는다. 실패는 로그만 남긴다.
+  - 리스너는 일을 알림 전용 스레드 풀(`notificationTaskExecutor`, 스레드 2 · 대기열 1000)에 넘기기만 한다. 쓰기는 그 스레드가
+    `NotificationWriter`(메서드마다 `REQUIRES_NEW`)로 한다.
+  - 요청 스레드에서 쓰지 않는 까닭: 커밋 뒤 콜백은 원래 트랜잭션의 커넥션을 아직 쥐고 있다. 거기서 새 트랜잭션을 열면 요청 하나가
+    커넥션 두 개를 쥐고, 동시 요청이 커넥션 풀을 넘으면 서로 기다리다 멈춘다. 알림 스레드는 커넥션을 스레드 수(2)만큼만 더 쓴다.
+  - 그래서 알림은 응답보다 조금 늦게 생긴다. 대기열까지 차면 그 알림은 버리고 로그를 남긴다. 서버를 내릴 때는 대기열을 최대 10초 비우고 내린다.
+  - 넣기는 `ON CONFLICT DO NOTHING`(JDBC)이라 같은 알림이 동시에 와도 한 건만 남는다.
+  - 설정: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 시험 프로필은
+    `app.notification.executor.async=false` 로 부른 스레드에서 곧바로 쓴다.
 
 | 이벤트 | 내는 곳 · 언제 | 듣는 곳 · 무엇을 | 받는 때 |
 |---|---|---|---|
 | `identity.api.CheerSent` | `CheerService.cheer` — 응원을 저장한 뒤 | progress: 스티커 붙은 `PRAISE` 면 `STICKER` +10(같은 미션에 한 번) · 업적 판정 | 같은 트랜잭션, 동기 |
 | | | notification: `KID_DONE` · `KID_THANKS` · `PRAISE` | 커밋 뒤 |
 | `fitness.api.FitnessTestRegistered` | `FitnessTestService.register` — 측정 회차를 저장한 뒤 | progress: 다시 잰 회차가 생기면 `REMEASURE` +20 · 업적 판정 | 같은 트랜잭션, 동기 |
+| | | notification: 그 아이의 지난 측정 회차로 만든 `REMEASURE` 를 부모 알림함에서 지운다 | 커밋 뒤 |
 | `coaching.api.SessionCompleted` | `SessionCompletionService` — 칸 끝을 새로 적은 사람마다(번진 보호자 포함) | 지금 듣는 곳이 없다 | — |
 | `coaching.api.MissionCompleted` | `SessionCompletionService` — 칸 끝으로 참여자가 막 완료됐을 때 한 번 | notification: 그 사람의 그 미션 `MISSION_READY` 를 뺀다 | 커밋 뒤 |
-| `coaching.api.MissionCreated` | `MissionService.createAll`(직접 만들기 · 여러 날) · `CoachRunService.approve`(제안 승인) — 미션마다 | notification: 오늘이 기간 안이고 07:30(KST)이 지났으면 그 자리에서 `MISSION_READY` | 커밋 뒤 |
+| `coaching.api.MissionCreated` | `MissionService.createAll`(직접 만들기 · 여러 날) · `CoachRunService.approve`(제안 승인) — 미션마다 | notification: 오늘이 기간 안이고 07:30(KST)이 지났으면 곧바로 `MISSION_READY` | 커밋 뒤 |
 | `coaching.api.MissionCancelled` | `MissionDeletionService.delete` — 미션을 지운 뒤 | notification: 그 미션의 알림을 지운다 | 커밋 뒤 |
 | `progress.api.AchievementEarned` | `AchievementAwards` — 업적을 처음 저장할 때(칸 끝 · 응원 · 측정 트랜잭션 안) | notification: 아이 프로필이면 `ACHIEVEMENT` | 원래 요청의 커밋 뒤 |
 | `CoachRunRequested`(coaching 내부) | `CoachRunService.start` — RUNNING 을 저장한 뒤 | coaching `CoachRunExecutor`: 편성 전용 스레드 풀에 넘긴다 | 커밋 뒤 |
 
 - 옛 경로(타이머 · 걸음수 · 영상 진행 · 보호자 확인)로 끝난 미션은 `MissionCompleted` 를 내지 않는다.
-- `REMEASURE` 알림은 이벤트가 아니라 09:00 스케줄러가 `fitness.api` 의 마지막 측정일을 읽어 만든다.
+- `REMEASURE` 알림은 이벤트가 아니라 09:00 스케줄러가 `fitness.api` 의 마지막 측정일을 읽어 만든다. 지우는 것은 `FitnessTestRegistered` 를 듣고 한다.
+- 표의 「커밋 뒤」 는 모두 알림 전용 스레드에서 쓴다는 뜻이다. `CoachRunRequested` 만 편성 전용 스레드 풀이다.
 
 ## 계층
 
@@ -112,15 +122,21 @@ flowchart LR
   - `requireMember` · `requireSameFamilyAsProfile`: 같은 가족. 아니면 403 `NOT_SAME_FAMILY`.
   - `requireParent` · `requireParentOfProfile`: 그 가족의 보호자. 아이 계정이면 403 `NOT_A_PARENT`.
   - `requireActingAs`: 그 프로필 이름으로 행동할 수 있는가(`Family.canActAs`). 본인 계정의 프로필이거나, 같은 가족 보호자가 계정 없는 아이
-    프로필을 대신할 때만 된다. 아니면 403 `FORBIDDEN`. 응원 보내기 · 칸 끝 · 운동 느낌 · 알림함이 쓴다.
+    프로필을 대신할 때만 된다. 아니면 403 `FORBIDDEN`. 응원 보내기 · 칸 끝 · 운동 느낌 · 알림함, 그리고 FE 가 부르지 않는 옛 주소
+    (타이머 · 걸음수 · 영상 진행 · 코치 대화 · 예측)가 쓴다.
 - 보호자 동의가 필요한데 없거나 거둔 프로필(`ProfileSummary` 의 `consentRequired && !consentGiven`)은 새 기록(측정 · 편성 · 승인 ·
   미션 · 칸 끝 · 느낌 · 활동)에서 422 `CONSENT_REQUIRED` 다. 거둔 동의는 만 14세가 지나도 풀리지 않는다.
-- 가족 쓰기는 프로필 행 낙관적 잠금(`profiles.version`)을 건다. 겹친 쓰기의 늦은 쪽은 409 `CONFLICT` 다.
+- 가족 쓰기는 프로필 행 낙관적 잠금(`profiles.version`)을 건다. 겹친 쓰기의 늦은 쪽은 409 `CONFLICT` 다. 그 밖에도 읽은 행을 다른
+  요청이 먼저 바꾸거나 지워 UPDATE · DELETE 가 0행이면(`OptimisticLockingFailureException`) `ApiErrorHandler` 가 409 `CONFLICT` 로 보낸다.
+- 같은 미션의 칸 끝 · 운동 느낌 · 미션 지우기는 모두 맨 먼저 미션 행을 `SELECT … FOR UPDATE` 로 잠근다. 그래서 차례로 돌고, 서로를
+  기다리다 멈추지 않는다.
 - 실패 응답은 한 형태 `{"error": {"code", "message"}}`. 도메인 예외는 `DomainException(code, ErrorKind)` 이고
   `ErrorKind` → HTTP 상태 매핑은 `ApiErrorHandler` 한 곳에만 있다. Spring MVC 표준 예외(405 · 406 · 413 · 415 등)와
   `/error` 경로(`ApiErrorAttributes`)도 같은 봉투로 나간다.
 - 시간은 `Clock` 빈으로만 읽는다. 「오늘」 과 날짜 경계는 `app.timezone`(`Asia/Seoul`)이다. 정해진 시각에 도는 일(04:00 리프레시 토큰 정리 ·
   07:30 · 09:00 알림 · 매월 1일 00:10 리그 정산 · 223초마다 멈춘 편성 정리)은 [api-contract.md](./api-contract.md) 0장 「시각 · 날짜」 에 있다.
+- `@Scheduled` 스레드는 2개다(`spring.task.scheduling.pool.size=2`). 07:30 · 09:00 알림이 가족을 도는 동안 멈춘 편성 정리 · 토큰 정리 ·
+  리그 정산이 밀리지 않게 한다. 기동 때 알림 따라잡기는 알림 전용 스레드 풀에서 돌아 main 스레드를 붙잡지 않는다.
 
 ## AI 서비스 경계
 
@@ -136,11 +152,13 @@ flowchart LR
   `StaleCoachRunSweeper` 가 기동 때와 223초마다 그보다 오래된 RUNNING 을 FAILED(`STALE`)로 바꿔 잠금을 푼다.
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나, 실행 단위로 실패(`failed` · 폴링 만료 · 폴링 404)하면 라벨 기반 대체 편성(`LabelBasedProposalPlanner`)으로
   넘어간다. 폴링 한 번의 일시 오류는 다음 폴링으로 넘긴다. AI 가 근거가 없다고 거부하면 FAILED(`NO_CITATIONS`), AI 400 · 409 는 FAILED(`ERROR`)다.
+- AI 가 200 을 줬어도 본문을 읽지 못하거나(깨진 JSON · text/html) 서버 모양으로 바꾸지 못하면(칸 누락) `HttpAiGateway` 가
+  `AiUnavailableException` 으로 바꾼다. 그래서 연결 실패와 같게 대체 편성으로 가고, 예측 · 대화는 503 `TEMPORARILY_UNAVAILABLE` 이다.
 - 실패 까닭은 `CoachRunView.failureCode` 로 알린다. 코드 목록과 결과 처리 표는 [api-contract.md](./api-contract.md) 8장.
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V149`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V152`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
   양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 33개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.

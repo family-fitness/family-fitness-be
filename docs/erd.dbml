@@ -290,6 +290,7 @@ Table missions {
   created_at timestamptz [not null]
   indexes {
     (family_id, starts_on) [name: 'ix_missions_family']
+    (coach_run_id) [name: 'ix_missions_coach_run']
   }
   Note: '''(origin in ('COACH', 'MANUAL'))
 (target_metric in ('VIDEO_DONE', 'TIMER_MINUTES', 'STEPS'))
@@ -530,8 +531,8 @@ Table consent_events {
   indexes {
     (profile_id, occurred_at) [name: 'ix_consent_events_profile']
   }
-  Note: '''(kind in ('GRANTED', 'REVOKED'))
-(kind <> 'GRANTED' or (personal_data = true and health_data = true))'''
+  Note: '''(kind <> 'GRANTED' or (personal_data = true and health_data = true))
+(kind in ('GRANTED', 'REVOKED', 'VOIDED'))'''
 }
 
 Table league_rounds {
@@ -600,6 +601,7 @@ Table notifications {
     (profile_id, dedupe_key) [unique, name: 'ux_notifications_dedupe']
     (profile_id, created_at desc) [name: 'ix_notifications_profile_created']
     (mission_id) [name: 'ix_notifications_mission']
+    (about_profile_id) [name: 'ix_notifications_about']
   }
   Note: '''(kind in ('KID_DONE', 'KID_THANKS', 'PRAISE', 'MISSION_READY', 'ACHIEVEMENT', 'REMEASURE'))'''
 }

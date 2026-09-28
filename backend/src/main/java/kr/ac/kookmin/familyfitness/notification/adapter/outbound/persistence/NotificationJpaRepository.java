@@ -47,7 +47,7 @@ public interface NotificationJpaRepository extends JpaRepository<NotificationEnt
     @Query("delete from NotificationEntity n where n.missionId = :missionId")
     int deleteOfMission(UUID missionId);
 
-    /** 받는 사람(profile_id)으로 먼저 좁힌다 — about_profile_id 에는 인덱스가 없다. */
+    /** 받는 사람(profile_id)과 대상(about_profile_id, V152 ix_notifications_about)으로 좁힌다. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             delete from NotificationEntity n
