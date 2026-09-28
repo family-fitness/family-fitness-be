@@ -210,9 +210,18 @@ class ProgressWebTest {
         assertThat(progress.sessionDone(done(missionId, 1, false))).isZero();
         assertThat(progress.sessionDone(done(missionId, 2, true))).isEqualTo(25);
         events.publishEvent(new CheerSent(
-                UUID.randomUUID(), familyId, momId, kidId, CheerKind.PRAISE, "star", missionId, null, Instant.now()));
+                UUID.randomUUID(),
+                familyId,
+                momId,
+                kidId,
+                CheerKind.PRAISE,
+                "star",
+                null,
+                missionId,
+                null,
+                Instant.now()));
         events.publishEvent(new CheerSent(
-                UUID.randomUUID(), familyId, kidId, momId, CheerKind.THANKS, "heart", null, null, Instant.now()));
+                UUID.randomUUID(), familyId, kidId, momId, CheerKind.THANKS, "heart", null, null, null, Instant.now()));
         events.publishEvent(new FitnessTestRegistered(kidId, UUID.randomUUID(), today.minusDays(30), null));
         UUID remeasured = UUID.randomUUID();
         events.publishEvent(new FitnessTestRegistered(kidId, remeasured, today, new Round(remeasured, today)));

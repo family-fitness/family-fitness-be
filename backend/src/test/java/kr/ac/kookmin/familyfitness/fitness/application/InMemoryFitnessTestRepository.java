@@ -61,4 +61,14 @@ class InMemoryFitnessTestRepository implements FitnessTestRepository {
     public boolean existsByProfileIdIn(Collection<UUID> profileIds) {
         return saved.values().stream().anyMatch(it -> profileIds.contains(it.getProfileId()));
     }
+
+    @Override
+    public Map<UUID, LocalDate> lastTestedOn(Collection<UUID> profileIds) {
+        Map<UUID, LocalDate> out = new LinkedHashMap<>();
+        for (FitnessTest test : saved.values()) {
+            if (!profileIds.contains(test.getProfileId())) continue;
+            out.merge(test.getProfileId(), test.getTestedOn(), (a, b) -> a.isAfter(b) ? a : b);
+        }
+        return out;
+    }
 }

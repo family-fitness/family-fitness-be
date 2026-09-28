@@ -141,7 +141,7 @@ abstract class MissionDeletionRaceTestBase {
             jdbc.update("delete from " + table + " where mission_id = ?", missionId);
         }
         jdbc.update("delete from missions where id = ?", missionId);
-        for (String table : List.of("activity_daily", "progress_xp_events", "progress_achievements")) {
+        for (String table : List.of("notifications", "activity_daily", "progress_xp_events", "progress_achievements")) {
             jdbc.update("delete from " + table + " where profile_id in (?, ?)", momId, kidId);
         }
         jdbc.update("delete from profiles where family_id = ?", familyId);

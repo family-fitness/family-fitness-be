@@ -13,7 +13,6 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.progress.api.ProgressRecorder;
 import kr.ac.kookmin.familyfitness.progress.api.SessionDone;
-import kr.ac.kookmin.familyfitness.progress.application.port.AchievementStore;
 import kr.ac.kookmin.familyfitness.progress.application.port.XpLedger;
 import kr.ac.kookmin.familyfitness.progress.domain.Achievement;
 import kr.ac.kookmin.familyfitness.progress.domain.MoveFacts;
@@ -27,13 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
  * 칸 끝 적립({@link ProgressRecorder}). 부르는 쪽(coaching)의 트랜잭션에 함께 든다 — 칸 기록이 되돌려지면 적립도 되돌려진다.
  *
  * <p>차례: 칸 +5 → (끝까지 했고 서버가 잰 확인이면) 미션 +20 → 움직임 업적 판정. 업적은 같은 칸을 다시 보내도 다시 판정한다
- * (이미 받은 업적은 저장소가 그대로 둔다).
+ * (이미 받은 업적은 저장소가 그대로 둔다). 처음 받은 업적만 {@link AchievementAwards} 가 AchievementEarned 로 알린다.
  */
 @Service
 @Transactional
 public class ProgressRecorderService implements ProgressRecorder {
     private final XpLedger ledger;
-    private final AchievementStore achievements;
+    private final AchievementAwards achievements;
     private final MoveHistory history;
     private final ActivityQuery activity;
     private final ProfileQuery profiles;
@@ -41,7 +40,7 @@ public class ProgressRecorderService implements ProgressRecorder {
 
     public ProgressRecorderService(
             XpLedger ledger,
-            AchievementStore achievements,
+            AchievementAwards achievements,
             MoveHistory history,
             ActivityQuery activity,
             ProfileQuery profiles,

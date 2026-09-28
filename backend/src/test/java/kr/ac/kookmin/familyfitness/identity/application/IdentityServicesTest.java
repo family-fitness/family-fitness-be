@@ -996,6 +996,7 @@ class IdentityServicesTest {
                                     child,
                                     CheerKind.PRAISE,
                                     "star",
+                                    "한마디",
                                     null,
                                     null,
                                     praise.createdAt()),
@@ -1006,6 +1007,7 @@ class IdentityServicesTest {
                                     owner,
                                     CheerKind.THANKS,
                                     "heart",
+                                    "한마디",
                                     null,
                                     praise.id(),
                                     thanks.createdAt()));
