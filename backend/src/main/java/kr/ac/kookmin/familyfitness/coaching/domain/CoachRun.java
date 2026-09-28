@@ -1,20 +1,26 @@
 package kr.ac.kookmin.familyfitness.coaching.domain;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
- * 주간 코치가 제안을 만든 한 번의 실행. 승인 전에는 미션이 아니다.
+ * 코치가 제안을 만든 한 번의 실행. 승인 전에는 미션이 아니다.
+ * 한 실행은 한 사람(subjectProfileId)의 하루(runDate)를 조건(conditions)대로 짠다. 옛 주간 실행 행은 셋 다 null 이다.
  * 상태 전이와 승인 권한 규칙은 전부 여기에 있고, 애플리케이션은 트랜잭션과 포트 호출만 조합한다.
  */
 public class CoachRun {
     public static final int MAX_REASON = 300;
     public static final int MAX_REFUSAL_REASON = 60;
     public static final int POLL_AFTER_MS = 1500;
+
+    /** 같은 (프로필, 날짜)에 새 편성이 오면 기다리던 제안을 이 사유로 거절한다(결정 1). */
+    public static final String SUPERSEDED_REASON = "새 제안으로 바뀌었어요";
 
     private final UUID id;
     private final UUID familyId;
@@ -24,6 +30,9 @@ public class CoachRun {
     private final int minutesPerSession;
     private final @Nullable UUID requestedBy;
     private final Instant createdAt;
+    private final @Nullable UUID subjectProfileId;
+    private final @Nullable LocalDate runDate;
+    private final @Nullable CoachRunConditions conditions;
 
     private CoachRunStatus status;
     private List<CoachProposalItem> proposals;
@@ -53,6 +62,9 @@ public class CoachRun {
             int minutesPerSession,
             @Nullable UUID requestedBy,
             Instant createdAt,
+            @Nullable UUID subjectProfileId,
+            @Nullable LocalDate runDate,
+            @Nullable CoachRunConditions conditions,
             CoachRunStatus status,
             List<CoachProposalItem> proposals,
             List<CoachStep> steps,
@@ -76,6 +88,9 @@ public class CoachRun {
         this.minutesPerSession = minutesPerSession;
         this.requestedBy = requestedBy;
         this.createdAt = createdAt;
+        this.subjectProfileId = subjectProfileId;
+        this.runDate = runDate;
+        this.conditions = conditions;
         this.status = status;
         this.proposals = sortedByPosition(proposals);
         this.steps = steps;
@@ -129,6 +144,33 @@ public class CoachRun {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /** 누구의 운동인지. 옛 주간 실행은 null. */
+    public @Nullable UUID getSubjectProfileId() {
+        return subjectProfileId;
+    }
+
+    /** 어느 날의 운동인지. 옛 주간 실행은 null. */
+    public @Nullable LocalDate getRunDate() {
+        return runDate;
+    }
+
+    public @Nullable CoachRunConditions getConditions() {
+        return conditions;
+    }
+
+    /**
+     * (프로필, 날짜) 잠금 키. RUNNING 동안만 값이 있고 끝나면 null 이다.
+     * 저장소는 이 값에 유니크 인덱스를 걸어 같은 (프로필, 날짜)의 RUNNING 을 하나로 막는다(NULL 끼리는 겹치지 않는다).
+     */
+    public @Nullable String lockKey() {
+        if (status != CoachRunStatus.RUNNING || subjectProfileId == null || runDate == null) return null;
+        return lockKeyOf(subjectProfileId, runDate);
+    }
+
+    public static String lockKeyOf(UUID subjectProfileId, LocalDate runDate) {
+        return subjectProfileId + "|" + runDate;
     }
 
     public CoachRunStatus getStatus() {
@@ -257,7 +299,7 @@ public class CoachRun {
         fail(reason, at, this.steps, false, null);
     }
 
-    /** AI 거부·실패·타임아웃·예외. 사유만 남기고 끝낸다. 같은 주에 새 실행을 다시 시작할 수 있다. */
+    /** AI 거부·실패·타임아웃·예외. 사유만 남기고 끝낸다. 같은 (프로필, 날짜)로 새 실행을 다시 시작할 수 있다. */
     public void fail(
             String reason, Instant at, List<CoachStep> steps, boolean refused, @Nullable String refusalReason) {
         requireRunning();
@@ -286,25 +328,30 @@ public class CoachRun {
         return value.length() <= n ? value : value.substring(0, n);
     }
 
-    /** 요청 직후. AI 호출 전이며 커밋 후 비동기로 진행된다. */
+    /**
+     * 요청 직후. AI 호출 전이며 커밋 후 비동기로 진행된다.
+     * 한 사람의 하루 편성이다 — weekStart 는 그날이 든 주의 월요일, 주 횟수는 1, 회당 분은 conditions.minutes.
+     */
     public static CoachRun start(
             UUID id,
             UUID familyId,
-            LocalDate weekStart,
-            TriggerType triggerType,
-            int daysPerWeek,
-            int minutesPerSession,
+            UUID subjectProfileId,
+            LocalDate runDate,
+            CoachRunConditions conditions,
             @Nullable UUID requestedBy,
             Instant at) {
         return new CoachRun(
                 id,
                 familyId,
-                weekStart,
-                triggerType,
-                daysPerWeek,
-                minutesPerSession,
+                runDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+                TriggerType.MANUAL,
+                1,
+                conditions.minutes(),
                 requestedBy,
                 at,
+                subjectProfileId,
+                runDate,
+                conditions,
                 CoachRunStatus.RUNNING,
                 List.of(),
                 List.of(),
@@ -346,6 +393,9 @@ public class CoachRun {
                 minutesPerSession,
                 null,
                 at,
+                null,
+                null,
+                null,
                 CoachRunStatus.AWAITING_APPROVAL,
                 proposals,
                 steps,
@@ -373,6 +423,9 @@ public class CoachRun {
             int minutesPerSession,
             @Nullable UUID requestedBy,
             Instant createdAt,
+            @Nullable UUID subjectProfileId,
+            @Nullable LocalDate runDate,
+            @Nullable CoachRunConditions conditions,
             CoachRunStatus status,
             List<CoachProposalItem> proposals,
             List<CoachStep> steps,
@@ -397,6 +450,9 @@ public class CoachRun {
                 minutesPerSession,
                 requestedBy,
                 createdAt,
+                subjectProfileId,
+                runDate,
+                conditions,
                 status,
                 proposals,
                 steps,

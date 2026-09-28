@@ -9,6 +9,7 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotParticipantException;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.domain.VerifiedBy;
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoNotFoundException;
@@ -161,6 +162,23 @@ class VideoServiceTest {
                         .activeMinutes())
                 .isEqualTo(10);
         assertThat(interactions.find(childId, "IdpXx2gm90o").getCreditedAt()).isEqualTo(Fixed.NOW);
+    }
+
+    @Test
+    @DisplayName("보호자 동의를 거둔 아이의 영상 진행 기록은 422 CONSENT_REQUIRED 이고 진행률도 활동도 남지 않는다")
+    void 보호자_동의를_거둔_아이의_영상_진행_기록은_CONSENT_REQUIRED() {
+        family.withdrawConsent(childId);
+
+        assertThat(assertThrows(
+                                ParticipantConsentRequiredException.class,
+                                () -> service.progress(
+                                        family.childUser,
+                                        "IdpXx2gm90o",
+                                        new VideoProgressCommand(childId, 0.95, 570, null)))
+                        .getCode())
+                .isEqualTo("CONSENT_REQUIRED");
+        assertThat(interactions.find(childId, "IdpXx2gm90o")).isNull();
+        assertThat(activity.rows).isEmpty();
     }
 
     @Test

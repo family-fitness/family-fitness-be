@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -29,7 +30,15 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
 import kr.ac.kookmin.familyfitness.coaching.application.AppTime;
+import kr.ac.kookmin.familyfitness.coaching.application.CoachRunPipeline;
+import kr.ac.kookmin.familyfitness.coaching.application.StaleCoachRunSweeper;
+import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
+import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
+import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
+import kr.ac.kookmin.familyfitness.coaching.support.Runs;
 import kr.ac.kookmin.familyfitness.coaching.support.Summaries;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
@@ -40,7 +49,12 @@ import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.shared.ai.Citation;
+import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.support.TestAuth;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,6 +73,9 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * H2 + Flyway(시드) 위에서 코치 실행 → 승인 → 미션 → 활동 → 영상 → 대화 → 주간 요약의 전체 흐름.
@@ -90,6 +107,21 @@ class CoachingFlowWebTest {
 
     @Autowired
     AppTime time;
+
+    @Autowired
+    CoachRunRepository coachRuns;
+
+    @Autowired
+    StaleCoachRunSweeper sweeper;
+
+    @Autowired
+    TransactionTemplate tx;
+
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
+    @Autowired
+    CoachRunPipeline pipeline;
 
     @MockitoBean
     ProfileQuery profileQuery;
@@ -143,6 +175,9 @@ class CoachingFlowWebTest {
         given(familyAccess.requireParent(family.childUser, familyId())).willThrow(new NotAParentException());
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(childId()))).willReturn(childSummary);
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(parentId()))).willReturn(parentSummary);
+        given(profileQuery.findSummary(childId())).willReturn(childSummary);
+        given(profileQuery.findSummary(parentId())).willReturn(parentSummary);
+        given(profileQuery.findDetails(childId())).willReturn(family.child);
         given(fitnessQuery.hasAnyTest(any())).willReturn(true);
         given(fitnessQuery.latestOf(childId()))
                 .willReturn(new LatestFitness(
@@ -168,46 +203,82 @@ class CoachingFlowWebTest {
         given(cheerQuery.countCheers(eq(familyId()), any(), any())).willReturn(2);
     }
 
+    /** FE 가 실제로 보내는 몸통(fe:src/lib/api/queries.ts PlanRequest + minutesPerSession). */
+    private String planBody(UUID profileId, LocalDate date, boolean withParent) {
+        return "{\"profileId\":\"" + profileId + "\",\"date\":\"" + date
+                + "\",\"minutes\":20,\"quiet\":true,\"place\":\"HOME\",\"focusFactor\":null,\"withParent\":"
+                + withParent + ",\"minutesPerSession\":20}";
+    }
+
+    private MvcResult startPlan(String bearer, String body) throws Exception {
+        return mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andReturn();
+    }
+
+    private String statusOf(String runId) {
+        return jdbc.sql("select status from coach_runs where id = ?")
+                .param(UUID.fromString(runId))
+                .query(String.class)
+                .single();
+    }
+
     @Test
     @DisplayName("코치 실행부터 주간 요약까지 한 흐름")
     void 코치_실행부터_주간_요약까지_한_흐름() throws Exception {
         String parent = auth.bearer(family.parentUser);
         String child = auth.bearer(family.childUser);
 
+        LocalDate today = time.today();
+
+        // 자녀 계정은 시작할 수 없다 → 403
+        mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                        .header(HttpHeaders.AUTHORIZATION, child)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(planBody(childId(), today, true)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARENT"));
+
         // 시작(202) — 동기 실행기라 응답 시점에 이미 끝나 있다.
         MvcResult startResult = mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
                         .header(HttpHeaders.AUTHORIZATION, parent)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"daysPerWeek\":3,\"minutesPerSession\":15}"))
+                        .content(planBody(childId(), today, true)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.pollAfterMs").value(1500))
                 .andReturn();
         String runId = extract("\"coachRunId\":\"([^\"]+)\"", startResult);
 
-        // 같은 주 재시작 → 409
-        mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
-                        .header(HttpHeaders.AUTHORIZATION, parent))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("ALREADY_RUN_THIS_WEEK"));
-
-        // 조회: 부모는 승인 가능, 제안에 시드 영상 제목·배지
+        // 조회: 부모는 승인 가능, 그 아이의 그날 하루짜리 제안 하나, 참여자는 아이 + 요청한 보호자(동반자)
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
                 .andExpect(jsonPath("$.canApprove").value(true))
                 .andExpect(jsonPath("$.missionCount").value(0))
                 .andExpect(jsonPath("$.weekStart").value(time.thisWeekStart().toString()))
+                .andExpect(jsonPath("$.profileId").value(childId().toString()))
+                .andExpect(jsonPath("$.date").value(today.toString()))
                 .andExpect(jsonPath("$.steps", hasSize(4)))
                 .andExpect(jsonPath("$.steps[0].name").value("assess"))
                 .andExpect(jsonPath("$.proposals", hasSize(1)))
+                .andExpect(jsonPath("$.proposals[0].title").value("유연성 키우기 20분"))
+                .andExpect(jsonPath("$.proposals[0].startDate").value(today.toString()))
+                .andExpect(jsonPath("$.proposals[0].endDate").value(today.toString()))
                 .andExpect(jsonPath("$.proposals[0].targetMetric").value("TIMER_MINUTES"))
-                .andExpect(jsonPath("$.proposals[0].targetValue").value(45))
+                .andExpect(jsonPath("$.proposals[0].targetValue").value(20))
                 .andExpect(jsonPath("$.proposals[0].video.videoId").value("IdpXx2gm90o"))
                 .andExpect(jsonPath("$.proposals[0].video.title").value("초등학생의 기초체력향상과 운동능력발달을 위한 운동"))
                 .andExpect(jsonPath("$.proposals[0].video.startSec").value(96))
                 .andExpect(jsonPath("$.proposals[0].video.badges[0]").value("조용함"))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
+                .andExpect(jsonPath("$.proposals[0].participants[0].profileId")
+                        .value(childId().toString()))
+                .andExpect(jsonPath("$.proposals[0].participants[1].profileId")
+                        .value(parentId().toString()))
+                .andExpect(jsonPath("$.proposals[0].participants[1].coachRole").value("동반자"))
                 .andExpect(jsonPath("$.proposals[0].citations", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:IdpXx2gm90o"));
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, child))
@@ -325,7 +396,7 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.weekStart").value(time.thisWeekStart().toString()))
                 .andExpect(jsonPath("$.weekEnd")
                         .value(time.thisWeekStart().plusDays(6).toString()))
-                .andExpect(jsonPath("$.summary").value("유연성은 매일 조금씩 늘려 가는 영역입니다. 한 주 3회, 회당 15분이면 충분합니다."))
+                .andExpect(jsonPath("$.summary").value("유연성은 매일 조금씩 늘려 가는 영역입니다. 오늘 20분이면 충분합니다."))
                 .andExpect(jsonPath("$.missionStats.total").value(1))
                 .andExpect(jsonPath("$.missionStats.completed").value(0))
                 .andExpect(jsonPath("$.members", hasSize(3)))
@@ -459,6 +530,274 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.videos[0].videoId").value("sample00003"))
                 .andExpect(jsonPath("$.videos[0].favorited").value(true))
                 .andExpect(jsonPath("$.videos[0].maxProgress", closeTo(0.0, 0.0001)));
+    }
+
+    @Test
+    @DisplayName("멈춘 RUNNING(기준 15초를 넘김)은 그 (프로필, 날짜)의 새 편성을 막지 않고 FAILED 가 되며, 정리 작업은 다른 멈춘 실행도 FAILED 로 바꾸고 잠금을 푼다")
+    void 멈춘_RUNNING_은_새_편성을_막지_않고_정리_작업이_FAILED_로_바꾼다() throws Exception {
+        LocalDate today = time.today();
+        CoachRun stuckToday = Runs.running(
+                familyId(), childId(), today, parentId(), time.now().minusSeconds(600));
+        CoachRun stuckTomorrow = Runs.running(
+                familyId(), childId(), today.plusDays(1), parentId(), time.now().minusSeconds(600));
+        tx.executeWithoutResult(status -> {
+            coachRuns.save(stuckToday);
+            coachRuns.save(stuckTomorrow);
+        });
+
+        assertThat(startPlan(auth.bearer(family.parentUser), planBody(childId(), today, false))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(202);
+        assertThat(statusOf(stuckToday.getId().toString())).isEqualTo("FAILED");
+
+        assertThat(sweeper.sweep()).isPositive();
+        assertThat(statusOf(stuckTomorrow.getId().toString())).isEqualTo("FAILED");
+        assertThat(jdbc.sql("select failure_reason from coach_runs where id = ?")
+                        .param(stuckTomorrow.getId())
+                        .query(String.class)
+                        .single())
+                .startsWith("stale: 15초");
+        assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ? and lock_key is not null")
+                        .param(familyId())
+                        .query(Integer.class)
+                        .single())
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("파이프라인이 RUNNING 을 읽은 뒤 정리 작업이 FAILED 로 먼저 커밋하면, 늦게 온 AI 결과는 버리고 FAILED · 잠금 해제를 그대로 둔다")
+    void 정리_작업이_먼저_끝낸_실행을_늦게_온_AI_결과가_되살리지_않는다() {
+        CoachRun stuck = Runs.running(
+                familyId(), childId(), time.today(), parentId(), time.now().minusSeconds(600));
+        tx.executeWithoutResult(
+                status -> assertThat(coachRuns.insertRunning(stuck)).isTrue());
+        // complete() 는 실행을 읽은 뒤 대상 프로필을 조회한다. 바로 그때 정리 작업이 다른 트랜잭션으로 커밋된다.
+        given(profileQuery.findDetails(childId())).willAnswer(inv -> {
+            commitSeparately(sweeper::sweep);
+            return family.child;
+        });
+
+        pipeline.complete(stuck.getId(), succeeded());
+
+        assertThat(statusOf(stuck.getId().toString())).isEqualTo("FAILED");
+        assertThat(jdbc.sql("select failure_reason from coach_runs where id = ?")
+                        .param(stuck.getId())
+                        .query(String.class)
+                        .optional())
+                .hasValueSatisfying(reason -> assertThat(reason).startsWith("stale:"));
+        assertThat(lockKeyOf(stuck.getId())).isNull();
+        assertThat(jdbc.sql("select count(*) from coach_run_proposal_items where coach_run_id = ?")
+                        .param(stuck.getId())
+                        .query(Integer.class)
+                        .single())
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("정리 작업이 FAILED 로 바꾼 뒤 늦게 온 AI 접수 기록은 RUNNING 과 (프로필, 날짜) 잠금을 되살리지 않는다")
+    void 늦게_온_AI_접수_기록은_RUNNING_과_잠금을_되살리지_않는다() {
+        CoachRun stuck = Runs.running(
+                familyId(),
+                childId(),
+                time.today().plusDays(1),
+                parentId(),
+                time.now().minusSeconds(600));
+        tx.executeWithoutResult(
+                status -> assertThat(coachRuns.insertRunning(stuck)).isTrue());
+        CoachRun read = tx.execute(status -> coachRuns.findById(stuck.getId())); // 파이프라인이 읽어 둔 RUNNING
+        sweeper.sweep();
+
+        read.attachAiRun("cr_late", time.now());
+        tx.executeWithoutResult(
+                status -> assertThat(coachRuns.attachAiRunIfRunning(read)).isFalse());
+
+        assertThat(statusOf(stuck.getId().toString())).isEqualTo("FAILED");
+        assertThat(lockKeyOf(stuck.getId())).isNull();
+        assertThat(jdbc.sql("select ai_run_id from coach_runs where id = ?")
+                        .param(stuck.getId())
+                        .query(String.class)
+                        .optional())
+                .isEmpty();
+    }
+
+    private void commitSeparately(Runnable work) {
+        TransactionTemplate separate = new TransactionTemplate(transactionManager);
+        separate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        separate.executeWithoutResult(status -> work.run());
+    }
+
+    private @Nullable String lockKeyOf(UUID runId) {
+        return jdbc.sql("select lock_key from coach_runs where id = ?")
+                .param(runId)
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
+
+    /** 대상 아이 한 명의 하루짜리 succeeded 결과. */
+    private CoachRunResult succeeded() {
+        CoachRunResult.Session session = new CoachRunResult.Session(
+                0, "본운동", 1, "운동", "유연성", 60, new CoachRunResult.Video("IdpXx2gm90o", 96, 156), List.of(1));
+        CoachRunResult.Mission mission = new CoachRunResult.Mission(
+                "일간",
+                "오늘",
+                time.today().toString(),
+                time.today().toString(),
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(childId()), "주행자")),
+                20,
+                60,
+                List.of(session),
+                "아이",
+                "부모",
+                "이유 [1].");
+        return new CoachRunResult(
+                "cr_late",
+                "succeeded",
+                List.of(),
+                new CoachRunResult.Proposal(List.of(mission), List.of(new Citation(1, "처방", "p:1", null)), List.of()),
+                false,
+                null);
+    }
+
+    @Test
+    @DisplayName("요청 몸통 검증: profileId · date · minutes 가 없거나(옛 주간 몸통 포함) 모르는 힘이면 400, 지난 날짜면 422 INVALID_DATE")
+    void 요청_몸통_검증() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        LocalDate today = time.today();
+
+        assertThat(startPlan(parent, "{\"daysPerWeek\":3,\"minutesPerSession\":15}")
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(400);
+        assertThat(startPlan(parent, "{\"profileId\":\"" + childId() + "\",\"date\":\"" + today + "\"}")
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(400);
+        assertThat(startPlan(parent, planBody(childId(), today, false).replace("\"minutes\":20", "\"minutes\":3"))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(400);
+        assertThat(startPlan(parent, planBody(childId(), today, false).replace("null", "\"없는힘\""))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(400);
+        mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                        .header(HttpHeaders.AUTHORIZATION, parent)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(planBody(childId(), today.minusDays(1), false)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("INVALID_DATE"));
+        assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ?")
+                        .param(familyId())
+                        .query(Integer.class)
+                        .single())
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("같은 아이 · 같은 날 다시 짜면 기다리던 제안은 REJECTED(새 제안으로 바뀌었어요), latest?profileId= 는 그 아이의 새 실행을 준다")
+    void 같은_아이_같은_날_다시_짜면_기다리던_제안은_거절되고_latest_는_새_실행을_준다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        LocalDate today = time.today();
+        String first = extract("\"coachRunId\":\"([^\"]+)\"", startPlan(parent, planBody(childId(), today, false)));
+        assertThat(statusOf(first)).isEqualTo("AWAITING_APPROVAL");
+
+        String second = extract("\"coachRunId\":\"([^\"]+)\"", startPlan(parent, planBody(childId(), today, false)));
+
+        assertThat(statusOf(first)).isEqualTo("REJECTED");
+        assertThat(jdbc.sql("select rejected_reason from coach_runs where id = ?")
+                        .param(UUID.fromString(first))
+                        .query(String.class)
+                        .single())
+                .isEqualTo("새 제안으로 바뀌었어요");
+        assertThat(statusOf(second)).isEqualTo("AWAITING_APPROVAL");
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest?profileId=" + childId())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(family.childUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coachRunId").value(second))
+                .andExpect(jsonPath("$.profileId").value(childId().toString()))
+                .andExpect(jsonPath("$.date").value(today.toString()))
+                .andExpect(jsonPath("$.canApprove").value(false))
+                .andExpect(jsonPath("$.proposals[0].participants", hasSize(1)));
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest")
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coachRunId").value(second))
+                .andExpect(jsonPath("$.canApprove").value(true));
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest?profileId=" + parentId())
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COACH_RUN_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("(프로필, 날짜) 잠금은 DB 유니크 인덱스다 — 같은 키의 두 번째 RUNNING 은 들어가지 않고, 요청은 409 RUN_IN_PROGRESS")
+    void 프로필_날짜_잠금은_DB_유니크_인덱스다() throws Exception {
+        LocalDate tomorrow = time.today().plusDays(1);
+        tx.executeWithoutResult(status -> assertThat(
+                        coachRuns.insertRunning(Runs.running(familyId(), childId(), tomorrow, parentId(), time.now())))
+                .isTrue());
+
+        Boolean second = tx.execute(status -> {
+            boolean inserted =
+                    coachRuns.insertRunning(Runs.running(familyId(), childId(), tomorrow, parentId(), time.now()));
+            status.setRollbackOnly();
+            return inserted;
+        });
+
+        assertThat(second).isFalse();
+        mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(family.parentUser))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(planBody(childId(), tomorrow, false)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RUN_IN_PROGRESS"));
+        assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ? and status = 'RUNNING'")
+                        .param(familyId())
+                        .query(Integer.class)
+                        .single())
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("BE 영상 표에 없는 AI 클립 영상도 제안 · 미션에 그대로 저장되고 유튜브 주소로 나간다")
+    void 영상_표에_없는_AI_클립_영상도_그대로_저장되고_유튜브_주소로_나간다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        // 영상 표(exercise_videos)에 없는 id — 다음 AI 릴리스에서 새로 생길 영상처럼.
+        String videoId = "notInTable1";
+        UUID runId = UUID.randomUUID();
+        CoachProposalItem item = new CoachProposalItem(
+                0,
+                "월요일 늘이기",
+                "TIMER_MINUTES",
+                15,
+                "또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].",
+                "준비운동 넙다리 안쪽 늘리기 (나비자세)",
+                time.today(),
+                time.today(),
+                List.of(new ProposalParticipant(childId(), ProfileRole.CHILD, "주행자")),
+                new ProposalVideo(videoId, 144),
+                List.of(),
+                "아이 문구",
+                "부모 문구");
+        tx.executeWithoutResult(status -> coachRuns.save(CoachRun.awaitingApproval(
+                runId, familyId(), List.of(item), time.thisWeekStart(), List.of(), null, 1, 15, time.now())));
+
+        mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.proposals[0].video.videoId").value(videoId))
+                .andExpect(jsonPath("$.proposals[0].video.title", nullValue()))
+                .andExpect(jsonPath("$.proposals[0].video.url").value("https://www.youtube.com/watch?v=" + videoId));
+        mockMvc.perform(post("/api/v1/coach/runs/" + runId + "/approve").header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdMissions", hasSize(1)));
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/missions").header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + runId + "')].video.videoId")
+                        .value(videoId))
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + runId + "')].video.url")
+                        .value("https://www.youtube.com/watch?v=" + videoId));
     }
 
     private static String extract(String regex, MvcResult result) throws Exception {

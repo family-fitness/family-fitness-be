@@ -15,16 +15,24 @@ class StubAiGatewayTest {
     private final AiProfile child = new AiProfile("p_child", 11, "세", "M", 140.0, 35.0, Map.of("012", 8.0));
     private final AiProfile parent = new AiProfile("p_parent", 41, "세", "F", null, null, Map.of());
     private final AiProfile cheer = new AiProfile("p_cheer", 43, "세", "M", null, null, Map.of());
+    private final AiProfile toddler = new AiProfile("p_toddler", 40, "개월", "F", null, null, Map.of());
 
     private CoachRunRequest request(Participant... participants) {
-        return new CoachRunRequest(List.of(participants), "2026-09-07", 1, 3, 15);
+        return request(null, participants);
+    }
+
+    private CoachRunRequest request(String focusFactor, Participant... participants) {
+        return new CoachRunRequest(
+                List.of(participants),
+                "2026-09-09",
+                1,
+                new CoachRunRequest.Constraints(1, 20, null, true, true, true, focusFactor, false));
     }
 
     @Test
-    @DisplayName("startCoachRun 은 cr_ 식별자를 접수하고 getCoachRun 은 주행자마다 유연성 미션을 낸다")
-    void startCoachRun_은_cr_식별자를_접수하고_getCoachRun_은_주행자마다_유연성_미션을_낸다() {
-        CoachRunAccepted accepted = gateway.startCoachRun(
-                request(new Participant(child, "주행자"), new Participant(parent, "동반자"), new Participant(cheer, "응원")));
+    @DisplayName("startCoachRun 은 cr_ 식별자를 접수하고 getCoachRun 은 주행자에게 그날 하루짜리 미션 하나를 낸다")
+    void startCoachRun_은_cr_식별자를_접수하고_getCoachRun_은_주행자에게_하루짜리_미션을_낸다() {
+        CoachRunAccepted accepted = gateway.startCoachRun(request(new Participant(child, "주행자")));
         assertThat(accepted.runId()).startsWith("cr_");
         assertThat(accepted.status()).isEqualTo("running");
 
@@ -39,34 +47,62 @@ class StubAiGatewayTest {
                 .isTrue();
         assertThat(result.proposal().missions()).hasSize(1);
         CoachRunResult.Mission mission = result.proposal().missions().getFirst();
-        assertThat(mission.title()).isEqualTo("같이 늘이는 한 주");
-        assertThat(mission.startDate()).isEqualTo("2026-09-07");
-        assertThat(mission.endDate()).isEqualTo("2026-09-13");
-        assertThat(mission.participants().stream()
-                        .map(CoachRunResult.ParticipantRef::ref)
-                        .toList())
-                .containsExactly("p_child", "p_parent");
+        assertThat(mission.kind()).isEqualTo("일간");
+        assertThat(mission.title()).isEqualTo("유연성 키우기 20분");
+        assertThat(mission.startDate()).isEqualTo("2026-09-09");
+        assertThat(mission.endDate()).isEqualTo("2026-09-09");
+        assertThat(mission.participants()).containsExactly(new CoachRunResult.ParticipantRef("p_child", "주행자"));
         assertThat(mission.sessions().stream()
                         .map(CoachRunResult.Session::dayOffset)
                         .toList())
-                .containsExactly(0, 2, 4);
+                .containsOnly(0);
         assertThat(mission.sessions().stream()
-                        .map(CoachRunResult.Session::durationMin)
+                        .map(CoachRunResult.Session::phase)
                         .toList())
-                .containsOnly(15);
-        assertThat(mission.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96));
+                .containsExactly("준비운동", "본운동", "정리운동");
+        assertThat(mission.sessions().stream()
+                        .map(CoachRunResult.Session::order)
+                        .toList())
+                .containsExactly(1, 2, 3);
+        assertThat(mission.sessions().stream()
+                        .map(CoachRunResult.Session::durationSec)
+                        .toList())
+                .containsOnly(60);
+        assertThat(mission.durationMin()).isEqualTo(20);
+        assertThat(mission.videoSec()).isEqualTo(180);
+        assertThat(mission.reason()).endsWith("[1].");
+        assertThat(mission.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
         assertThat(mission.sessions().get(1).video()).isNull();
-        assertThat(mission.sessions().getLast().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96));
+        assertThat(mission.sessions().getLast().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
         assertThat(mission.sessions().getFirst().evidence()).containsExactly(1, 2);
-        assertThat(mission.copyParent()).isNotBlank();
+        assertThat(mission.copyParent()).isEqualTo("유연성은 매일 조금씩 늘려 가는 영역입니다. 오늘 20분이면 충분합니다.");
         assertThat(result.proposal().citations().stream().map(Citation::chunkId).toList())
                 .containsExactly("prescription:유소년-11-F-0142", "video:IdpXx2gm90o");
+        assertThat(result.proposal().notices()).isEmpty();
     }
 
     @Test
-    @DisplayName("주행자도 동반자도 없으면 refused")
-    void 주행자도_동반자도_없으면_refused() {
-        CoachRunAccepted accepted = gateway.startCoachRun(request(new Participant(cheer, "응원")));
+    @DisplayName("고른 힘은 미션 요인이 되고, 시드 영상 연령(7~12세) 밖의 주행자에게는 영상을 붙이지 않는다")
+    void 고른_힘은_미션_요인이_되고_연령_밖이면_영상을_붙이지_않는다() {
+        CoachRunResult result =
+                gateway.getCoachRun(gateway.startCoachRun(request("민첩성", new Participant(toddler, "주행자")))
+                        .runId());
+
+        CoachRunResult.Mission mission = result.proposal().missions().getFirst();
+        assertThat(mission.title()).isEqualTo("민첩성 키우기 20분");
+        assertThat(mission.sessions().stream()
+                        .map(CoachRunResult.Session::fitnessFactor)
+                        .toList())
+                .containsOnly("민첩성");
+        assertThat(mission.sessions().stream().map(CoachRunResult.Session::video))
+                .containsOnlyNulls();
+    }
+
+    @Test
+    @DisplayName("주행자가 없으면 refused")
+    void 주행자가_없으면_refused() {
+        CoachRunAccepted accepted =
+                gateway.startCoachRun(request(new Participant(parent, "동반자"), new Participant(cheer, "응원")));
 
         CoachRunResult result = gateway.getCoachRun(accepted.runId());
 

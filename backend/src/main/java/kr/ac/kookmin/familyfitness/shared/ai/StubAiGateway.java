@@ -12,17 +12,24 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * **로컬·데모 전용** {@link AiGateway}. AI 서비스(`family-fitness-ai`)에 `/v1` 경로가 아직 없어(AI-4 이후) 결정적인 가짜 응답을 돌려준다.
- * 운영에서는 `app.ai.mode=http` 로 {@link HttpAiGateway} 를 쓴다. 여기 값은 계약 §5 의 모양만 맞춘 예시이며 어떤 근거도 없다.
+ * **로컬·데모 전용** {@link AiGateway}. AI 서비스(`family-fitness-ai`)를 띄우지 않고 결정적인 가짜 응답을 돌려준다.
+ * 운영에서는 `app.ai.mode=http` 로 {@link HttpAiGateway} 를 쓴다. 여기 값은 AI 인터페이스-명세 4장의 모양만 맞춘 예시이며 어떤 근거도 없다.
  */
 @Component
 @ConditionalOnProperty(name = "app.ai.mode", havingValue = "stub", matchIfMissing = true)
 public class StubAiGateway implements AiGateway {
     public static final String ROLE_DRIVER = "주행자";
-    public static final String ROLE_COMPANION = "동반자";
     public static final String SAMPLE_VIDEO = "IdpXx2gm90o";
     public static final int SAMPLE_VIDEO_START = 96;
-    public static final List<Integer> SESSION_OFFSETS = List.of(0, 2, 4);
+    public static final int SAMPLE_CLIP_SEC = 60;
+
+    /** 시드 영상(IdpXx2gm90o)의 라벨 연령(db/seed/R__sample_exercise_videos.sql). 이 밖의 나이에는 영상을 붙이지 않는다. */
+    public static final int SAMPLE_VIDEO_AGE_FROM = 7;
+
+    public static final int SAMPLE_VIDEO_AGE_TO = 12;
+    public static final String DAILY = "일간";
+    public static final String DEFAULT_FACTOR = "유연성";
+    public static final List<String> PHASES = List.of("준비운동", "본운동", "정리운동");
     public static final List<String> EXERCISES = List.of("다리 벌려 앞으로 상체 숙이기", "앉아서 윗몸 앞으로 굽히기", "무릎 펴고 발끝 잡기");
     public static final List<String> MEDICAL_WORDS = List.of("통증", "부상", "약물", "질환", "아파", "다쳤");
 
@@ -109,60 +116,70 @@ public class StubAiGateway implements AiGateway {
         return new CoachRunAccepted(runId, "running", 1500);
     }
 
+    /**
+     * 실제 AI 처럼 주행자마다 일간 미션 하나(start = end = period.start_date)를 낸다. 참여자는 그 주행자뿐이다.
+     * 칸은 준비 · 본 · 정리 셋(60초 클립), 목표 분은 minutes_per_session. 요인은 focus_factor, 없으면 유연성.
+     * 영상은 주행자 나이가 시드 영상 연령(7~12세) 안일 때만 붙인다.
+     */
     @Override
     public CoachRunResult getCoachRun(String runId) {
         CoachRunRequest request = runs.get(runId);
         if (request == null) throw new AiRunNotFoundException(runId);
+        CoachRunRequest.Constraints constraints = request.constraints();
         List<CoachRunRequest.Participant> drivers = request.profiles().stream()
                 .filter(it -> it.role().equals(ROLE_DRIVER))
                 .toList();
-        List<CoachRunRequest.Participant> companions = request.profiles().stream()
-                .filter(it -> it.role().equals(ROLE_COMPANION))
-                .toList();
-        List<CoachRunRequest.Participant> subjects = drivers.isEmpty() ? companions : drivers;
         long measured = request.profiles().stream()
                 .filter(it -> !it.profile().measurements().isEmpty())
                 .count();
+        String factor = constraints.focusFactor() == null ? DEFAULT_FACTOR : constraints.focusFactor();
+        int minutes = constraints.minutesPerSession();
         List<CoachRunResult.Step> steps = List.of(
                 new CoachRunResult.Step(
-                        1, "assess", "ok", "가족 " + request.profiles().size() + "명 중 측정값 있는 구성원 " + measured + "명"),
+                        1, "assess", "ok", "대상 " + request.profiles().size() + "명 중 측정값 있는 사람 " + measured + "명"),
                 new CoachRunResult.Step(2, "retrieve", "ok", "또래 운동처방 1건·영상 1편 검색"),
                 new CoachRunResult.Step(
-                        3, "compose", "ok", "주행자 " + drivers.size() + "명에게 유연성 미션 " + subjects.size() + "개 편성"),
+                        3,
+                        "compose",
+                        "ok",
+                        "주행자 " + drivers.size() + "명에게 " + factor + " 미션 " + drivers.size() + "개 편성"),
                 new CoachRunResult.Step(4, "verify", "ok", "연령 필터·근거 인용 확인"));
-        if (subjects.isEmpty()) {
+        if (drivers.isEmpty()) {
             return new CoachRunResult(runId, "refused", steps, null, true, "no_relevant_source");
         }
-        LocalDate start = LocalDate.parse(request.startDate());
-        List<CoachRunResult.Mission> missions = subjects.stream()
-                .map(subject -> {
-                    List<CoachRunResult.ParticipantRef> participants = new ArrayList<>();
-                    participants.add(
-                            new CoachRunResult.ParticipantRef(subject.profile().profileRef(), subject.role()));
-                    companions.stream()
-                            .filter(it -> it != subject)
-                            .forEach(it -> participants.add(new CoachRunResult.ParticipantRef(
-                                    it.profile().profileRef(), it.role())));
+        String day = LocalDate.parse(request.startDate()).toString();
+        List<CoachRunResult.Mission> missions = drivers.stream()
+                .map(driver -> {
+                    boolean videoFits = sampleVideoFits(driver.profile());
                     List<CoachRunResult.Session> sessions = new ArrayList<>();
-                    for (int i = 0; i < SESSION_OFFSETS.size(); i++) {
-                        boolean withVideo = i == 0 || i == SESSION_OFFSETS.size() - 1;
+                    for (int i = 0; i < PHASES.size(); i++) {
+                        boolean withVideo = videoFits && (i == 0 || i == PHASES.size() - 1);
                         sessions.add(new CoachRunResult.Session(
-                                SESSION_OFFSETS.get(i),
+                                0,
+                                PHASES.get(i),
+                                i + 1,
                                 EXERCISES.get(i),
-                                "유연성",
-                                request.minutesPerSession(),
-                                withVideo ? new CoachRunResult.Video(SAMPLE_VIDEO, SAMPLE_VIDEO_START) : null,
+                                factor,
+                                SAMPLE_CLIP_SEC,
+                                withVideo
+                                        ? new CoachRunResult.Video(
+                                                SAMPLE_VIDEO, SAMPLE_VIDEO_START, SAMPLE_VIDEO_START + SAMPLE_CLIP_SEC)
+                                        : null,
                                 List.of(1, 2)));
                     }
                     return new CoachRunResult.Mission(
-                            "같이 늘이는 한 주",
-                            start.toString(),
-                            start.plusDays(6).toString(),
-                            List.copyOf(participants),
+                            DAILY,
+                            factor + " 키우기 " + minutes + "분",
+                            day,
+                            day,
+                            List.of(new CoachRunResult.ParticipantRef(
+                                    driver.profile().profileRef(), driver.role())),
+                            minutes,
+                            PHASES.size() * SAMPLE_CLIP_SEC,
                             List.copyOf(sessions),
-                            "이번 주엔 다리를 쭉 펴고 앞으로 천천히 숙여 보자!",
-                            "유연성은 매일 조금씩 늘려 가는 영역입니다. 한 주 " + SESSION_OFFSETS.size() + "회, 회당 "
-                                    + request.minutesPerSession() + "분이면 충분합니다.");
+                            "오늘은 다리를 쭉 펴고 앞으로 천천히 숙여 보자!",
+                            factor + "은 매일 조금씩 늘려 가는 영역입니다. 오늘 " + minutes + "분이면 충분합니다.",
+                            "또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
                 })
                 .toList();
         return new CoachRunResult(
@@ -173,9 +190,15 @@ public class StubAiGateway implements AiGateway {
                         missions,
                         List.of(
                                 new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null),
-                                videoCitation(2))),
+                                videoCitation(2)),
+                        List.of()),
                 false,
                 null);
+    }
+
+    private static boolean sampleVideoFits(AiProfile profile) {
+        int years = profile.ageUnit().equals("개월") ? profile.age() / 12 : profile.age();
+        return years >= SAMPLE_VIDEO_AGE_FROM && years <= SAMPLE_VIDEO_AGE_TO;
     }
 
     @Override
