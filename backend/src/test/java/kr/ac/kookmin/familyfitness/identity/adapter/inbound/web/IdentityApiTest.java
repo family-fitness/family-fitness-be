@@ -1,12 +1,14 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -14,8 +16,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
+import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
+import kr.ac.kookmin.familyfitness.identity.application.port.CheerRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.AlreadyThankedException;
+import kr.ac.kookmin.familyfitness.identity.domain.Cheer;
 import kr.ac.kookmin.familyfitness.support.TestAuth;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +35,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -51,6 +58,12 @@ class IdentityApiTest {
 
     @Autowired
     private ProfileQuery profileQuery;
+
+    @Autowired
+    private CheerRepository cheerRepository;
+
+    @Autowired
+    private TransactionTemplate tx;
 
     private final LocalDate today = LocalDate.now();
 
@@ -431,7 +444,10 @@ class IdentityApiTest {
         assertThat(created.get("fromProfileId").asString()).isEqualTo(ownerId);
         assertThat(created.get("toProfileId").asString()).isEqualTo(childId);
         assertThat(created.get("message").asString()).isEqualTo("힘내!");
+        // 옛 emoji 칸은 stickerId 로 읽고, 응답에는 두 칸에 같은 값을 싣는다
+        assertThat(created.get("stickerId").asString()).isEqualTo("💪");
         assertThat(created.get("emoji").asString()).isEqualTo("💪");
+        assertThat(created.get("kind").asString()).isEqualTo("PRAISE");
         assertThat(created.get("missionId").isNull()).isTrue();
         assertThat(created.get("createdAt").asString()).isNotBlank();
 
@@ -456,6 +472,7 @@ class IdentityApiTest {
                         .andExpect(status().isCreated()));
         assertThat(asChild.get("fromProfileId").asString()).isEqualTo(childId);
         assertThat(asChild.get("toProfileId").asString()).isEqualTo(ownerId);
+        assertThat(asChild.get("kind").asString()).isEqualTo("DONE");
         // 계정 없는 부모 자리(초대 전 아빠) 이름으로는 못 보낸다.
         cheer(parent, familyId, Map.of("fromProfileId", dadId, "toProfileId", childId, "message", "?"))
                 .andExpect(status().isForbidden())
@@ -476,6 +493,229 @@ class IdentityApiTest {
         cheer(parent, familyId, Map.of("fromProfileId", ownerId, "toProfileId", childId, "emoji", "👍"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("TOO_MANY"));
+    }
+
+    @Test
+    @DisplayName("응원 종류 · 고마워요 한 번 · 미션 검사 · 받은 응원 목록")
+    void 응원_종류_고마워요_한_번_미션_검사_받은_응원_목록() throws Exception {
+        Session parent = devLogin();
+        JsonNode family = createFamily(parent);
+        String familyId = family.get("familyId").asString();
+        String ownerId = family.get("ownerProfile").get("profileId").asString();
+        String childId = read(addMember(
+                        parent, familyId, "첫째", today.minusYears(10), "CHILD", new boolean[] {true, true}))
+                .get("profileId")
+                .asString();
+        String missionId = createMission(parent, familyId, childId);
+
+        // 지금 FE 모양(kind 없음): 아이 → 부모, 스티커 없음 → DONE
+        String doneId = read(cheer(
+                                parent,
+                                familyId,
+                                Map.of(
+                                        "fromProfileId", childId,
+                                        "toProfileId", ownerId,
+                                        "message", "운동 다 했어요!",
+                                        "missionId", missionId))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.kind").value("DONE")))
+                .get("cheerId")
+                .asString();
+        // stickerId 와 옛 emoji 가 같이 오면 stickerId
+        String praiseId = read(cheer(
+                                parent,
+                                familyId,
+                                Map.of(
+                                        "fromProfileId",
+                                        ownerId,
+                                        "toProfileId",
+                                        childId,
+                                        "kind",
+                                        "PRAISE",
+                                        "stickerId",
+                                        "star",
+                                        "emoji",
+                                        "flag",
+                                        "missionId",
+                                        missionId))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.stickerId").value("star"))
+                        .andExpect(jsonPath("$.emoji").value("star")))
+                .get("cheerId")
+                .asString();
+
+        cheer(parent, familyId, thanks(childId, ownerId, "PRAISE", null))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARENT"));
+        cheer(parent, familyId, Map.of("fromProfileId", ownerId, "toProfileId", childId, "message", "?", "kind", "HUG"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        cheer(parent, familyId, thanks(childId, ownerId, "THANKS", null))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        cheer(parent, familyId, thanks(childId, ownerId, "THANKS", doneId))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_REPLY_TARGET"));
+        cheer(
+                        parent,
+                        familyId,
+                        thanks(childId, ownerId, "THANKS", UUID.randomUUID().toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CHEER_NOT_FOUND"));
+        String thanksId = read(cheer(parent, familyId, thanks(childId, ownerId, "THANKS", praiseId))
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.kind").value("THANKS"))
+                        .andExpect(jsonPath("$.replyToCheerId").value(praiseId)))
+                .get("cheerId")
+                .asString();
+        cheer(parent, familyId, thanks(childId, ownerId, "THANKS", praiseId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_THANKED"));
+
+        // missionId 는 이 가족의 미션이어야 한다 — 다른 가족 미션 · 없는 미션 모두 404
+        Session other = devLogin();
+        String otherFamily = createFamily(other).get("familyId").asString();
+        String otherChild = read(addMember(
+                        other, otherFamily, "남의 집 아이", today.minusYears(9), "CHILD", new boolean[] {true, true}))
+                .get("profileId")
+                .asString();
+        for (String bad : List.of(
+                createMission(other, otherFamily, otherChild), UUID.randomUUID().toString())) {
+            cheer(
+                            parent,
+                            familyId,
+                            Map.of(
+                                    "fromProfileId",
+                                    ownerId,
+                                    "toProfileId",
+                                    childId,
+                                    "stickerId",
+                                    "star",
+                                    "missionId",
+                                    bad))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("MISSION_NOT_FOUND"));
+        }
+
+        JsonNode all =
+                read(cheers(parent, familyId, "").andExpect(status().isOk())).get("cheers");
+        assertThat(cheerIds(all)).containsExactly(thanksId, praiseId, doneId);
+        JsonNode latest = all.get(0);
+        assertThat(latest.get("fromProfileId").asString()).isEqualTo(childId);
+        assertThat(latest.get("fromName").asString()).isEqualTo("첫째");
+        assertThat(latest.get("toProfileId").asString()).isEqualTo(ownerId);
+        assertThat(latest.get("kind").asString()).isEqualTo("THANKS");
+        assertThat(latest.get("stickerId").asString()).isEqualTo("heart");
+        assertThat(latest.get("replyToCheerId").asString()).isEqualTo(praiseId);
+        assertThat(latest.get("missionId").isNull()).isTrue();
+        assertThat(latest.get("createdAt").asString()).isNotBlank();
+        assertThat(cheerIds(read(cheers(parent, familyId, "?toProfileId=" + childId))
+                        .get("cheers")))
+                .containsExactly(praiseId);
+        assertThat(cheerIds(read(cheers(parent, familyId, "?fromProfileId=" + childId))
+                        .get("cheers")))
+                .containsExactly(thanksId, doneId);
+        assertThat(cheerIds(read(cheers(parent, familyId, "?missionId=" + missionId))
+                        .get("cheers")))
+                .containsExactly(praiseId, doneId);
+        assertThat(cheerIds(read(cheers(parent, familyId, "?size=1")).get("cheers")))
+                .containsExactly(thanksId);
+        for (String badQuery : List.of("?size=0", "?size=101", "?toProfileId=abc")) {
+            cheers(parent, familyId, badQuery)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
+        cheers(other, familyId, "")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_SAME_FAMILY"));
+    }
+
+    @Test
+    @DisplayName("사전 검사를 함께 지나친 두 번째 고마워요는 유니크 인덱스가 막고 ALREADY_THANKED 로 바뀐다")
+    void 사전_검사를_함께_지나친_두_번째_고마워요는_유니크_인덱스가_막는다() throws Exception {
+        Session parent = devLogin();
+        JsonNode family = createFamily(parent);
+        String familyId = family.get("familyId").asString();
+        UUID ownerId =
+                UUID.fromString(family.get("ownerProfile").get("profileId").asString());
+        UUID childId = UUID.fromString(
+                read(addMember(parent, familyId, "첫째", today.minusYears(10), "CHILD", new boolean[] {true, true}))
+                        .get("profileId")
+                        .asString());
+        UUID praiseId = UUID.fromString(read(cheer(
+                        parent,
+                        familyId,
+                        Map.of(
+                                "fromProfileId", ownerId.toString(),
+                                "toProfileId", childId.toString(),
+                                "stickerId", "star")))
+                .get("cheerId")
+                .asString());
+        // 서비스의 existsReplyTo 검사를 건너뛰고 저장소에 바로 두 번 넣는다(두 요청이 검사를 함께 지나친 경우)
+        tx.executeWithoutResult(status -> cheerRepository.save(thanksFor(familyId, childId, ownerId, praiseId)));
+
+        assertThatThrownBy(() -> tx.executeWithoutResult(
+                        status -> cheerRepository.save(thanksFor(familyId, childId, ownerId, praiseId))))
+                .isInstanceOf(AlreadyThankedException.class);
+    }
+
+    private Cheer thanksFor(String familyId, UUID from, UUID to, UUID replyToCheerId) {
+        return new Cheer(
+                UUID.randomUUID(),
+                UUID.fromString(familyId),
+                from,
+                to,
+                CheerKind.THANKS,
+                null,
+                "heart",
+                null,
+                replyToCheerId,
+                Instant.now());
+    }
+
+    /** 고마워요 요청 본문. replyToCheerId 는 있을 때만 싣는다. */
+    private static Map<String, Object> thanks(
+            String fromProfileId, String toProfileId, String kind, @Nullable String replyToCheerId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("fromProfileId", fromProfileId);
+        body.put("toProfileId", toProfileId);
+        body.put("message", "고마워요 · 사랑해");
+        body.put("stickerId", "heart");
+        body.put("kind", kind);
+        if (replyToCheerId != null) body.put("replyToCheerId", replyToCheerId);
+        return body;
+    }
+
+    /** 내일 하루짜리 걸음수 미션을 만든다. */
+    private String createMission(Session session, String familyId, String participantId) throws Exception {
+        String day = today.plusDays(1).toString();
+        Map<String, Object> body = Map.of(
+                "title",
+                "걷기",
+                "startDate",
+                day,
+                "endDate",
+                day,
+                "targetMetric",
+                "STEPS",
+                "targetValue",
+                3000,
+                "participantProfileIds",
+                List.of(participantId));
+        return read(mvc.perform(json(auth(post("/api/v1/families/" + familyId + "/missions"), session), body))
+                        .andExpect(status().isCreated()))
+                .get("missionId")
+                .asString();
+    }
+
+    private ResultActions cheers(Session session, String familyId, String query) throws Exception {
+        return mvc.perform(auth(get("/api/v1/families/" + familyId + "/cheers" + query), session));
+    }
+
+    private static List<String> cheerIds(JsonNode cheers) {
+        return StreamSupport.stream(cheers.spliterator(), false)
+                .map(it -> it.get("cheerId").asString())
+                .toList();
     }
 
     private ResultActions cheer(Session session, String familyId, Map<String, Object> body) throws Exception {

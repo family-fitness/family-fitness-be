@@ -56,29 +56,56 @@ class StubAiGatewayTest {
                         .map(CoachRunResult.Session::dayOffset)
                         .toList())
                 .containsOnly(0);
+        // AI 가짓수 규칙: 20분이면 준비 2 · 본 4 · 정리 1. 칸마다 분은 싣지 않는다(AI 처럼) — duration_sec 는 클립 길이다
         assertThat(mission.sessions().stream()
                         .map(CoachRunResult.Session::phase)
                         .toList())
-                .containsExactly("준비운동", "본운동", "정리운동");
+                .containsExactly("준비운동", "준비운동", "본운동", "본운동", "본운동", "본운동", "정리운동");
         assertThat(mission.sessions().stream()
                         .map(CoachRunResult.Session::order)
                         .toList())
-                .containsExactly(1, 2, 3);
+                .containsExactly(1, 2, 3, 4, 5, 6, 7);
         assertThat(mission.sessions().stream()
                         .map(CoachRunResult.Session::durationSec)
                         .toList())
-                .containsOnly(60);
+                .containsExactly(38, 38, 34, 52, 34, 74, 46);
         assertThat(mission.durationMin()).isEqualTo(20);
-        assertThat(mission.videoSec()).isEqualTo(180);
+        assertThat(mission.videoSec()).isEqualTo(316);
         assertThat(mission.reason()).endsWith("[1].");
-        assertThat(mission.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
-        assertThat(mission.sessions().get(1).video()).isNull();
-        assertThat(mission.sessions().getLast().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
+        // 영상 구간은 V132 클립 표의 실제 경계다
+        assertThat(mission.sessions().getFirst().exerciseName()).isEqualTo("넙다리 안쪽 늘리기 (나비자세)");
+        assertThat(mission.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182));
+        assertThat(mission.sessions().getLast().video()).isEqualTo(new CoachRunResult.Video("Eg3GpTv7z8s", 1376, 1422));
         assertThat(mission.sessions().getFirst().evidence()).containsExactly(1, 2);
         assertThat(mission.copyParent()).isEqualTo("유연성은 매일 조금씩 늘려 가는 영역입니다. 오늘 20분이면 충분합니다.");
         assertThat(result.proposal().citations().stream().map(Citation::chunkId).toList())
-                .containsExactly("prescription:유소년-11-F-0142", "video:IdpXx2gm90o");
+                .containsExactly("prescription:유소년-11-F-0142", "video:Eg3GpTv7z8s");
         assertThat(result.proposal().notices()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("칸 가짓수는 AI 규칙을 따른다 — 10분 1·3·1, 30분 2·5·2, 40분 3·6·3")
+    void 칸_가짓수는_AI_규칙을_따른다() {
+        for (int[] expected : new int[][] {{10, 1, 3, 1}, {30, 2, 5, 2}, {40, 3, 6, 3}}) {
+            CoachRunRequest request = new CoachRunRequest(
+                    List.of(new Participant(child, "주행자")),
+                    "2026-09-09",
+                    1,
+                    new CoachRunRequest.Constraints(1, expected[0], null, true, true, true, null, false));
+            List<String> phases = gateway
+                    .getCoachRun(gateway.startCoachRun(request).runId())
+                    .proposal()
+                    .missions()
+                    .getFirst()
+                    .sessions()
+                    .stream()
+                    .map(CoachRunResult.Session::phase)
+                    .toList();
+
+            assertThat(phases.stream().filter("준비운동"::equals)).hasSize(expected[1]);
+            assertThat(phases.stream().filter("본운동"::equals)).hasSize(expected[2]);
+            assertThat(phases.stream().filter("정리운동"::equals)).hasSize(expected[3]);
+        }
     }
 
     @Test
