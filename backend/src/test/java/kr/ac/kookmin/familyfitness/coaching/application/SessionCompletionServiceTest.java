@@ -62,7 +62,14 @@ class SessionCompletionServiceTest {
     private final ApplicationEventPublisher publisher = events::add;
     private final SessionCompletionService service = service(Fixed.NOW);
     private final MissionService missionService = new MissionService(
-            missions, completions, new InMemoryExerciseVideoRepository(), identity, identity, policy, Fixed.time());
+            missions,
+            completions,
+            new InMemoryExerciseVideoRepository(),
+            identity,
+            identity,
+            policy,
+            event -> {},
+            Fixed.time());
     private final MissionActivityService activityService =
             new MissionActivityService(missions, identity, activity, activity, policy, Fixed.time());
 

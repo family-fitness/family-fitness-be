@@ -187,14 +187,14 @@ class VideoServiceTest {
     @Test
     @DisplayName("missionId 가 있으면 VIDEO_DONE 미션의 참여자 진행도를 갱신한다")
     void missionId_가_있으면_VIDEO_DONE_미션의_참여자_진행도를_갱신한다() {
-        MissionService missionService =
-                new MissionService(missions, completions, videos, identity, identity, policy, Fixed.time());
+        MissionService missionService = new MissionService(
+                missions, completions, videos, identity, identity, policy, event -> {}, Fixed.time());
         MissionCreatedView mission = missionService.create(
                 family.parentUser,
                 family.familyId,
                 new CreateMissionCommand(
                         "영상 보기",
-                        Fixed.WEEK_START,
+                        Fixed.TODAY,
                         Fixed.WEEK_START.plusDays(6),
                         TargetMetric.VIDEO_DONE,
                         1,

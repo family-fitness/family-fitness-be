@@ -274,6 +274,33 @@ public class CoachRun {
         if (at != null) updatedAt = at;
     }
 
+    /** 제안 항목이 미션이 될 때의 시작일. 항목에 기간이 없으면(옛 주간 실행) 실행의 주 월요일. */
+    public LocalDate startsOnOf(CoachProposalItem item) {
+        LocalDate startsOn = item.startsOn();
+        return startsOn == null ? weekStart : startsOn;
+    }
+
+    /** 제안 항목이 미션이 될 때의 끝날. 항목에 기간이 없으면(옛 주간 실행) 실행의 주 일요일. */
+    public LocalDate endsOnOf(CoachProposalItem item) {
+        LocalDate endsOn = item.endsOn();
+        return endsOn == null ? getWeekEnd() : endsOn;
+    }
+
+    /** 이 항목의 기간이 이미 지났다(끝날 &lt; 오늘 KST) — 승인해도 미션으로 만들지 않는다(결정 40 · 46). */
+    public boolean isPastOn(CoachProposalItem item, LocalDate today) {
+        return endsOnOf(item).isBefore(today);
+    }
+
+    /**
+     * 승인해도 만들 미션이 하나도 남지 않을 만큼 기간이 지났다 — 참여자 있는 항목이 하나 이상이고 그 전부가 지났다.
+     * 참여자 있는 항목이 없으면(만들 것이 원래 없다) 지난 것으로 보지 않는다. 승인은 409 PROPOSAL_EXPIRED, 조회의 canApprove 는 false.
+     */
+    public boolean isExpiredOn(LocalDate today) {
+        List<CoachProposalItem> creatable =
+                proposals.stream().filter(it -> !it.participants().isEmpty()).toList();
+        return !creatable.isEmpty() && creatable.stream().allMatch(it -> isPastOn(it, today));
+    }
+
     /** 승인된 실행의 제안만 미션 생성에 쓸 수 있다. */
     public List<CoachProposalItem> proposalsForMissionCreation() {
         if (status != CoachRunStatus.APPROVED) throw new CoachApprovalRequiredException();

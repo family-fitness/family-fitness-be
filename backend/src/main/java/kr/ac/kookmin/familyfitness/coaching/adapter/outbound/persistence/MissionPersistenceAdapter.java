@@ -87,6 +87,22 @@ public class MissionPersistenceAdapter implements MissionRepository {
     }
 
     @Override
+    public @Nullable Mission findByIdForUpdate(UUID id) {
+        MissionEntity entity = missions.findForUpdate(id).orElse(null);
+        return entity == null
+                ? null
+                : toDomain(entity, participants.findByIdMissionId(id), sessions.findByIdMissionId(id));
+    }
+
+    /** 참여자 → 칸 → 미션 차례로 지운다(자식 행이 먼저). 칸 끝 행은 건드리지 않는다. */
+    @Override
+    public void delete(UUID id) {
+        participants.deleteByMission(id);
+        sessions.deleteByMission(id);
+        missions.deleteOne(id);
+    }
+
+    @Override
     public List<Mission> findByFamily(UUID familyId) {
         return assemble(missions.findByFamilyId(familyId));
     }

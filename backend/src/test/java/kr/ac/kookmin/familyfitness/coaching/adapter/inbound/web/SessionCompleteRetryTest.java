@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.CompleteSessionCommand;
 import kr.ac.kookmin.familyfitness.coaching.application.MissionActivityService;
+import kr.ac.kookmin.familyfitness.coaching.application.MissionDeletionService;
+import kr.ac.kookmin.familyfitness.coaching.application.MissionFeedbackService;
 import kr.ac.kookmin.familyfitness.coaching.application.MissionService;
 import kr.ac.kookmin.familyfitness.coaching.application.SessionCompletedView;
 import kr.ac.kookmin.familyfitness.coaching.application.SessionCompletionService;
@@ -33,8 +35,12 @@ class SessionCompleteRetryTest {
             new CompleteSessionRequest(UUID.randomUUID(), 120, STARTED, STARTED.plusSeconds(120));
 
     private final SessionCompletionService sessions = mock(SessionCompletionService.class);
-    private final MissionController controller =
-            new MissionController(mock(MissionService.class), mock(MissionActivityService.class), sessions);
+    private final MissionController controller = new MissionController(
+            mock(MissionService.class),
+            mock(MissionDeletionService.class),
+            mock(MissionFeedbackService.class),
+            mock(MissionActivityService.class),
+            sessions);
     private final CurrentUser user = new CurrentUser(UUID.randomUUID());
     private final UUID missionId = UUID.randomUUID();
 
