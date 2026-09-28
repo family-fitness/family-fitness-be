@@ -30,6 +30,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -152,6 +153,15 @@ class ApiErrorWebTest {
     }
 
     @Test
+    @DisplayName("읽은 뒤 다른 요청이 행을 먼저 바꾸거나 지워 UPDATE 가 0행이면(낙관적 잠금 실패) 500 이 아니라 409 CONFLICT")
+    void 낙관적_잠금_실패는_409_CONFLICT() throws Exception {
+        mvc.perform(get(PROBE + "/stale").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.error.message", not(containsString("mission_participants"))));
+    }
+
+    @Test
     @DisplayName("NOT NULL 같은 다른 무결성 위반은 서버 버그라 500 으로 남긴다")
     void 다른_무결성_위반은_500() throws Exception {
         mvc.perform(post(PROBE + "/not-null").header(HttpHeaders.AUTHORIZATION, bearer()))
@@ -267,6 +277,14 @@ class ApiErrorWebTest {
                     "could not execute statement",
                     new org.hibernate.exception.ConstraintViolationException(
                             "could not execute statement", root, "uq_probe"));
+        }
+
+        /** 지우기와 겹친 쓰기의 flush 가 내는 모양(QA SA-09): 행을 읽은 뒤 지워져 UPDATE 가 0행. */
+        @GetMapping("/stale")
+        void stale() {
+            throw new ObjectOptimisticLockingFailureException(
+                    "Unexpected row count (expected row count 1 but was 0) [update mission_participants set ...]",
+                    new org.hibernate.StaleStateException("Unexpected row count"));
         }
 
         @GetMapping("/illegal")

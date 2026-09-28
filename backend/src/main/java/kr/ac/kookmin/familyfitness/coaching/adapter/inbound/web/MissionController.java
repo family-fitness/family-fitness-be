@@ -23,6 +23,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.SessionCompletedView;
 import kr.ac.kookmin.familyfitness.coaching.application.SessionCompletionService;
 import kr.ac.kookmin.familyfitness.coaching.application.StepsRecordedView;
 import kr.ac.kookmin.familyfitness.coaching.application.TimerRecordedView;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionStatus;
 import kr.ac.kookmin.familyfitness.shared.persistence.SqlErrors;
@@ -130,9 +131,10 @@ public class MissionController {
 
     /**
      * 운동 한 칸 끝(FE 요청서 0장 합의 — 설계안 이름 {@code /complete}, seq = position). 판정 · 기록 규칙은
-     * {@link SessionCompletionService}. 같은 칸 요청 둘이 동시에 오면 늦은 쪽이 칸 끝 표의 기본 키에 걸려 되돌려진다 —
-     * 먼저 온 쪽이 이미 커밋했으니 한 번 더 부르면 「이미 끝낸 칸」(200 · xpGained 0)으로 답한다(409 로 떨어뜨리지 않는다).
-     * 다시 부르는 것은 유니크 · 기본 키 위반(SQLSTATE 23505)일 때 한 번뿐이다. FK · NOT NULL · check 위반은 동시 요청이 아니라
+     * {@link SessionCompletionService}. 같은 미션의 칸 끝은 미션 행 잠금으로 차례로 돌아, 같은 칸 요청 둘이 동시에 오면 늦은 쪽은
+     * 먼저 온 쪽의 커밋을 기다렸다가 「이미 끝낸 칸」(200 · xpGained 0)으로 답한다. 그래도 유니크 · 기본 키 위반(SQLSTATE 23505)이
+     * 오면(예: 다른 미션의 칸 끝과 같은 날 활동 행을 동시에 처음 넣음) 먼저 온 쪽이 커밋했으니 한 번 더 부른다(409 로 떨어뜨리지 않는다).
+     * 다시 부르는 것은 한 번뿐이다. FK · NOT NULL · check 위반은 동시 요청이 아니라
      * 서버 버그라 그대로 던져 {@code ApiErrorHandler} 가 500 으로 남긴다. 두 번째도 유니크 위반이면 그대로 409 가 된다.
      */
     @PostMapping("/missions/{missionId}/sessions/{seq}/complete")
@@ -192,7 +194,7 @@ public class MissionController {
         LocalDate endDate = body.endDate();
         if (dates != null) {
             if (startDate != null || endDate != null) {
-                throw new IllegalArgumentException("dates 와 startDate · endDate 는 같이 보낼 수 없습니다");
+                throw new InvalidInputException("dates 와 startDate · endDate 는 같이 보낼 수 없습니다");
             }
             return dates.stream()
                     .distinct()
@@ -201,9 +203,9 @@ public class MissionController {
                     .toList();
         }
         if (startDate == null || endDate == null) {
-            throw new IllegalArgumentException("startDate · endDate 또는 dates 가 필요합니다");
+            throw new InvalidInputException("startDate · endDate 또는 dates 가 필요합니다");
         }
-        if (endDate.isBefore(startDate)) throw new IllegalArgumentException("endDate 는 startDate 이후여야 합니다");
+        if (endDate.isBefore(startDate)) throw new InvalidInputException("endDate 는 startDate 이후여야 합니다");
         return List.of(new Period(startDate, endDate));
     }
 

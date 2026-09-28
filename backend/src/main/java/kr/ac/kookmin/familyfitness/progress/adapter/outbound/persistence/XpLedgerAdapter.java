@@ -30,18 +30,28 @@ public class XpLedgerAdapter implements XpLedger {
     }
 
     /**
-     * 같은 키가 있는지 먼저 본다. 같은 트랜잭션에서 앞서 넣은 행도 보인다(조회 전에 JPA 가 미룬 insert 를 내보낸다).
-     * 동시에 들어온 두 요청이 함께 검사를 지나치면 늦은 쪽의 insert 가 유니크 제약(uq_progress_xp_events_source)에 걸린다.
+     * 같은 키(profile_id, kind, source_key)가 없을 때만 넣는다 — 판단은 DB 의 ON CONFLICT DO NOTHING 이 한다
+     * ({@link XpEventJpaRepository#insertIfAbsent}). 같은 트랜잭션에서 앞서 넣은 행과도, 동시에 온 다른 요청이 넣은 행과도 겹치면
+     * false 이고 예외는 없다. 그래서 두 보호자가 같은 운동에 동시에 스티커를 붙여도 늦은 쪽 응원이 되돌려지지 않는다(QA SA-12).
      */
     @Override
     @Transactional
     public boolean append(XpEvent event) {
-        if (jpa.existsByProfileIdAndKindAndSourceKey(
-                event.profileId(), event.kind().name(), event.sourceKey())) {
-            return false;
-        }
-        jpa.save(toEntity(event));
-        return true;
+        SessionDone.Phase phase = event.phase();
+        FitnessFactor factor = event.factor();
+        return jpa.insertIfAbsent(
+                        event.id(),
+                        event.profileId(),
+                        event.kind().name(),
+                        event.sourceKey(),
+                        event.amount(),
+                        event.fromProfileId(),
+                        event.missionId(),
+                        phase == null ? null : phase.name(),
+                        factor == null ? null : factor.getLabel(),
+                        event.occurredOn(),
+                        event.createdAt())
+                == 1;
     }
 
     @Override
@@ -62,23 +72,6 @@ public class XpLedgerAdapter implements XpLedger {
         return jpa.findByProfileIdAndKindInAndOccurredOnIn(profileId, EXERCISE_KINDS, dates).stream()
                 .map(XpLedgerAdapter::toDomain)
                 .toList();
-    }
-
-    private static XpEventEntity toEntity(XpEvent event) {
-        SessionDone.Phase phase = event.phase();
-        FitnessFactor factor = event.factor();
-        return new XpEventEntity(
-                event.id(),
-                event.profileId(),
-                event.kind().name(),
-                event.sourceKey(),
-                event.amount(),
-                event.fromProfileId(),
-                event.missionId(),
-                phase == null ? null : phase.name(),
-                factor == null ? null : factor.getLabel(),
-                event.occurredOn(),
-                event.createdAt());
     }
 
     private static XpEvent toDomain(XpEventEntity e) {

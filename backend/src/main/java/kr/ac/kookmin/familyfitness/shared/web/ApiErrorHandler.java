@@ -9,6 +9,7 @@ import kr.ac.kookmin.familyfitness.shared.persistence.SqlErrors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -102,6 +103,17 @@ public class ApiErrorHandler {
         if (!SqlErrors.isUniqueViolation(e)) return unexpected(e);
         log.warn("유니크 제약 위반을 409 로 돌림: {}", e.getMostSpecificCause().getMessage());
         return respond(HttpStatus.CONFLICT, "CONFLICT", "이미 같은 데이터가 있습니다");
+    }
+
+    /**
+     * 읽은 행을 다른 요청이 먼저 바꾸거나 지워 UPDATE · DELETE 가 0행이 된 경우(Hibernate StaleState → ObjectOptimisticLockingFailureException).
+     * 예: 미션을 읽은 뒤 보호자의 지우기가 먼저 커밋되고 이쪽이 참여자 행을 고치려 할 때(QA SA-09). 서버 버그가 아니라 요청이 겹친 것이라
+     * 409 CONFLICT 로 보내고 다시 보내게 한다. 예외 문구에는 SQL 이 들어가므로 싣지 않는다.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> optimisticLock(OptimisticLockingFailureException e) {
+        log.warn("다른 요청과 겹쳐 0행을 고쳤다 — 409 로 돌림: {}", e.getMessage());
+        return respond(HttpStatus.CONFLICT, "CONFLICT", "다른 요청과 겹쳤습니다. 다시 불러온 뒤 보내 주세요");
     }
 
     @ExceptionHandler(AuthenticationException.class)

@@ -13,6 +13,7 @@ import kr.ac.kookmin.familyfitness.coaching.api.MissionCreated;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidMetricException;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidMissionDateException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotActiveException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
@@ -36,9 +37,12 @@ import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.shared.domain.DomainException;
 import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.assertj.core.data.Offset;
@@ -145,7 +149,7 @@ class MissionServiceTest {
         assertThat(first.missionCompleted()).isFalse();
 
         TimerRecordedView second = activityService.recordTimer(
-                family.parentUser,
+                family.childUser,
                 missionId,
                 new RecordTimerCommand(
                         family.child.profileId(),
@@ -206,7 +210,7 @@ class MissionServiceTest {
         assertThat(assertThrows(
                                 InvalidMetricException.class,
                                 () -> activityService.recordSteps(
-                                        family.parentUser,
+                                        family.childUser,
                                         timer,
                                         new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 100)))
                         .getCode())
@@ -214,7 +218,7 @@ class MissionServiceTest {
         assertThat(assertThrows(
                                 InvalidMetricException.class,
                                 () -> activityService.recordTimer(
-                                        family.parentUser,
+                                        family.childUser,
                                         steps,
                                         new RecordTimerCommand(family.child.profileId(), now, now.plusSeconds(600), 5)))
                         .getCode())
@@ -223,16 +227,23 @@ class MissionServiceTest {
                 NotSameFamilyException.class,
                 () -> activityService.recordSteps(
                         other.parentUser, steps, new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 100)));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> activityService.recordSteps(
-                        family.parentUser,
-                        steps,
-                        new RecordStepsCommand(family.child.profileId(), Fixed.TODAY.plusDays(1), 100)));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> activityService.recordTimer(
-                        family.parentUser, timer, new RecordTimerCommand(family.child.profileId(), now, now, 5)));
+        // 입력 오류는 400 이다(IllegalArgumentException 이 아니라 스택을 남기지 않는 400 전용 예외)
+        assertThat(assertThrows(
+                                DomainException.class,
+                                () -> activityService.recordSteps(
+                                        family.childUser,
+                                        steps,
+                                        new RecordStepsCommand(family.child.profileId(), Fixed.TODAY.plusDays(1), 100)))
+                        .getKind())
+                .isEqualTo(ErrorKind.BAD_REQUEST);
+        assertThat(assertThrows(
+                                DomainException.class,
+                                () -> activityService.recordTimer(
+                                        family.childUser,
+                                        timer,
+                                        new RecordTimerCommand(family.child.profileId(), now, now, 5)))
+                        .getKind())
+                .isEqualTo(ErrorKind.BAD_REQUEST);
         assertThat(assertThrows(
                                 TargetNotReachedException.class,
                                 () -> service.confirm(family.parentUser, steps, family.child.profileId()))
@@ -262,12 +273,107 @@ class MissionServiceTest {
         assertThat(assertThrows(
                                 ParticipantConsentRequiredException.class,
                                 () -> activityService.recordSteps(
-                                        family.parentUser,
+                                        family.childUser,
                                         steps,
                                         new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 3000)))
                         .getCode())
                 .isEqualTo("CONSENT_REQUIRED");
         assertThat(activity.rows).isEmpty();
+    }
+
+    @Test
+    @DisplayName("옛 타이머 · 걸음수는 이 계정이 그 프로필 이름으로 할 수 있을 때만 — 계정 있는 아이 이름은 403, 계정 없는 아이는 보호자가 대신한다")
+    void 옛_타이머_걸음수는_그_프로필_이름으로_할_수_있을_때만() {
+        ProfileDetails accountless = family.addChild("하늘", LocalDate.of(2017, 4, 2));
+        UUID timer = create(
+                        TargetMetric.TIMER_MINUTES,
+                        30,
+                        List.of(family.child.profileId(), accountless.profileId()),
+                        null)
+                .missionId();
+        UUID steps = create(TargetMetric.STEPS, 5000).missionId();
+        Instant startedAt = Fixed.NOW.minusSeconds(600);
+
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> activityService.recordTimer(
+                        family.parentUser,
+                        timer,
+                        new RecordTimerCommand(family.child.profileId(), startedAt, Fixed.NOW, 5)));
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> activityService.recordSteps(
+                        family.parentUser, steps, new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 100)));
+        // 자녀 계정은 형제 · 보호자 이름으로 적지 못한다
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> activityService.recordTimer(
+                        family.childUser,
+                        timer,
+                        new RecordTimerCommand(accountless.profileId(), startedAt, Fixed.NOW, 5)));
+        assertThat(activity.rows).isEmpty();
+
+        TimerRecordedView byParent = activityService.recordTimer(
+                family.parentUser, timer, new RecordTimerCommand(accountless.profileId(), startedAt, Fixed.NOW, 5));
+        assertThat(byParent.activityDate()).isEqualTo(Fixed.TODAY);
+        assertThat(activity.totals(accountless.profileId(), Fixed.TODAY, Fixed.TODAY)
+                        .verifiedMinutes())
+                .isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("옛 타이머의 활동 날짜는 기기 시각이 아니라 서버 오늘(KST)이고, 오늘이 미션 기간 밖이면 422 MISSION_NOT_ACTIVE")
+    void 옛_타이머의_활동_날짜는_서버_오늘이고_기간_밖이면_MISSION_NOT_ACTIVE() {
+        UUID thisWeek = create(TargetMetric.TIMER_MINUTES, 30).missionId();
+        UUID tomorrow = service.create(
+                        family.parentUser,
+                        family.familyId,
+                        new CreateMissionCommand(
+                                "내일 운동",
+                                Fixed.TODAY.plusDays(1),
+                                Fixed.TODAY.plusDays(1),
+                                TargetMetric.TIMER_MINUTES,
+                                30,
+                                null,
+                                List.of(family.child.profileId())))
+                .missionId();
+        Instant lastWeek = Instant.parse("2026-09-01T01:00:00Z");
+
+        TimerRecordedView view = activityService.recordTimer(
+                family.childUser,
+                thisWeek,
+                new RecordTimerCommand(family.child.profileId(), lastWeek, lastWeek.plusSeconds(600), 10));
+
+        assertThat(view.activityDate()).isEqualTo(Fixed.TODAY);
+        assertThat(activity.totals(family.child.profileId(), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 1))
+                        .verifiedMinutes())
+                .isZero();
+        assertThat(assertThrows(
+                                MissionNotActiveException.class,
+                                () -> activityService.recordTimer(
+                                        family.childUser,
+                                        tomorrow,
+                                        new RecordTimerCommand(
+                                                family.child.profileId(), Fixed.NOW.minusSeconds(600), Fixed.NOW, 10)))
+                        .getCode())
+                .isEqualTo("MISSION_NOT_ACTIVE");
+        assertThat(activity.totals(family.child.profileId(), Fixed.TODAY, Fixed.TODAY.plusDays(1))
+                        .verifiedMinutes())
+                .isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("칸 없는 분 목표 미션은 360분까지 — 넘으면 끝낼 수 없어(칸 끝 재생 상한 10800초의 두 배) 400. 걸음수 · 영상 목표에는 걸지 않는다")
+    void 칸_없는_분_목표는_360분까지() {
+        UUID longest = create(TargetMetric.TIMER_MINUTES, 360).missionId();
+        assertThat(missions.findById(longest).getTargetValue()).isEqualTo(360);
+
+        DomainException tooLong = assertThrows(DomainException.class, () -> create(TargetMetric.TIMER_MINUTES, 361));
+
+        assertThat(tooLong.getKind()).isEqualTo(ErrorKind.BAD_REQUEST);
+        assertThat(tooLong.getMessage()).contains("360");
+        UUID manySteps = create(TargetMetric.STEPS, 100_000).missionId();
+        assertThat(missions.findById(manySteps).getTargetValue()).isEqualTo(100_000);
     }
 
     @Test
@@ -568,9 +674,12 @@ class MissionServiceTest {
                 null,
                 List.of(family.child.profileId()),
                 List.of(new MissionSession(1, SessionPhase.MAIN, "제자리 걷기", null, 3, null)));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.createAll(family.parentUser, family.familyId, List.of(on(Fixed.TODAY), badSessions)));
+        assertThat(assertThrows(
+                                DomainException.class,
+                                () -> service.createAll(
+                                        family.parentUser, family.familyId, List.of(on(Fixed.TODAY), badSessions)))
+                        .getKind())
+                .isEqualTo(ErrorKind.BAD_REQUEST);
         CreateMissionCommand unknownVideo = new CreateMissionCommand(
                 "함께 운동",
                 Fixed.TODAY.plusDays(4),

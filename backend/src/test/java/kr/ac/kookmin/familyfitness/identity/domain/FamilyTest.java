@@ -13,6 +13,8 @@ import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
+import kr.ac.kookmin.familyfitness.shared.domain.DomainException;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
@@ -534,6 +536,46 @@ class FamilyTest {
                         kidOwner, sibling.getId(), new GuardianConsent(true, true), consentedAt, today));
         assertThat(sibling.getConsent()).isEqualTo(ConsentRecord.NONE);
         assertThat(kidFamily.drainConsentEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("보호자 동의는 아이에게만 있다 — 다른 보호자(PARENT)의 동의는 주지도 거두지도 못하고(CONSENT_NOT_APPLICABLE) 이력도 남지 않는다")
+    void 다른_보호자의_동의는_바꾸지_못한다() {
+        Family family = newFamily();
+        UUID dadUserId = UUID.randomUUID();
+        Profile mom = family.getProfiles().getFirst();
+        Profile dad = addParentSeat(family);
+        dad.claim(dadUserId, consentedAt);
+        Profile emptySeat = addParentSeat(family);
+        family.drainConsentEvents();
+
+        DomainException revoke = assertThrows(
+                DomainException.class,
+                () -> family.updateConsent(
+                        dadUserId, mom.getId(), new GuardianConsent(false, false), consentedAt, today));
+        DomainException grant = assertThrows(
+                DomainException.class,
+                () -> family.updateConsent(
+                        parentUserId, dad.getId(), new GuardianConsent(true, true), consentedAt, today));
+        // 계정이 아직 없는 보호자 자리도 같다
+        DomainException seat = assertThrows(
+                DomainException.class,
+                () -> family.updateConsent(
+                        parentUserId, emptySeat.getId(), new GuardianConsent(false, false), consentedAt, today));
+
+        assertThat(List.of(revoke, grant, seat)).allSatisfy(it -> {
+            assertThat(it.getCode()).isEqualTo("CONSENT_NOT_APPLICABLE");
+            assertThat(it.getKind()).isEqualTo(ErrorKind.RULE_VIOLATION);
+        });
+        assertThat(mom.getConsent()).isEqualTo(ConsentRecord.NONE);
+        assertThat(mom.consentRequired(today)).isFalse();
+        assertThat(mom.consentGiven(today)).isTrue();
+        assertThat(family.drainConsentEvents()).isEmpty();
+        // 자기 프로필은 전처럼 SELF_CONSENT 가 먼저다
+        assertThrows(
+                SelfConsentException.class,
+                () -> family.updateConsent(
+                        parentUserId, mom.getId(), new GuardianConsent(false, false), consentedAt, today));
     }
 
     private Profile legacyProfile(UUID familyId, @Nullable UUID userId, ProfileRole role, LocalDate birthDate) {

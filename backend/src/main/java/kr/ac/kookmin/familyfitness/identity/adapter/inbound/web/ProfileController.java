@@ -54,7 +54,8 @@ public class ProfileController {
 
     /**
      * 보호자 동의 주기 · 거두기 — 가족의 PARENT 만(403 NOT_SAME_FAMILY · NOT_A_PARENT). 자기 프로필은 403 SELF_CONSENT,
-     * 만 14세 미만 보호자는 422 UNDER_14_NOT_ALLOWED. 거둔 동의는 만 14세가 지나도 다시 동의할 때까지 막힌 채다.
+     * 대상이 보호자(PARENT)면 422 CONSENT_NOT_APPLICABLE, 만 14세 미만 보호자는 422 UNDER_14_NOT_ALLOWED.
+     * 거둔 동의는 만 14세가 지나도 다시 동의할 때까지 막힌 채다.
      */
     @PatchMapping("/{profileId}/consent")
     public ConsentResponse consent(

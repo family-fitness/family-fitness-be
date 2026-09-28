@@ -20,7 +20,10 @@ public class CalendarController {
         this.service = service;
     }
 
-    /** {@code from} ~ {@code to}(양끝 포함, KST 날짜)는 42일까지. 셋 다 필요하다 — 빠지거나 형식이 틀리면 400. */
+    /**
+     * {@code from} ~ {@code to}(양끝 포함, KST 날짜)는 42일까지이고 1900-01-01 ~ 2100-12-31 안이어야 한다. 셋 다 필요하다 — 빠지거나
+     * 형식이 틀리거나 범위를 벗어나면 400.
+     */
     @GetMapping("/api/v1/families/{familyId}/calendar")
     public CalendarView calendar(
             CurrentUser user,

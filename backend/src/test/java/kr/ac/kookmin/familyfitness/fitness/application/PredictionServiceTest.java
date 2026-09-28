@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -28,8 +29,10 @@ import kr.ac.kookmin.familyfitness.fitness.domain.NoFitnessTestException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Prediction;
 import kr.ac.kookmin.familyfitness.fitness.domain.PredictionPoint;
 import kr.ac.kookmin.familyfitness.fitness.domain.PredictionScenario;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.shared.ai.AiGateway;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.TrajectoryRequest;
@@ -70,8 +73,8 @@ class PredictionServiceTest {
 
     private void profile(LocalDate birthDate, boolean consentGiven, boolean measurable) {
         AgeGroup ageGroup = AgeGroup.of(birthDate, LocalDate.of(2026, 9, 9));
-        when(familyAccess.requireSameFamilyAsProfile(actorId, profileId))
-                .thenReturn(summaryOf(profileId, familyId, ageGroup, measurable, true, consentGiven));
+        ProfileSummary summary = summaryOf(profileId, familyId, ageGroup, measurable, true, consentGiven);
+        when(familyAccess.requireActingAs(actorId, profileId)).thenReturn(summary);
         when(profileQuery.findDetails(profileId))
                 .thenReturn(detailsOf(
                         profileId, familyId, birthDate, Sex.F, new BigDecimal("135.0"), new BigDecimal("31.5"), true));
@@ -112,6 +115,20 @@ class PredictionServiceTest {
 
     private static TrajectoryResponse.Band band(int age, double p50) {
         return new TrajectoryResponse.Band(age, p50 - 5, p50, p50 + 5, 100);
+    }
+
+    @Test
+    @DisplayName("대신할 수 없는 프로필(계정이 붙은 다른 식구)의 예측은 만들지 못한다 — 같은 가족이어도 CannotActAsProfile")
+    void 대신할_수_없는_프로필의_예측은_만들지_못한다() {
+        profile();
+        savedTest();
+        when(familyAccess.requireActingAs(actorId, profileId))
+                .thenThrow(new CannotActAsProfileException("내 프로필이나 계정 없는 아이 프로필로만 할 수 있습니다"));
+
+        assertThatThrownBy(() -> service.predict(actorId, profileId, new PredictCommand()))
+                .isInstanceOf(CannotActAsProfileException.class);
+        verifyNoInteractions(ai);
+        assertThat(predictions.saved).isEmpty();
     }
 
     @Test

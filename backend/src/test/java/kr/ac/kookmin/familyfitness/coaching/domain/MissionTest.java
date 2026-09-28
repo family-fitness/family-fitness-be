@@ -249,22 +249,23 @@ class MissionTest {
     }
 
     @Test
-    @DisplayName("칸 번호가 1..n 이 아니거나 칸이 있는데 지표가 분이 아니면 만들 수 없다")
+    @DisplayName("칸 번호가 1..n 이 아니거나 칸이 있는데 지표가 분이 아니면 만들 수 없다 — 직접 만들기는 사용자 입력이라 400")
     void 칸_번호가_1부터_n이_아니거나_칸이_있는데_지표가_분이_아니면_만들_수_없다() {
-        assertThrows(
-                IllegalArgumentException.class,
+        InvalidInputException duplicated = assertThrows(
+                InvalidInputException.class,
                 () -> withSessions(
                         TargetMetric.TIMER_MINUTES,
                         3,
                         List.of(session(1, SessionPhase.MAIN, 1), session(1, SessionPhase.MAIN, 2))));
+        assertThat(duplicated.getKind()).isEqualTo(ErrorKind.BAD_REQUEST);
         assertThrows(
-                IllegalArgumentException.class,
+                InvalidInputException.class,
                 () -> withSessions(
                         TargetMetric.TIMER_MINUTES,
                         3,
                         List.of(session(1, SessionPhase.MAIN, 1), session(3, SessionPhase.MAIN, 2))));
         assertThrows(
-                IllegalArgumentException.class,
+                InvalidInputException.class,
                 () -> withSessions(TargetMetric.STEPS, 3000, List.of(session(1, SessionPhase.MAIN, 1))));
         assertThrows(IllegalArgumentException.class, () -> session(1, SessionPhase.MAIN, 0));
     }
@@ -274,10 +275,10 @@ class MissionTest {
     void 칸이_있는데_목표_분이_칸_시간의_합과_다르면_만들_수_없다() {
         List<MissionSession> sessions = List.of(session(1, SessionPhase.WARMUP, 2), session(2, SessionPhase.MAIN, 3));
 
-        IllegalArgumentException larger = assertThrows(
-                IllegalArgumentException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 999, sessions));
+        InvalidInputException larger = assertThrows(
+                InvalidInputException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 999, sessions));
         assertThat(larger.getMessage()).contains("999").contains("5분");
-        assertThrows(IllegalArgumentException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 4, sessions));
+        assertThrows(InvalidInputException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 4, sessions));
         assertThat(withSessions(TargetMetric.TIMER_MINUTES, 5, sessions).getTargetValue())
                 .isEqualTo(5);
     }

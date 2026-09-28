@@ -102,6 +102,8 @@ class FitnessWebTest {
         childId = rows.profile(familyId, birthDate, Sex.F);
         when(familyAccess.requireSameFamilyAsProfile(userId, childId))
                 .thenReturn(summaryOf(childId, familyId, AgeGroup.YOUTH));
+        // 예측은 대신할 수 있는 프로필만(계정 없는 아이를 보호자가 대신) — requireActingAs
+        when(familyAccess.requireActingAs(userId, childId)).thenReturn(summaryOf(childId, familyId, AgeGroup.YOUTH));
         when(familyAccess.requireParentOfProfile(userId, childId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
         when(familyAccess.requireMember(userId, familyId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
         when(profileQuery.findDetails(childId))

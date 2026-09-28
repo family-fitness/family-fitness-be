@@ -14,7 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** POST /api/v1/profiles/{profileId}/predictions — 로그인(같은 가족). */
+/**
+ * POST /api/v1/profiles/{profileId}/predictions — 내 프로필이나, 보호자가 대신하는 계정 없는 아이 프로필만.
+ * 같은 가족이어도 계정이 붙은 다른 식구면 403 FORBIDDEN, 다른 가족이면 403 NOT_SAME_FAMILY.
+ */
 @RestController
 @RequestMapping("/api/v1/profiles/{profileId}/predictions")
 public class PredictionController {

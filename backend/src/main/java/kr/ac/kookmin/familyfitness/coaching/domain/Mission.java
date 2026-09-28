@@ -14,6 +14,13 @@ import org.jspecify.annotations.Nullable;
  * 승인({@link CoachRun#approve})과 직접 만들기 외에는 미션이 생기지 않는다.
  */
 public class Mission {
+    /**
+     * 칸 없는 분 목표 미션의 목표 분 상한. 그런 미션은 미션 전체가 한 칸이고(결정 35) 칸은 재생 시간이 칸 시간의 절반 이상이어야
+     * 끝난다(결정 3-1). 칸 끝 한 번에 받는 재생 초 상한이 {@link SessionCompletion#MAX_ACTIVE_SECONDS}(10800초)라, 그 두 배인
+     * 360분을 넘는 미션은 끝낼 수 없다(SA-11). FE 화면 · 목에는 이 값의 상한이 없어 끝낼 수 있는 최대값을 쓴다.
+     */
+    public static final int MAX_WHOLE_MINUTES = SessionCompletion.MAX_ACTIVE_SECONDS * 2 / 60;
+
     private final UUID id;
     private final UUID familyId;
     private final @Nullable UUID coachRunId;
@@ -256,7 +263,8 @@ public class Mission {
 
     /**
      * 부모가 직접 만든 미션. 칸이 있으면 목표는 분(TIMER_MINUTES)이고 {@code targetValue} 가 칸 시간의 합과 같아야 한다 —
-     * 다르면 고쳐 넣지 않고 거부한다. 칸은 보낸 position 차례 그대로 두고 단계로 다시 세우지 않는다.
+     * 다르면 고쳐 넣지 않고 거부한다. 칸은 보낸 position 차례 그대로 두고 단계로 다시 세우지 않는다. 칸 없는 분 목표는
+     * {@link #MAX_WHOLE_MINUTES} 분까지다. 어기면 사용자 입력 오류라 400({@link InvalidInputException})이다.
      */
     public static Mission manual(
             UUID id,
@@ -271,7 +279,12 @@ public class Mission {
             List<MissionSession> sessions,
             UUID createdBy,
             Instant at) {
-        requireSessionTarget(targetMetric, targetValue, sessions);
+        String problem = sessionProblem(targetMetric, targetValue, sessions);
+        if (problem != null) throw new InvalidInputException(problem);
+        if (sessions.isEmpty() && targetMetric == TargetMetric.TIMER_MINUTES && targetValue > MAX_WHOLE_MINUTES) {
+            throw new InvalidInputException("칸 없는 분 목표(targetValue " + targetValue + ")는 " + MAX_WHOLE_MINUTES
+                    + "분까지입니다 — 넘으면 칸 끝으로 끝낼 수 없습니다");
+        }
         Set<UUID> distinct = new LinkedHashSet<>(participantProfileIds);
         List<MissionParticipant> participants = new ArrayList<>();
         for (UUID profileId : distinct) {
@@ -297,20 +310,22 @@ public class Mission {
     }
 
     /**
-     * 칸이 있으면 목표는 칸을 다 했을 때 딱 채워지는 분이어야 한다. 합보다 크면 칸을 다 해도 미션이 안 끝나고,
-     * 작으면 칸을 덜 해도 끝난다({@code MissionCompletionPolicy} 가 진행도를 목표 분으로 나눈다).
+     * 칸 규칙을 어긴 까닭, 지키면 null. 칸 번호는 1..n 으로 빈틈없이 이어져야 하고, 목표는 칸을 다 했을 때 딱 채워지는 분이어야 한다.
+     * 합보다 크면 칸을 다 해도 미션이 안 끝나고, 작으면 칸을 덜 해도 끝난다({@code MissionCompletionPolicy} 가 진행도를 목표 분으로
+     * 나눈다). 직접 만들기는 사용자 입력이라 400 으로, 제안 복사는 서버 변환이라 {@link IllegalArgumentException} 으로 던진다.
      */
-    private static void requireSessionTarget(
+    private static @Nullable String sessionProblem(
             TargetMetric targetMetric, int targetValue, List<MissionSession> sessions) {
-        if (sessions.isEmpty()) return;
-        if (targetMetric != TargetMetric.TIMER_MINUTES) {
-            throw new IllegalArgumentException("칸이 있는 미션의 목표 지표는 TIMER_MINUTES 여야 한다");
+        if (sessions.isEmpty()) return null;
+        if (!MissionSession.isNumberedFromOne(sessions)) {
+            return "칸 번호(position)는 1부터 " + sessions.size() + "까지 겹치지 않아야 한다";
         }
+        if (targetMetric != TargetMetric.TIMER_MINUTES) return "칸이 있는 미션의 목표 지표는 TIMER_MINUTES 여야 한다";
         int total = MissionSession.totalMinutes(sessions);
         if (targetValue != total) {
-            throw new IllegalArgumentException(
-                    "칸이 있는 미션의 목표 분(targetValue " + targetValue + ")은 칸 시간의 합(" + total + "분)과 같아야 한다");
+            return "칸이 있는 미션의 목표 분(targetValue " + targetValue + ")은 칸 시간의 합(" + total + "분)과 같아야 한다";
         }
+        return null;
     }
 
     /**
@@ -319,7 +334,8 @@ public class Mission {
      */
     public static Mission fromProposal(UUID id, CoachRun run, CoachProposalItem item, UUID createdBy, Instant at) {
         TargetMetric targetMetric = TargetMetric.valueOf(item.targetMetric());
-        requireSessionTarget(targetMetric, item.targetValue(), item.sessions());
+        String problem = sessionProblem(targetMetric, item.targetValue(), item.sessions());
+        if (problem != null) throw new IllegalArgumentException(problem);
         Set<UUID> seen = new LinkedHashSet<>();
         List<MissionParticipant> participants = new ArrayList<>();
         for (ProposalParticipant participant : item.participants()) {

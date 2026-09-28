@@ -38,8 +38,11 @@ import kr.ac.kookmin.familyfitness.support.TestAuth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -59,6 +62,7 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+@ExtendWith(OutputCaptureExtension.class)
 class SessionCompleteWebTest {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -233,6 +237,29 @@ class SessionCompleteWebTest {
                         .header(HttpHeaders.AUTHORIZATION, auth.bearer(momUser)))
                 .andExpect(jsonPath("$.activeDays").value(1))
                 .andExpect(jsonPath("$.streakDays").value(1));
+    }
+
+    @Test
+    @DisplayName("사용자 입력 오류(칸 끝 endedAt ≤ startedAt · 날짜 칸 둘 다 보내기)는 400 BAD_REQUEST 이고, 서버 버그처럼 스택을 WARN 으로 남기지 않는다")
+    void 입력_오류는_400_이고_스택을_남기지_않는다(CapturedOutput output) throws Exception {
+        Mission mission = mission(today);
+        Instant at = Instant.now();
+
+        complete(mission.getId(), 1, kidId, 60, at, at)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.error.message").value("endedAt 은 startedAt 이후여야 합니다"));
+        mvc.perform(post("/api/v1/families/" + familyId + "/missions")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(momUser))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"걷기\",\"startDate\":\"" + today + "\",\"endDate\":\"" + today
+                                + "\",\"dates\":[\"" + today
+                                + "\"],\"targetMetric\":\"TIMER_MINUTES\",\"targetValue\":10,"
+                                + "\"participantProfileIds\":[\"" + kidId + "\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+
+        assertThat(output).doesNotContain("IllegalArgumentException");
     }
 
     @Test

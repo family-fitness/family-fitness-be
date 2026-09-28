@@ -40,6 +40,8 @@ import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.progress.api.ProgressRecorder;
 import kr.ac.kookmin.familyfitness.progress.api.SessionDone;
+import kr.ac.kookmin.familyfitness.shared.domain.DomainException;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -378,9 +380,13 @@ class SessionCompletionServiceTest {
                     .isEqualTo("MISSION_NOT_ACTIVE");
         }
         Instant at = Fixed.NOW.minusSeconds(60);
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.complete(family.childUser, missionId, 1, new CompleteSessionCommand(child, 60, at, at)));
+        // endedAt ≤ startedAt 는 입력 오류라 400 이다(스택을 남기는 IllegalArgumentException 이 아니다)
+        assertThat(assertThrows(
+                                DomainException.class,
+                                () -> service.complete(
+                                        family.childUser, missionId, 1, new CompleteSessionCommand(child, 60, at, at)))
+                        .getKind())
+                .isEqualTo(ErrorKind.BAD_REQUEST);
         // 칸 1분의 절반은 30초. 재생 29초는 모자라고, 재생 600초라도 기기 시각 간격이 20초면 20초로 잘려 모자란다
         assertThat(assertThrows(SessionTooShortException.class, () -> complete(family.childUser, mission, 1, child, 29))
                         .getCode())
@@ -445,6 +451,36 @@ class SessionCompletionServiceTest {
         assertThat(missionService.get(family.parentUser, timer.getId()).sessions())
                 .isEmpty();
         assertThrows(SessionNotFoundException.class, () -> complete(family.childUser, timer, 2, child, 600));
+    }
+
+    @Test
+    @DisplayName("상한이 생기기 전에 만든 아주 큰 분 목표(35,791,395분)도 칸 시간 셈이 넘치지 않는다 — 1초로는 422 TOO_SHORT, 경험치 없음")
+    void 아주_큰_분_목표도_칸_시간_셈이_넘치지_않는다() {
+        Mission huge = missions.save(Mission.reconstitute(
+                UUID.randomUUID(),
+                family.familyId,
+                null,
+                "옛 운동",
+                null,
+                MissionOrigin.MANUAL,
+                TargetMetric.TIMER_MINUTES,
+                35_791_395,
+                null,
+                null,
+                Fixed.TODAY,
+                Fixed.TODAY,
+                parent,
+                Fixed.NOW,
+                List.of(MissionParticipant.pending(child, null, Fixed.NOW)),
+                List.of()));
+
+        SessionTooShortException e =
+                assertThrows(SessionTooShortException.class, () -> complete(family.childUser, huge, 1, child, 1));
+
+        assertThat(e.getCode()).isEqualTo("TOO_SHORT");
+        assertThat(e.getMessage()).contains("2147483700초");
+        assertThat(progress.calls).isEmpty();
+        assertThat(completions.of(child)).isEmpty();
     }
 
     @Test

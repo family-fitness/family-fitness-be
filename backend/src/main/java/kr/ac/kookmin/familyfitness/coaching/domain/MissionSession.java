@@ -24,15 +24,25 @@ public record MissionSession(
 
     /** position 차례로 세운다. 번호가 1..n 으로 빈틈없이 이어지지 않으면(겹침 · 빠짐) 거부한다. */
     public static List<MissionSession> ordered(List<MissionSession> sessions) {
-        List<MissionSession> sorted = sessions.stream()
+        if (!isNumberedFromOne(sessions)) {
+            throw new IllegalArgumentException("칸 번호(position)는 1부터 " + sessions.size() + "까지 겹치지 않아야 한다");
+        }
+        return sortedByPosition(sessions);
+    }
+
+    /** 번호가 1..n 으로 빈틈없이 이어지는가(겹침 · 빠짐 없음). 보낸 차례는 상관없다. */
+    public static boolean isNumberedFromOne(List<MissionSession> sessions) {
+        List<MissionSession> sorted = sortedByPosition(sessions);
+        for (int i = 0; i < sorted.size(); i++) {
+            if (sorted.get(i).position() != i + 1) return false;
+        }
+        return true;
+    }
+
+    private static List<MissionSession> sortedByPosition(List<MissionSession> sessions) {
+        return sessions.stream()
                 .sorted(Comparator.comparingInt(MissionSession::position))
                 .toList();
-        for (int i = 0; i < sorted.size(); i++) {
-            if (sorted.get(i).position() != i + 1) {
-                throw new IllegalArgumentException("칸 번호(position)는 1부터 " + sorted.size() + "까지 겹치지 않아야 한다");
-            }
-        }
-        return sorted;
     }
 
     public static int totalMinutes(List<MissionSession> sessions) {

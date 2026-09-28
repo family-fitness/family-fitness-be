@@ -2,8 +2,10 @@ package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -92,11 +94,30 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
     @Nullable
     CoachRunEntity findFirstByFamilyIdAndWeekStartOrderByCreatedAtDesc(UUID familyId, LocalDate weekStart);
 
-    @Nullable
-    CoachRunEntity findFirstByFamilyIdOrderByCreatedAtDesc(UUID familyId);
+    /**
+     * 가족의 실행을 최근 것부터 — latest 에 보일 실행만. APPROVED 인데 그 실행을 가리키는 미션이 하나도 없는 실행(승인한 미션을 보호자가
+     * 모두 지운 회차)은 뺀다. 미션 쪽은 V150 의 ix_missions_coach_run 으로 찾는다. 첫 줄만 쓰도록 {@code page} 로 한 줄만 받는다.
+     */
+    @Query("""
+            select r from CoachRunEntity r
+             where r.familyId = :familyId
+               and (r.status <> 'APPROVED'
+                    or exists (select m.id from MissionEntity m where m.coachRunId = r.id))
+             order by r.createdAt desc
+            """)
+    List<CoachRunEntity> findShownOfFamily(@Param("familyId") UUID familyId, Pageable page);
 
-    @Nullable
-    CoachRunEntity findFirstByFamilyIdAndSubjectProfileIdOrderByCreatedAtDesc(UUID familyId, UUID subjectProfileId);
+    /** {@link #findShownOfFamily} 를 한 대상(프로필)으로 좁힌 것. */
+    @Query("""
+            select r from CoachRunEntity r
+             where r.familyId = :familyId
+               and r.subjectProfileId = :subjectProfileId
+               and (r.status <> 'APPROVED'
+                    or exists (select m.id from MissionEntity m where m.coachRunId = r.id))
+             order by r.createdAt desc
+            """)
+    List<CoachRunEntity> findShownOfSubject(
+            @Param("familyId") UUID familyId, @Param("subjectProfileId") UUID subjectProfileId, Pageable page);
 
     @Query("select r.status from CoachRunEntity r where r.id = :id")
     @Nullable

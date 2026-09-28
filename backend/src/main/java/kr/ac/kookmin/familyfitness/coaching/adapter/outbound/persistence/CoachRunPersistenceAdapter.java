@@ -27,6 +27,8 @@ import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
@@ -40,6 +42,9 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
 
     /** V134 의 (프로필, 날짜) 잠금 인덱스. 위반 오류 문구에 이 이름이 실린다(H2 · PostgreSQL 모두). */
     static final String LOCK_INDEX = "ux_coach_runs_lock_key";
+
+    /** 최근 실행 한 줄만 읽는다(latest). */
+    private static final Pageable FIRST_ONLY = PageRequest.of(0, 1);
 
     private final CoachRunJpaRepository runs;
     private final CoachRunProposalItemJpaRepository items;
@@ -168,13 +173,17 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
     }
 
     @Override
-    public @Nullable CoachRun findLatestOfFamily(UUID familyId) {
-        return withItems(runs.findFirstByFamilyIdOrderByCreatedAtDesc(familyId));
+    public @Nullable CoachRun findLatestShownOfFamily(UUID familyId) {
+        return withItems(firstOf(runs.findShownOfFamily(familyId, FIRST_ONLY)));
     }
 
     @Override
-    public @Nullable CoachRun findLatestOfSubject(UUID familyId, UUID subjectProfileId) {
-        return withItems(runs.findFirstByFamilyIdAndSubjectProfileIdOrderByCreatedAtDesc(familyId, subjectProfileId));
+    public @Nullable CoachRun findLatestShownOfSubject(UUID familyId, UUID subjectProfileId) {
+        return withItems(firstOf(runs.findShownOfSubject(familyId, subjectProfileId, FIRST_ONLY)));
+    }
+
+    private static @Nullable CoachRunEntity firstOf(List<CoachRunEntity> rows) {
+        return rows.isEmpty() ? null : rows.getFirst();
     }
 
     /** 실행 · 항목 · 칸을 표마다 한 번씩(세 번) 읽는다. 항목 수만큼 칸을 따로 읽지 않는다. */

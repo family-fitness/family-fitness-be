@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -16,6 +17,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachMessageRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.NoopTransactionManager;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachMessageRequest;
@@ -37,7 +39,7 @@ class CoachChatServiceTest {
     @Test
     @DisplayName("질문과 답을 한 대화로 저장하고 인용을 돌려준다")
     void 질문과_답을_한_대화로_저장하고_인용을_돌려준다() {
-        ChatView view = service.chat(family.parentUser, new ChatCommand(childId, null, "유연성 운동 뭐가 좋아요?"));
+        ChatView view = service.chat(family.childUser, new ChatCommand(childId, null, "유연성 운동 뭐가 좋아요?"));
 
         assertThat(view.refused()).isFalse();
         assertThat(view.answer()).contains("[1]");
@@ -68,7 +70,7 @@ class CoachChatServiceTest {
             return new CoachMessageResponse("", List.of(), true, "no_relevant_source");
         };
 
-        service.chat(family.parentUser, new ChatCommand(childId, null, "질문"));
+        service.chat(family.childUser, new ChatCommand(childId, null, "질문"));
 
         assertThat(captured.get().profileRef()).isEqualTo(ProfileRef.of(childId));
         assertThat(captured.get().ageGroup()).isEqualTo("유소년");
@@ -133,5 +135,22 @@ class CoachChatServiceTest {
                 NotSameFamilyException.class,
                 () -> service.chat(other.parentUser, new ChatCommand(childId, null, "질문")));
         assertThat(messages.messages).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("대화는 이 계정이 그 프로필 이름으로 할 수 있을 때만 — 자녀 계정이 부모 이름으로, 보호자가 계정 있는 아이 이름으로 물으면 403 이고 저장하지 않는다")
+    void 대화는_그_프로필_이름으로_할_수_있을_때만() {
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> service.chat(family.childUser, new ChatCommand(family.parent.profileId(), null, "질문")));
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> service.chat(family.parentUser, new ChatCommand(childId, null, "질문")));
+        assertThat(messages.messages).isEmpty();
+
+        UUID accountless = family.addChild("하늘", LocalDate.of(2017, 4, 2)).profileId();
+        ChatView forAccountless = service.chat(family.parentUser, new ChatCommand(accountless, null, "질문"));
+        assertThat(forAccountless.refused()).isFalse();
+        assertThat(messages.messages).allMatch(it -> it.getProfileId().equals(accountless));
     }
 }

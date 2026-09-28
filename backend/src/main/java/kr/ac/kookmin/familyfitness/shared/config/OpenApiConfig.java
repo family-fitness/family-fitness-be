@@ -5,12 +5,25 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
+import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfig {
     public static final String BEARER = "bearerAuth";
+
+    static {
+        // 로그인 계정 인자는 JWT 에서 채운다(CurrentUserArgumentResolver). 요청 값이 아니라 문서에 user 쿼리 파라미터로 싣지 않는다.
+        SpringDocUtils.getConfig().addRequestWrapperToIgnore(CurrentUser.class);
+    }
+
+    /** jspecify @Nullable 칸을 스키마의 null 로 싣는다. springdoc 이 ModelConverter 빈을 변환기 목록 앞에 넣는다. */
+    @Bean
+    public NullableModelConverter nullableModelConverter() {
+        return new NullableModelConverter();
+    }
 
     @Bean
     public OpenAPI openApi() {

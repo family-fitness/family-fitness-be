@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.identity.application;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
@@ -18,7 +19,9 @@ import kr.ac.kookmin.familyfitness.shared.security.ServiceTokenIssuer;
 import kr.ac.kookmin.familyfitness.shared.security.ServiceTokens;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 구글 로그인·개발용 로그인·리프레시·로그아웃·내 정보. 계정 병합 경로는 없다(provider 하나로 고정).
@@ -45,6 +48,7 @@ public class AuthService {
     private final ServiceTokenIssuer tokenIssuer;
     private final RefreshTokenRepository refreshTokens;
     private final IdentityClock clock;
+    private final TransactionTemplate tx;
 
     public AuthService(
             UserRegistrationService registration,
@@ -54,7 +58,8 @@ public class AuthService {
             ProfileSummaries summaries,
             ServiceTokenIssuer tokenIssuer,
             RefreshTokenRepository refreshTokens,
-            IdentityClock clock) {
+            IdentityClock clock,
+            TransactionTemplate tx) {
         this.registration = registration;
         this.google = google;
         this.users = users;
@@ -63,12 +68,20 @@ public class AuthService {
         this.tokenIssuer = tokenIssuer;
         this.refreshTokens = refreshTokens;
         this.clock = clock;
+        this.tx = tx;
     }
 
+    /**
+     * 구글 토큰 교환(외부 HTTP · JWKS 조회)은 트랜잭션 밖에서 한다 — 트랜잭션 안이면 구글 응답을 기다리는 동안 DB 커넥션 하나를 쥔다
+     * (QA SA-13). 교환이 끝난 뒤 가입(find-or-create)과 토큰 발급만 트랜잭션 하나로 묶는다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuthResult loginWithGoogle(String authorizationCode, String redirectUri, @Nullable String claimCode) {
         GoogleIdentity identity = google.exchange(authorizationCode, redirectUri);
-        User user = registration.registerOrGet(User.PROVIDER_GOOGLE, identity.subject(), identity.email());
-        return login(user.id(), claimCode);
+        return Objects.requireNonNull(tx.execute(status -> {
+            User user = registration.registerOrGet(User.PROVIDER_GOOGLE, identity.subject(), identity.email());
+            return login(user.id(), claimCode);
+        }));
     }
 
     /** local/compose/test 전용. 컨트롤러가 `app.auth.dev-login.enabled` 로만 열린다. */

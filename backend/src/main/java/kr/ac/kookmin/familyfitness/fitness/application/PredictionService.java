@@ -66,7 +66,8 @@ public class PredictionService {
     }
 
     public Prediction predict(UUID actorId, UUID profileId, PredictCommand command) {
-        ProfileSummary summary = familyAccess.requireSameFamilyAsProfile(actorId, profileId);
+        // 내 프로필이나, 보호자가 대신하는 계정 없는 아이만 — 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 만들지 못한다(QA KP-09)
+        ProfileSummary summary = familyAccess.requireActingAs(actorId, profileId);
         ProfileDetails details = profileQuery.findDetails(profileId);
         if (details == null) throw new ProfileNotFoundException(profileId);
         if (summary.consentRequired() && !summary.consentGiven()) throw new ConsentRequiredException();
