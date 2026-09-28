@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
@@ -119,7 +121,7 @@ class ActivityServiceTest {
         recorder.addActiveMinutes(profileId, monday.plusDays(6), ActivitySource.VIDEO, 12);
         recorder.addActiveMinutes(profileId, monday.minusDays(1), ActivitySource.VIDEO, 30);
         jdbc.update(
-                "insert into activity_daily (id, profile_id, activity_date, source, steps, active_minutes, recorded_at) values (?, ?, ?, 'MANUAL', 0, 40, ?)",
+                "insert into activity_daily (id, profile_id, activity_date, source, steps, active_minutes, active_seconds, recorded_at) values (?, ?, ?, 'MANUAL', 0, 40, 2400, ?)",
                 UUID.randomUUID(),
                 profileId,
                 monday.plusDays(3),
@@ -145,7 +147,7 @@ class ActivityServiceTest {
         recorder.addActiveMinutes(profileId, monday.minusYears(2), ActivitySource.TIMER, 3);
         recorder.overwriteSteps(profileId, monday.plusDays(1), 8000);
         jdbc.update(
-                "insert into activity_daily (id, profile_id, activity_date, source, steps, active_minutes, recorded_at) values (?, ?, ?, 'MANUAL', 0, 40, ?)",
+                "insert into activity_daily (id, profile_id, activity_date, source, steps, active_minutes, active_seconds, recorded_at) values (?, ?, ?, 'MANUAL', 0, 40, 2400, ?)",
                 UUID.randomUUID(),
                 profileId,
                 monday.plusDays(3),
@@ -159,6 +161,66 @@ class ActivityServiceTest {
         assertThat(query.verifiedSummary(UUID.randomUUID())).isEqualTo(new VerifiedSummary(0, 0));
         assertThatThrownBy(() -> query.verifiedDays(profileId, monday, monday.minusDays(1)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("시간은 초로 쌓고 분은 초 합에서 내림한다 — 40초만 한 날도 움직인 날이고, 40초 두 번은 칸마다 올리지 않아 1분이다")
+    void 초로_쌓고_분은_초_합에서_내림한다() {
+        DailyActivity first = recorder.addActiveSeconds(profileId, monday, ActivitySource.VIDEO, 40);
+
+        assertThat(first.activeMinutes()).isZero();
+        assertThat(query.verifiedDays(profileId, monday, monday)).containsExactly(new DailyMinutes(monday, 0));
+        assertThat(query.verifiedSummary(profileId)).isEqualTo(new VerifiedSummary(1, 0));
+
+        assertThat(recorder.addActiveSeconds(profileId, monday, ActivitySource.VIDEO, 40)
+                        .activeMinutes())
+                .isEqualTo(1);
+        recorder.addActiveSeconds(profileId, monday, ActivitySource.TIMER, 50);
+
+        assertThat(query.activeMinutesOn(profileId, monday)).isEqualTo(2); // 80 + 50 = 130초
+        assertThat(query.totals(profileId, monday, monday).verifiedMinutes()).isEqualTo(2);
+        assertThat(query.verifiedDays(profileId, monday, monday)).containsExactly(new DailyMinutes(monday, 2));
+        assertThat(query.verifiedSummary(profileId)).isEqualTo(new VerifiedSummary(1, 2));
+        em.flush();
+        // 호환용 분 칸(active_minutes)은 행마다 초를 내림한 값이다
+        assertThat(jdbc.queryForObject(
+                        "select active_seconds from activity_daily where profile_id = ? and source = 'VIDEO'",
+                        Integer.class,
+                        profileId))
+                .isEqualTo(80);
+        assertThat(jdbc.queryForObject(
+                        "select active_minutes from activity_daily where profile_id = ? and source = 'VIDEO'",
+                        Integer.class,
+                        profileId))
+                .isEqualTo(1);
+        assertThatThrownBy(() -> recorder.addActiveSeconds(profileId, monday, ActivitySource.VIDEO, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> recorder.addActiveSeconds(profileId, monday, ActivitySource.MANUAL, 30))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("여러 프로필의 움직인 날을 한 번에 읽어도 한 사람씩 읽은 값과 같다 — 움직인 날이 없는 사람은 빈 목록")
+    void 여러_프로필의_움직인_날은_한_사람씩_읽은_값과_같다() {
+        UUID family = rows.family();
+        UUID sibling = rows.profile(family, LocalDate.of(2019, 3, 1), Sex.F);
+        UUID idle = rows.profile(family, LocalDate.of(2015, 3, 1), Sex.M);
+        recorder.addActiveSeconds(profileId, monday, ActivitySource.VIDEO, 40);
+        recorder.addActiveSeconds(profileId, monday.plusDays(2), ActivitySource.TIMER, 130);
+        recorder.addActiveSeconds(sibling, monday.plusDays(1), ActivitySource.VIDEO, 600);
+        recorder.overwriteSteps(idle, monday, 5000);
+
+        Map<UUID, List<DailyMinutes>> days =
+                query.verifiedDaysOf(List.of(profileId, sibling, idle), monday, monday.plusDays(6));
+
+        assertThat(days).containsOnlyKeys(profileId, sibling, idle);
+        em.flush();
+        assertThat(days.get(profileId)).isEqualTo(query.verifiedDays(profileId, monday, monday.plusDays(6)));
+        assertThat(days.get(profileId))
+                .containsExactly(new DailyMinutes(monday, 0), new DailyMinutes(monday.plusDays(2), 2));
+        assertThat(days.get(sibling)).containsExactly(new DailyMinutes(monday.plusDays(1), 10));
+        assertThat(days.get(idle)).isEmpty();
+        assertThat(query.verifiedDaysOf(List.of(), monday, monday)).isEmpty();
     }
 
     @Test

@@ -1,10 +1,13 @@
 package kr.ac.kookmin.familyfitness.coaching.support;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
@@ -12,9 +15,19 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import org.jspecify.annotations.Nullable;
 
+/** 미션 메모리 저장소. 칸 끝 저장소를 넘기면 잡힌 날 셈(spansOf)이 칸을 끝낸 날을 읽는다. */
 public class InMemoryMissionRepository implements MissionRepository {
     public final ConcurrentHashMap<UUID, Mission> missions = new ConcurrentHashMap<>();
     public int saveCount = 0;
+    private final InMemorySessionCompletionRepository completions;
+
+    public InMemoryMissionRepository() {
+        this(new InMemorySessionCompletionRepository());
+    }
+
+    public InMemoryMissionRepository(InMemorySessionCompletionRepository completions) {
+        this.completions = completions;
+    }
 
     @Override
     public Mission save(Mission mission) {
@@ -53,15 +66,7 @@ public class InMemoryMissionRepository implements MissionRepository {
     public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
         return missions.values().stream()
                 .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
-                .map(it -> {
-                    MissionParticipant me = it.participantOf(profileId);
-                    return new MissionSpan(
-                            it.getStartsOn(),
-                            it.getEndsOn(),
-                            it.getTargetMetric(),
-                            me.isCompleted() || me.getProgress() > 0,
-                            me.isCompleted() ? me.getVerifiedAt() : null);
-                })
+                .map(it -> spanOf(it, profileId))
                 .toList();
     }
 
@@ -71,16 +76,24 @@ public class InMemoryMissionRepository implements MissionRepository {
                 .distinct()
                 .flatMap(profileId -> missions.values().stream()
                         .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
-                        .map(it -> {
-                            MissionParticipant me = it.participantOf(profileId);
-                            MissionSpan span = new MissionSpan(
-                                    it.getStartsOn(),
-                                    it.getEndsOn(),
-                                    it.getTargetMetric(),
-                                    me.isCompleted() || me.getProgress() > 0,
-                                    me.isCompleted() ? me.getVerifiedAt() : null);
-                            return new ParticipantSpan(profileId, span, it.getCreatedAt());
-                        }))
+                        .map(it -> new ParticipantSpan(profileId, spanOf(it, profileId), it.getCreatedAt())))
                 .toList();
+    }
+
+    private MissionSpan spanOf(Mission mission, UUID profileId) {
+        MissionParticipant me = mission.participantOf(profileId);
+        Set<LocalDate> doneOn = completions.findByMission(mission.getId()).stream()
+                .filter(c -> c.profileId().equals(profileId))
+                .map(c -> c.completedOn())
+                .collect(Collectors.toSet());
+        if (doneOn.isEmpty() && me.isCompleted() && me.getVerifiedAt() != null) {
+            doneOn = Set.of(LocalDate.ofInstant(me.getVerifiedAt(), ZoneId.of("Asia/Seoul")));
+        }
+        return new MissionSpan(
+                mission.getStartsOn(),
+                mission.getEndsOn(),
+                mission.getTargetMetric(),
+                !doneOn.isEmpty() || me.isCompleted() || me.getProgress() > 0,
+                doneOn);
     }
 }

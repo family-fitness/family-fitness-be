@@ -17,6 +17,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import org.junit.jupiter.api.DisplayName;
@@ -27,11 +28,12 @@ class WeeklyReportServiceTest {
     private final FakeIdentity identity = newIdentity();
     private final FakeActivity activity = new FakeActivity();
     private final InMemoryCoachRunRepository runs = new InMemoryCoachRunRepository();
-    private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+    private final InMemorySessionCompletionRepository completions = new InMemorySessionCompletionRepository();
+    private final InMemoryMissionRepository missions = new InMemoryMissionRepository(completions);
     private final MissionCompletionPolicy policy =
-            new MissionCompletionPolicy(activity, new InMemoryVideoInteractionRepository(), missions);
+            new MissionCompletionPolicy(activity, new InMemoryVideoInteractionRepository(), missions, completions);
     private final MissionService missionService = new MissionService(
-            missions, new InMemoryExerciseVideoRepository(), identity, identity, policy, Fixed.time());
+            missions, completions, new InMemoryExerciseVideoRepository(), identity, identity, policy, Fixed.time());
     private final WeeklyReportService service =
             new WeeklyReportService(runs, missions, identity, identity, activity, identity, policy, Fixed.time());
 

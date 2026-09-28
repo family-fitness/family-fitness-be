@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class ParticipantSpanTest {
 
     private ParticipantSpan span(LocalDate startsOn, LocalDate endsOn, Instant createdAt) {
         return new ParticipantSpan(
-                kid, new MissionSpan(startsOn, endsOn, TargetMetric.TIMER_MINUTES, false, null), createdAt);
+                kid, new MissionSpan(startsOn, endsOn, TargetMetric.TIMER_MINUTES, false, Set.of()), createdAt);
     }
 
     @Test
@@ -30,7 +31,7 @@ class ParticipantSpanTest {
         ParticipantSpan backdated =
                 span(LocalDate.of(2026, 9, 21), LocalDate.of(2026, 9, 21), Instant.parse("2026-09-24T01:00:00Z"));
 
-        assertThat(backdated.span().standingDays(today, KST)).containsExactly(LocalDate.of(2026, 9, 21));
+        assertThat(backdated.span().standingDays(today)).containsExactly(LocalDate.of(2026, 9, 21));
         assertThat(backdated.standingDaysSinceCreated(today, KST)).isEmpty();
     }
 

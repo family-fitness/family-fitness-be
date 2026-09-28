@@ -18,7 +18,7 @@ public record ParticipantSpan(UUID profileId, MissionSpan span, Instant missionC
      */
     public List<LocalDate> standingDaysSinceCreated(LocalDate today, ZoneId zone) {
         LocalDate createdOn = LocalDate.ofInstant(missionCreatedAt, zone);
-        return span.standingDays(today, zone).stream()
+        return span.standingDays(today).stream()
                 .filter(day -> !day.isBefore(createdOn))
                 .toList();
     }

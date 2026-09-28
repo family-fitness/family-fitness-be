@@ -91,6 +91,8 @@ public class MissionParticipant {
      * 새 진행도를 반영한다. 완료된 참여자는 진행도를 되돌리지 않는다. 바뀐 것이 있으면 true.
      * 진행도는 저장 정밀도(소수 셋째 자리 버림)로 맞춰 비교 · 보관한다. 1/3 처럼 끝나지 않는 값을 그대로 비교하면
      * DB 에서 읽은 0.333 과 계산한 0.3333… 이 늘 달라 읽을 때마다 같은 값을 다시 저장했다.
+     * 확인 방법(verifiedBy)은 조금이라도 진행했으면 그 근거를 싣는다 — 칸 하나만 끝내도 끝낸 칸 옆에 「영상으로 확인됨」 이
+     * 보인다(FE 목 handlers.ts 칸 끝, FE 요청서 4장). 확인 시각(verifiedAt)은 완료될 때만 적는다.
      */
     boolean apply(MissionProgress computed, boolean serverVerifiable, Instant at) {
         if (isCompleted()) return false;
@@ -98,6 +100,11 @@ public class MissionParticipant {
         double next = atStoredScale(computed.progress());
         if (next != progress) {
             progress = next;
+            changed = true;
+        }
+        VerifiedBy nextVerifiedBy = next > 0 ? computed.verifiedBy() : null;
+        if (nextVerifiedBy != verifiedBy) {
+            verifiedBy = nextVerifiedBy;
             changed = true;
         }
         if (serverVerifiable && isReachedTarget()) {

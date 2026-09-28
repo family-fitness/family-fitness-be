@@ -1,9 +1,13 @@
 package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -44,7 +48,7 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
             entity = toEntity(record);
         } else {
             existing.setSteps(record.getSteps());
-            existing.setActiveMinutes(record.getActiveMinutes());
+            existing.setActiveSeconds(record.getActiveSeconds());
             existing.setRecordedAt(record.getRecordedAt());
             entity = existing;
         }
@@ -56,35 +60,55 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
     public ActivityTotals totals(UUID profileId, LocalDate from, LocalDate to) {
         ActivitySums sums = jpa.sumBetween(profileId, from, to, verifiedSources);
         return new ActivityTotals(
-                (int) orZero(sums.steps()), (int) orZero(sums.activeMinutes()), (int) orZero(sums.verifiedMinutes()));
+                (int) orZero(sums.steps()),
+                minutesOf(orZero(sums.activeSeconds())),
+                minutesOf(orZero(sums.verifiedSeconds())));
     }
 
     @Override
     public int activeMinutesOn(UUID profileId, LocalDate activityDate) {
-        return (int) jpa.sumActiveMinutesOn(profileId, activityDate);
+        return minutesOf(jpa.sumActiveSecondsOn(profileId, activityDate));
     }
 
     @Override
     public boolean anyActiveOn(Collection<UUID> profileIds, LocalDate activityDate) {
         if (profileIds.isEmpty()) return false;
-        return jpa.existsByProfileIdInAndActivityDateAndActiveMinutesGreaterThan(profileIds, activityDate, 0);
+        return jpa.existsByProfileIdInAndActivityDateAndActiveSecondsGreaterThan(profileIds, activityDate, 0);
     }
 
     @Override
     public List<DailyMinutes> verifiedDays(UUID profileId, LocalDate from, LocalDate to) {
         return jpa.sumByDay(profileId, from, to, verifiedSources).stream()
-                .map(it -> new DailyMinutes(it.date(), it.minutes().intValue()))
+                .map(it -> new DailyMinutes(it.date(), minutesOf(it.seconds())))
                 .toList();
     }
 
     @Override
+    public Map<UUID, List<DailyMinutes>> verifiedDaysOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (profileIds.isEmpty()) return Map.of();
+        Map<UUID, List<DailyMinutes>> out = new LinkedHashMap<>();
+        profileIds.forEach(it -> out.put(it, new ArrayList<>()));
+        jpa.sumByProfileAndDay(profileIds, from, to, verifiedSources)
+                .forEach(it -> out.get(it.profileId()).add(new DailyMinutes(it.date(), minutesOf(it.seconds()))));
+        Map<UUID, List<DailyMinutes>> frozen = new LinkedHashMap<>();
+        out.forEach((id, days) -> frozen.put(id, List.copyOf(days)));
+        return Collections.unmodifiableMap(frozen);
+    }
+
+    @Override
     public VerifiedSummary verifiedSummary(UUID profileId) {
-        return new VerifiedSummary((int) jpa.countActiveDays(profileId, verifiedSources), (int)
-                jpa.sumMinutes(profileId, verifiedSources));
+        return new VerifiedSummary(
+                (int) jpa.countActiveDays(profileId, verifiedSources),
+                minutesOf(jpa.sumSeconds(profileId, verifiedSources)));
     }
 
     private static long orZero(@Nullable Long value) {
         return value == null ? 0L : value;
+    }
+
+    /** 초 합 → 분(내림). 칸마다 나눠 올리지 않고 합에서 한 번만 바꾼다(결정 37). */
+    private static int minutesOf(long seconds) {
+        return Math.toIntExact(seconds / 60);
     }
 
     private static DailyActivityRecord toDomain(ActivityDailyEntity entity) {
@@ -94,7 +118,7 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
                 entity.getActivityDate(),
                 ActivitySource.valueOf(entity.getSource()),
                 entity.getSteps(),
-                entity.getActiveMinutes(),
+                entity.getActiveSeconds(),
                 entity.getRecordedAt());
     }
 
@@ -105,7 +129,7 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
                 record.getActivityDate(),
                 record.getSource().name(),
                 record.getSteps(),
-                record.getActiveMinutes(),
+                record.getActiveSeconds(),
                 record.getRecordedAt());
     }
 }
