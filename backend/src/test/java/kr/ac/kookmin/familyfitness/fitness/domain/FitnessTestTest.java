@@ -106,18 +106,29 @@ class FitnessTestTest {
     }
 
     @Test
-    @DisplayName("레이더는 5요인 순서로, 요인에 항목이 여럿이면 평균이고 없으면 null")
-    void 레이더는_5요인_순서로_요인에_항목이_여럿이면_평균이고_없으면_null() {
+    @DisplayName("레이더는 민첩성까지 6요인 순서로, 요인에 항목이 여럿이면 평균이고 없으면 null")
+    void 레이더는_민첩성까지_6요인_순서로_요인에_항목이_여럿이면_평균이고_없으면_null() {
         FitnessTest test = register(
-                List.of(m("028", 40), m("020", 30), m("035", 40), m("009", 20)), 15, (item, value) -> switch (item) {
+                List.of(m("028", 40), m("020", 30), m("035", 40), m("009", 20), m("013", 12)),
+                15,
+                (item, value) -> switch (item) {
                     case RELATIVE_GRIP -> 80;
                     case SHUTTLE_RUN -> 40;
                     case TREADMILL_VO2MAX -> 61;
+                    case ILLINOIS -> 70;
                     default -> null;
                 });
         List<RadarPoint> radar = test.radar();
+        assertThat(FitnessFactor.RADAR)
+                .containsExactly(
+                        FitnessFactor.STRENGTH,
+                        FitnessFactor.MUSCULAR_ENDURANCE,
+                        FitnessFactor.FLEXIBILITY,
+                        FitnessFactor.CARDIO,
+                        FitnessFactor.POWER,
+                        FitnessFactor.AGILITY);
         assertThat(radar.stream().map(RadarPoint::factor).toList()).isEqualTo(FitnessFactor.RADAR);
-        assertThat(radar.stream().map(RadarPoint::percentile).toList()).containsExactly(80, null, null, 51, null);
+        assertThat(radar.stream().map(RadarPoint::percentile).toList()).containsExactly(80, null, null, 51, null, 70);
     }
 
     @Test

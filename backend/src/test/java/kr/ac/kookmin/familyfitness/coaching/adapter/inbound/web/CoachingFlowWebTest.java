@@ -195,7 +195,7 @@ class CoachingFlowWebTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("ALREADY_RUN_THIS_WEEK"));
 
-        // 조회: 부모는 승인 가능, 제안에 시드 영상 제목·배지
+        // 조회: 부모는 승인 가능, 제안에 V132 가 넣은 AI 영상 제목
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
@@ -208,9 +208,9 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.proposals[0].targetMetric").value("TIMER_MINUTES"))
                 .andExpect(jsonPath("$.proposals[0].targetValue").value(45))
                 .andExpect(jsonPath("$.proposals[0].video.videoId").value("IdpXx2gm90o"))
-                .andExpect(jsonPath("$.proposals[0].video.title").value("초등학생의 기초체력향상과 운동능력발달을 위한 운동"))
+                .andExpect(jsonPath("$.proposals[0].video.title")
+                        .value("초등학생의 기초체력향상과 운동능력발달을 위한 운동! 같이해봐요! #국민체력100 #유소년 #어린이운동"))
                 .andExpect(jsonPath("$.proposals[0].video.startSec").value(96))
-                .andExpect(jsonPath("$.proposals[0].video.badges[0]").value("조용함"))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].citations", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:IdpXx2gm90o"));
@@ -243,7 +243,8 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].origin").value("COACH"))
                 .andExpect(jsonPath("$.missions[0].coachRunId").value(runId))
                 .andExpect(jsonPath("$.missions[0].serverVerifiable").value(true))
-                .andExpect(jsonPath("$.missions[0].video.durationSec").value(600))
+                // AI 자료에 영상 길이가 없어 V132 는 길이를 비워 둔다
+                .andExpect(jsonPath("$.missions[0].video.durationSec", nullValue()))
                 .andExpect(jsonPath("$.missions[0].sessions", hasSize(0)))
                 .andExpect(jsonPath("$.missions[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.missions[0].participants[?(@.profileId=='" + childId() + "')].name")
@@ -269,7 +270,7 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missionCompleted").value(true));
         verify(activityRecorder).addActiveMinutes(childId(), time.today(), ActivitySource.TIMER, 20);
 
-        // 영상 진행률: 최초 완주에만 10분 적립
+        // 영상 진행률: 완주로 본다. 적립 분은 영상 길이에서 오는데 V132 영상은 길이가 없어 0분이다
         mockMvc.perform(post("/api/v1/videos/IdpXx2gm90o/progress")
                         .header(HttpHeaders.AUTHORIZATION, child)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -277,7 +278,7 @@ class CoachingFlowWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.maxProgress").value(0.95))
                 .andExpect(jsonPath("$.completed").value(true))
-                .andExpect(jsonPath("$.creditedMinutes").value(10))
+                .andExpect(jsonPath("$.creditedMinutes").value(0))
                 .andExpect(jsonPath("$.verifiedBy").value("VIDEO_PROGRESS"));
         mockMvc.perform(post("/api/v1/videos/IdpXx2gm90o/progress")
                         .header(HttpHeaders.AUTHORIZATION, child)
@@ -434,21 +435,22 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].participants[0].needsGuardianCheck")
                         .value(false));
 
-        // 영상 목록: 유소년 안전 필터 + 요인, 커서, 즐겨찾기
-        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=유연성&size=1").header(HttpHeaders.AUTHORIZATION, child))
+        // 영상 목록(V132 AI 영상): 유소년 안전 필터 + 요인 — 근력 영상 중 유아기(IfV5H7USgaA) · 성인(IhShIA-WJNE 등)은 빠진다
+        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=근력&size=1").header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.videos", hasSize(1)))
-                .andExpect(jsonPath("$.videos[0].videoId").value("IdpXx2gm90o"))
+                .andExpect(jsonPath("$.videos[0].videoId").value("Eg3GpTv7z8s"))
                 .andExpect(
-                        jsonPath("$.videos[0].thumbnailUrl").value("https://i.ytimg.com/vi/IdpXx2gm90o/hqdefault.jpg"))
-                .andExpect(jsonPath("$.videos[0].label.factors[0]").value("유연성"))
+                        jsonPath("$.videos[0].thumbnailUrl").value("https://i.ytimg.com/vi/Eg3GpTv7z8s/hqdefault.jpg"))
+                .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"))
                 .andExpect(jsonPath("$.videos[0].favorited").value(false))
-                .andExpect(jsonPath("$.nextCursor").value("IdpXx2gm90o"));
-        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=유연성&size=1&cursor=IdpXx2gm90o")
+                .andExpect(jsonPath("$.nextCursor", nullValue()));
+        // 커서: videoId 오름차순으로 다음 유소년 영상
+        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&size=1&cursor=Eg3GpTv7z8s")
                         .header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.videos[0].videoId").value("sample00002"))
-                .andExpect(jsonPath("$.nextCursor", nullValue()));
+                .andExpect(jsonPath("$.videos[0].videoId").value("HXS4NM82zd0"))
+                .andExpect(jsonPath("$.nextCursor").value("HXS4NM82zd0"));
         mockMvc.perform(get("/api/v1/videos?list=FAVORITES").header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/v1/videos/sample00003/favorite")

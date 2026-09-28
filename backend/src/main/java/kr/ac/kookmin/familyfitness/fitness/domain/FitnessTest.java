@@ -112,7 +112,7 @@ public class FitnessTest {
         return items.stream().filter(it -> it.percentile() != null).toList();
     }
 
-    /** 레이더 5요인. 요인에 항목이 여럿이면 백분위 평균(반올림), 하나도 없으면 null. */
+    /** 레이더 6요인({@link FitnessFactor#RADAR}). 요인에 항목이 여럿이면 백분위 평균(반올림), 하나도 없으면 null. */
     public List<RadarPoint> radar() {
         return FitnessFactor.RADAR.stream()
                 .map(factor -> {

@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.fitness.adapter.outbound.persistence;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
@@ -9,6 +10,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
 import kr.ac.kookmin.familyfitness.fitness.domain.Grade;
 import kr.ac.kookmin.familyfitness.shared.domain.Band;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,13 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
     public @Nullable FitnessTest findLatestByProfileId(UUID profileId) {
         FitnessTestEntity entity = jpa.findFirstByProfileIdOrderByTestedOnDesc(profileId);
         return entity == null ? null : toDomain(entity);
+    }
+
+    @Override
+    public List<FitnessTest> findRecentByProfileId(UUID profileId, int limit) {
+        return jpa.findByProfileIdOrderByTestedOnDesc(profileId, Limit.of(limit)).stream()
+                .map(FitnessTestRepositoryAdapter::toDomain)
+                .toList();
     }
 
     @Override
