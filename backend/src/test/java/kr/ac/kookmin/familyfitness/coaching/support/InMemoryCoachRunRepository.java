@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -127,11 +128,12 @@ public class InMemoryCoachRunRepository implements CoachRunRepository {
                 && lockKey.equals(CoachRun.lockKeyOf(it.getSubjectProfileId(), it.getRunDate()));
     }
 
+    /** 정리 작업의 조건부 UPDATE 처럼 까닭 코드 STALE 로 끝낸다. */
     private int failWhere(Predicate<CoachRun> condition, String reason, Instant at) {
         int failed = 0;
         for (CoachRun run : runs.values()) {
             if (condition.test(run)) {
-                run.fail(reason, at);
+                run.fail(CoachRunFailureCode.STALE, reason, at);
                 persistedStatus.put(run.getId(), CoachRunStatus.FAILED);
                 failed++;
             }
@@ -181,6 +183,7 @@ public class InMemoryCoachRunRepository implements CoachRunRepository {
                 r.getFailureReason(),
                 r.isAiRefused(),
                 r.getAiRefusalReason(),
+                r.getFailureCode(),
                 at);
     }
 }

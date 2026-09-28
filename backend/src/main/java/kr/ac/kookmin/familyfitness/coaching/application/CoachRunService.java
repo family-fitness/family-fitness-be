@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -37,6 +38,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * 코치 실행 유스케이스: 시작(202, 보호자) · 조회 · 가장 최근 조회 · 승인 · 거절.
@@ -56,6 +59,7 @@ public class CoachRunService {
     private final ApplicationEventPublisher events;
     private final AppTime time;
     private final CoachRunTimeLimit timeLimit;
+    private final JsonMapper jsonMapper;
 
     public CoachRunService(
             CoachRunRepository runs,
@@ -66,7 +70,8 @@ public class CoachRunService {
             FitnessQuery fitnessQuery,
             ApplicationEventPublisher events,
             AppTime time,
-            CoachRunTimeLimit timeLimit) {
+            CoachRunTimeLimit timeLimit,
+            JsonMapper jsonMapper) {
         this.runs = runs;
         this.missions = missions;
         this.videos = videos;
@@ -76,7 +81,12 @@ public class CoachRunService {
         this.events = events;
         this.time = time;
         this.timeLimit = timeLimit;
+        this.jsonMapper = jsonMapper;
     }
+
+    /** 제안 원문(proposal_json)에서 notices 만 읽는 모양. 다른 칸은 무시한다. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record ProposalNotices(@Nullable List<String> notices) {}
 
     /**
      * RUNNING 으로 저장하고 이벤트만 발행한다. AI 호출은 커밋 후 비동기. 판단 차례:
@@ -236,7 +246,26 @@ public class CoachRunService {
                 proposals.isEmpty() ? null : proposals,
                 canApprove,
                 missions.countByCoachRun(run.getId()),
-                run.getRejectedReason());
+                run.getRejectedReason(),
+                run.getStatus() == CoachRunStatus.FAILED ? run.getFailureCode() : null,
+                noticesOf(run));
+    }
+
+    /**
+     * AI 가 제안과 함께 준 알림. 제안 원문(proposal_json — AI · 대체 편성 결과를 그대로 적어 둔 것)의 notices 배열을 읽는다.
+     * 새 칸을 두지 않은 것은 이미 거기 저장되어 있기 때문이다. 제안이 없거나 원문을 읽지 못하면 빈 목록.
+     */
+    private List<String> noticesOf(CoachRun run) {
+        String proposalJson = run.getProposalJson();
+        if (proposalJson == null) return List.of();
+        try {
+            List<String> notices =
+                    jsonMapper.readValue(proposalJson, ProposalNotices.class).notices();
+            return notices == null ? List.of() : List.copyOf(notices);
+        } catch (JacksonException e) {
+            log.warn("제안 원문에서 notices 를 읽지 못했다: run={} ({})", run.getId(), e.getMessage());
+            return List.of();
+        }
     }
 
     private static @Nullable ProposalVideoView toVideoView(

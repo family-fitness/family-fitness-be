@@ -78,6 +78,10 @@ public class CoachRunEntity {
     @Column(name = "ai_refusal_reason", length = 60)
     private @Nullable String aiRefusalReason;
 
+    /** FAILED 의 까닭 코드(V139, CoachRunFailureCode 이름). FAILED 가 아니면 null. */
+    @Column(name = "failure_code", length = 20)
+    private @Nullable String failureCode;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -286,6 +290,14 @@ public class CoachRunEntity {
 
     public void setAiRefusalReason(@Nullable String aiRefusalReason) {
         this.aiRefusalReason = aiRefusalReason;
+    }
+
+    public @Nullable String getFailureCode() {
+        return failureCode;
+    }
+
+    public void setFailureCode(@Nullable String failureCode) {
+        this.failureCode = failureCode;
     }
 
     public Instant getCreatedAt() {

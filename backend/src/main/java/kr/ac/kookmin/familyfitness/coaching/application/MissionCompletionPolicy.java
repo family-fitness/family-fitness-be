@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -23,7 +24,8 @@ import org.springframework.stereotype.Component;
  * </ul>
  *
  * 저장 규칙: 활동·진행률 엔드포인트가 돌 때마다 해당 참여자 값을 다시 계산해 저장하고,
- * 목록·주간 요약은 읽을 때 미완료 참여자를 다시 계산해 바뀐 것만 저장한다(write-through).
+ * 목록·단건·주간 요약은 읽을 때 기간 안 미션의 미완료 참여자만 다시 계산해 바뀐 것만 저장한다(write-through).
+ * 기간이 끝난 미션(endsOn &lt; 오늘)은 다시 계산하지 않고 마지막에 저장된 값을 그대로 쓴다.
  */
 @Component
 public class MissionCompletionPolicy {
@@ -65,8 +67,12 @@ public class MissionCompletionPolicy {
         return changed ? missions.save(mission) : mission;
     }
 
-    /** 미완료 참여자 전원을 다시 계산한다. 바뀐 것이 있을 때만 저장한다. */
-    public Mission refreshAll(Mission mission, Instant at) {
+    /**
+     * 읽기 경로의 다시 계산. 기간이 끝난 미션(today 가 endsOn 뒤)은 건드리지 않는다 — 부를 때마다 지난 미션 수만큼
+     * 활동 합계 쿼리가 늘던 것을 막는다. 기간 안이면 미완료 참여자만 다시 계산하고, 바뀐 것이 있을 때만 저장한다.
+     */
+    public Mission refreshAll(Mission mission, LocalDate today, Instant at) {
+        if (today.isAfter(mission.getEndsOn())) return mission;
         boolean changed = false;
         for (MissionParticipant participant : mission.getParticipants()) {
             if (participant.isCompleted()) continue;

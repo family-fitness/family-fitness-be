@@ -64,6 +64,41 @@ class MissionTest {
     }
 
     @Test
+    @DisplayName("진행도는 저장 정밀도(소수 셋째 자리 버림)로 비교한다 — DB 에서 읽은 0.333 과 다시 센 1/3 은 같은 값이라 바뀌지 않는다")
+    void 진행도는_저장_정밀도로_비교한다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30);
+        m.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at);
+        MissionParticipant p = m.participantOf(childId);
+        assertThat(p.getProgress()).isEqualTo(0.333);
+
+        Mission reloaded = Mission.reconstitute(
+                m.getId(),
+                familyId,
+                null,
+                m.getTitle(),
+                null,
+                MissionOrigin.MANUAL,
+                TargetMetric.TIMER_MINUTES,
+                30,
+                null,
+                null,
+                monday,
+                monday.plusDays(6),
+                parentId,
+                at,
+                List.of(MissionParticipant.reconstitute(
+                        childId, null, 0.333, ParticipantStatus.PENDING, null, null, null, at)),
+                List.of());
+
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isFalse();
+        assertThat(reloaded.participantOf(childId).getUpdatedAt()).isEqualTo(at);
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(11, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isTrue();
+        assertThat(reloaded.participantOf(childId).getProgress()).isEqualTo(0.366);
+    }
+
+    @Test
     @DisplayName("타이머 미션은 목표 분에 닿으면 즉시 완료되고 근거는 TIMER 다")
     void 타이머_미션은_목표_분에_닿으면_즉시_완료되고_근거는_TIMER_다() {
         Mission m = mission(TargetMetric.TIMER_MINUTES, 45);

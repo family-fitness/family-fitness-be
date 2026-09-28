@@ -436,6 +436,80 @@ class MissionServiceTest {
         assertThrows(NotSameFamilyException.class, () -> service.get(other.parentUser, missionId));
     }
 
+    @Test
+    @DisplayName("목록은 기간이 끝난 미션과 완료된 참여자를 다시 세지 않고, 바뀐 값이 없으면 저장하지 않는다")
+    void 목록은_끝난_미션과_완료된_참여자를_다시_세지_않는다() {
+        UUID child = family.child.profileId();
+        UUID parent = family.parent.profileId();
+        UUID ended = service.create(
+                        family.parentUser,
+                        family.familyId,
+                        new CreateMissionCommand(
+                                "지난 미션",
+                                Fixed.WEEK_START.minusDays(7),
+                                Fixed.WEEK_START.minusDays(1),
+                                TargetMetric.TIMER_MINUTES,
+                                30,
+                                null,
+                                List.of(child)))
+                .missionId();
+        UUID current = create(TargetMetric.TIMER_MINUTES, 30, List.of(child, parent), null)
+                .missionId();
+        activity.addActiveMinutes(child, Fixed.WEEK_START.minusDays(3), ActivitySource.VIDEO, 30); // 지난 미션을 채울 만큼
+        activity.addActiveMinutes(child, Fixed.TODAY, ActivitySource.VIDEO, 30);
+        activity.addActiveMinutes(parent, Fixed.TODAY, ActivitySource.VIDEO, 10);
+        int savesBefore = missions.saveCount;
+        activity.totalsCalls = 0;
+
+        MissionListView first = service.list(family.parentUser, family.familyId, MissionScope.ALL, null);
+
+        // 이번 주 미션의 두 참여자만 센다. 지난 미션은 저장된 값(0) 그대로다.
+        assertThat(activity.totalsCalls).isEqualTo(2);
+        assertThat(missions.saveCount).isEqualTo(savesBefore + 1);
+        assertThat(participant(first, ended, child).progress()).isZero();
+        assertThat(participant(first, ended, child).completed()).isFalse();
+        assertThat(participant(first, current, child).completed()).isTrue();
+        assertThat(participant(first, current, parent).progress()).isEqualTo(0.333);
+
+        activity.totalsCalls = 0;
+        MissionListView second = service.list(family.parentUser, family.familyId, MissionScope.ALL, null);
+
+        // 완료된 아이는 건너뛰고 부모 한 명만 센다. 값이 그대로라 저장하지 않는다.
+        assertThat(activity.totalsCalls).isEqualTo(1);
+        assertThat(missions.saveCount).isEqualTo(savesBefore + 1);
+        assertThat(participant(second, current, parent).progress()).isEqualTo(0.333);
+        assertThat(missionIds(
+                        service.list(family.parentUser, family.familyId, MissionScope.ALL, MissionStatus.EXPIRED)))
+                .containsExactly(ended);
+    }
+
+    @Test
+    @DisplayName("목록은 scope 로 먼저 걸러 보이지 않을 미션은 다시 세지 않는다")
+    void 목록은_scope_로_먼저_거른다() {
+        create(TargetMetric.TIMER_MINUTES, 30, List.of(family.child.profileId()), null);
+        UUID both = create(
+                        TargetMetric.TIMER_MINUTES,
+                        30,
+                        List.of(family.child.profileId(), family.parent.profileId()),
+                        null)
+                .missionId();
+        activity.totalsCalls = 0;
+
+        MissionListView familyWide = service.list(family.parentUser, family.familyId, MissionScope.FAMILY, null);
+
+        assertThat(missionIds(familyWide)).containsExactly(both);
+        assertThat(activity.totalsCalls).isEqualTo(2);
+    }
+
+    private static MissionParticipantView participant(MissionListView view, UUID missionId, UUID profileId) {
+        return view.missions().stream()
+                .filter(it -> it.missionId().equals(missionId))
+                .flatMap(it -> it.participants().stream())
+                .filter(it -> it.profileId().equals(profileId))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private static ProfileSummary consentWithdrawn(ProfileSummary s) {
         return new ProfileSummary(
                 s.profileId(),
