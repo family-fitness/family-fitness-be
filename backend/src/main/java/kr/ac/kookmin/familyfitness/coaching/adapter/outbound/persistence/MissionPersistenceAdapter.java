@@ -1,11 +1,16 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
@@ -29,14 +34,20 @@ public class MissionPersistenceAdapter implements MissionRepository {
     private final MissionJpaRepository missions;
     private final MissionParticipantJpaRepository participants;
     private final MissionSessionJpaRepository sessions;
+    private final MissionSessionCompletionJpaRepository completions;
+    private final ZoneId zone;
 
     public MissionPersistenceAdapter(
             MissionJpaRepository missions,
             MissionParticipantJpaRepository participants,
-            MissionSessionJpaRepository sessions) {
+            MissionSessionJpaRepository sessions,
+            MissionSessionCompletionJpaRepository completions,
+            ZoneId appZone) {
         this.missions = missions;
         this.participants = participants;
         this.sessions = sessions;
+        this.completions = completions;
+        this.zone = appZone;
     }
 
     @Override
@@ -88,17 +99,35 @@ public class MissionPersistenceAdapter implements MissionRepository {
         return (int) missions.countByCoachRunId(coachRunId);
     }
 
+    /**
+     * 참여 행과 그 사람이 칸을 끝낸 날(completed_on)을 한 번씩 읽어 붙인다. 칸 끝 기록이 없는 옛 미션을 완료했으면
+     * 완료 시각(verifiedAt)의 KST 날짜 하나를 끝낸 날로 본다.
+     */
     @Override
     public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
-        return participants.findSpans(profileId, from, to).stream()
+        List<MissionSpanRow> rows = participants.findSpans(profileId, from, to);
+        if (rows.isEmpty()) return List.of();
+        Map<UUID, Set<LocalDate>> doneOnByMission = new HashMap<>();
+        completions
+                .findByIdProfileIdAndIdMissionIdIn(
+                        profileId, rows.stream().map(MissionSpanRow::missionId).toList())
+                .forEach(it -> doneOnByMission
+                        .computeIfAbsent(it.getId().getMissionId(), k -> new HashSet<>())
+                        .add(it.getCompletedOn()));
+        return rows.stream()
                 .map(it -> {
                     boolean completed = ParticipantStatus.valueOf(it.status()) == ParticipantStatus.COMPLETED;
+                    Set<LocalDate> doneOn = doneOnByMission.getOrDefault(it.missionId(), Set.of());
+                    Instant verifiedAt = it.verifiedAt();
+                    if (doneOn.isEmpty() && completed && verifiedAt != null) {
+                        doneOn = Set.of(LocalDate.ofInstant(verifiedAt, zone));
+                    }
                     return new MissionSpan(
                             it.startsOn(),
                             it.endsOn(),
                             TargetMetric.valueOf(it.targetMetric()),
-                            completed || it.progress().signum() > 0,
-                            completed ? it.verifiedAt() : null);
+                            !doneOn.isEmpty() || completed || it.progress().signum() > 0,
+                            doneOn);
                 })
                 .toList();
     }

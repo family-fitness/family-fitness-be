@@ -32,6 +32,7 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
+import kr.ac.kookmin.familyfitness.activity.api.VerifiedSummary;
 import kr.ac.kookmin.familyfitness.coaching.application.AppTime;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunExecutorConfig;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunPipeline;
@@ -76,6 +77,7 @@ import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -176,6 +178,7 @@ class CoachingFlowWebTest {
         given(familyAccess.requireParent(family.childUser, familyId())).willThrow(new NotAParentException());
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(childId()))).willReturn(childSummary);
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(parentId()))).willReturn(parentSummary);
+        given(familyAccess.requireActingAs(family.childUser, childId())).willReturn(childSummary);
         given(profileQuery.findSummary(childId())).willReturn(childSummary);
         given(profileQuery.findSummary(parentId())).willReturn(parentSummary);
         given(profileQuery.findDetails(childId())).willReturn(family.child);
@@ -201,6 +204,7 @@ class CoachingFlowWebTest {
         given(activityQuery.totals(eq(family.cheerParent.profileId()), any(), any()))
                 .willReturn(new ActivityTotals(0, 0, 0));
         given(activityQuery.activeMinutesOn(eq(childId()), any())).willReturn(20);
+        given(activityQuery.verifiedSummary(any())).willReturn(new VerifiedSummary(0, 0));
         given(cheerQuery.countCheers(eq(familyId()), any(), any())).willReturn(2);
     }
 
@@ -343,9 +347,24 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].participants[?(@.profileId=='" + childId() + "')].name")
                         .value("민준"))
                 .andExpect(jsonPath("$.missions[0].participants[?(@.profileId=='" + childId() + "')].progress")
-                        .value(0.0));
+                        .value(0.0))
+                .andExpect(jsonPath("$.missions[0].participants[*].doneSessions[*]", hasSize(0)));
 
-        // 타이머: 경과 20분으로 자르고, 활동 합계(모의) 45분 → 완료
+        // 칸 끝: 첫 칸(1분)을 끝내면 1/20 · +5. 같이 하기로 한 보호자(동반자)에게도 번진다. 같은 칸을 다시 보내면 0
+        completeSession(child, missionId, 1, 60)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.position").value(1))
+                .andExpect(jsonPath("$.verifiedBy").value("VIDEO_PROGRESS"))
+                .andExpect(jsonPath("$.missionProgress").value(0.05))
+                .andExpect(jsonPath("$.missionCompleted").value(false))
+                .andExpect(jsonPath("$.xpGained").value(5));
+        completeSession(child, missionId, 1, 60)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.xpGained").value(0));
+        verify(activityRecorder).addActiveSeconds(childId(), time.today(), ActivitySource.VIDEO, 60);
+        verify(activityRecorder).addActiveSeconds(parentId(), time.today(), ActivitySource.VIDEO, 60);
+
+        // 타이머: 경과 20분으로 자르고 활동은 쌓지만, 칸 있는 미션은 활동 합계(모의 45분)가 아니라 끝낸 칸으로만 센다
         childTotals = new ActivityTotals(0, 45, 45);
         Instant startedAt = time.today().atTime(8, 30).atZone(time.getZone()).toInstant();
         mockMvc.perform(post("/api/v1/missions/" + missionId + "/activity/timer")
@@ -359,9 +378,31 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.source").value("TIMER"))
                 .andExpect(jsonPath("$.serverVerified").value(true))
                 .andExpect(jsonPath("$.totalActiveMinutes").value(20))
-                .andExpect(jsonPath("$.missionProgress").value(1.0))
-                .andExpect(jsonPath("$.missionCompleted").value(true));
+                .andExpect(jsonPath("$.missionProgress").value(0.05))
+                .andExpect(jsonPath("$.missionCompleted").value(false));
         verify(activityRecorder).addActiveMinutes(childId(), time.today(), ActivitySource.TIMER, 20);
+
+        // 남은 칸(1 · 5 · 4 · 4 · 4 · 1분)을 다 끝내면 완료 · 마지막 칸은 +5 +20
+        int[] minutes = {1, 1, 5, 4, 4, 4, 1};
+        for (int seq = 2; seq <= 6; seq++) {
+            completeSession(child, missionId, seq, minutes[seq - 1] * 60)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.missionCompleted").value(false))
+                    .andExpect(jsonPath("$.xpGained").value(5));
+        }
+        completeSession(child, missionId, 7, 60)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.missionProgress").value(1.0))
+                .andExpect(jsonPath("$.missionCompleted").value(true))
+                .andExpect(jsonPath("$.xpGained").value(25));
+        mockMvc.perform(get("/api/v1/missions/" + missionId).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.participants[?(@.profileId=='" + childId() + "')].doneSessions[*]")
+                        .value(contains(1, 2, 3, 4, 5, 6, 7)))
+                .andExpect(jsonPath("$.participants[?(@.profileId=='" + parentId() + "')].doneSessions[*]")
+                        .value(contains(1, 2, 3, 4, 5, 6, 7)))
+                .andExpect(jsonPath("$.participants[?(@.profileId=='" + parentId() + "')].completed")
+                        .value(true));
 
         // 영상 진행률: 완주로 본다. 적립 분은 영상 길이에서 오는데 V132 영상은 길이가 없어 0분이다
         mockMvc.perform(post("/api/v1/videos/IdpXx2gm90o/progress")
@@ -426,7 +467,8 @@ class CoachingFlowWebTest {
                         .value(time.thisWeekStart().plusDays(6).toString()))
                 .andExpect(jsonPath("$.summary").value("유연성은 매일 조금씩 늘려 가는 영역입니다. 오늘 20분이면 충분합니다."))
                 .andExpect(jsonPath("$.missionStats.total").value(1))
-                .andExpect(jsonPath("$.missionStats.completed").value(0))
+                // 아이가 끝낸 칸이 동반자 보호자에게도 번져 참여자 둘 다 완료다
+                .andExpect(jsonPath("$.missionStats.completed").value(1))
                 .andExpect(jsonPath("$.members", hasSize(3)))
                 .andExpect(jsonPath("$.members[?(@.profileId=='" + childId() + "')].verifiedMinutes")
                         .value(45))
@@ -990,6 +1032,18 @@ class CoachingFlowWebTest {
         return "{\"position\":" + position + ",\"phase\":\"MAIN\",\"title\":\"동작" + position
                 + "\",\"minutes\":" + minutes + ",\"clip\":{\"videoId\":\"" + videoId + "\",\"startSec\":"
                 + startSec + ",\"endSec\":" + endSec + "}}";
+    }
+
+    /** 운동 한 칸 끝 — 아이 이름으로, 기기 시각 간격은 넉넉하게. */
+    private ResultActions completeSession(String bearer, String missionId, int seq, int activeSeconds)
+            throws Exception {
+        Instant endedAt = Instant.now();
+        return mockMvc.perform(post("/api/v1/missions/" + missionId + "/sessions/" + seq + "/complete")
+                .header(HttpHeaders.AUTHORIZATION, bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"profileId\":\"" + childId() + "\",\"activeSeconds\":" + activeSeconds
+                        + ",\"startedAt\":\"" + endedAt.minusSeconds(3600) + "\",\"endedAt\":\"" + endedAt
+                        + "\"}"));
     }
 
     private static String extract(String regex, MvcResult result) throws Exception {

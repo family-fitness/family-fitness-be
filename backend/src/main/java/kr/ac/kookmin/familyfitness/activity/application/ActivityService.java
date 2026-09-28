@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 활동 기록의 공개 API 구현. (profile, date, source) 한 행을 upsert 한다.
+ * 활동 기록의 공개 API 구현. (profile, date, source) 한 행을 upsert 한다. 시간은 초로 쌓는다(분 적립도 초로 바꿔 쌓는다).
  * 권한·미션 진행도는 호출 모듈(coaching)의 책임이고, 여기서는 값 규칙만 지킨다.
  */
 @Service
@@ -49,14 +49,21 @@ public class ActivityService implements ActivityRecorder, ActivityQuery {
     @Override
     @Transactional
     public DailyActivity addActiveMinutes(UUID profileId, LocalDate activityDate, ActivitySource source, int minutes) {
+        DailyActivityRecord.validateMinutes(minutes);
+        return addActiveSeconds(profileId, activityDate, source, Math.multiplyExact(minutes, 60));
+    }
+
+    @Override
+    @Transactional
+    public DailyActivity addActiveSeconds(UUID profileId, LocalDate activityDate, ActivitySource source, int seconds) {
         DailyActivityRecord.validateMinuteSource(source);
         Instant now = clock.instant();
         DailyActivityRecord existing = repository.find(profileId, activityDate, source);
         DailyActivityRecord record;
         if (existing == null) {
-            record = DailyActivityRecord.newMinutes(profileId, activityDate, source, minutes, now);
+            record = DailyActivityRecord.newSeconds(profileId, activityDate, source, seconds, now);
         } else {
-            existing.addActiveMinutes(minutes, now);
+            existing.addActiveSeconds(seconds, now);
             record = existing;
         }
         return repository.save(record).toDailyActivity();
