@@ -7,6 +7,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +30,14 @@ class MissionTest {
     }
 
     private Mission mission(TargetMetric metric, int target, List<UUID> participants) {
+        return manual(metric, target, participants, List.of());
+    }
+
+    private Mission withSessions(TargetMetric metric, int target, List<MissionSession> sessions) {
+        return manual(metric, target, List.of(childId), sessions);
+    }
+
+    private Mission manual(TargetMetric metric, int target, List<UUID> participants, List<MissionSession> sessions) {
         return Mission.manual(
                 UUID.randomUUID(),
                 familyId,
@@ -38,8 +48,19 @@ class MissionTest {
                 monday,
                 monday.plusDays(6),
                 participants,
+                sessions,
                 parentId,
                 at);
+    }
+
+    private static MissionSession session(int position, SessionPhase phase, int minutes) {
+        return new MissionSession(
+                position,
+                phase,
+                "동작" + position,
+                FitnessFactor.FLEXIBILITY,
+                minutes,
+                new SessionClip("-EATykJOvBQ", 6, 78, "거북이 스트레칭"));
     }
 
     @Test
@@ -106,13 +127,14 @@ class MissionTest {
     }
 
     @Test
-    @DisplayName("참여자가 아니면 NOT_PARTICIPANT, 지표가 다르면 INVALID_METRIC")
-    void 참여자가_아니면_NOT_PARTICIPANT_지표가_다르면_INVALID_METRIC() {
+    @DisplayName("참여자가 아니면 권한 없음(403) NOT_A_PARTICIPANT, 지표가 다르면 INVALID_METRIC")
+    void 참여자가_아니면_NOT_A_PARTICIPANT_지표가_다르면_INVALID_METRIC() {
         Mission m = mission(TargetMetric.TIMER_MINUTES);
 
-        assertThat(assertThrows(NotParticipantException.class, () -> m.participantOf(parentId))
-                        .getCode())
-                .isEqualTo("NOT_PARTICIPANT");
+        NotParticipantException notParticipant =
+                assertThrows(NotParticipantException.class, () -> m.participantOf(parentId));
+        assertThat(notParticipant.getCode()).isEqualTo("NOT_A_PARTICIPANT");
+        assertThat(notParticipant.getKind()).isEqualTo(ErrorKind.FORBIDDEN);
         assertThat(assertThrows(InvalidMetricException.class, () -> m.requireMetric(TargetMetric.STEPS))
                         .getCode())
                 .isEqualTo("INVALID_METRIC");
@@ -137,6 +159,69 @@ class MissionTest {
     void 진행도는_1을_넘지_않고_목표가_0이면_0이다() {
         assertThat(MissionProgress.of(120, 45, VerifiedBy.TIMER).progress()).isEqualTo(1.0);
         assertThat(MissionProgress.of(5, 0, null).progress()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("직접 만든 칸은 position 차례로 들고 목표 분은 칸 시간의 합이다")
+    void 직접_만든_칸은_position_차례로_들고_목표_분은_칸_시간의_합이다() {
+        Mission m = withSessions(
+                TargetMetric.TIMER_MINUTES,
+                8,
+                List.of(
+                        session(2, SessionPhase.WARMUP, 1),
+                        session(1, SessionPhase.COOLDOWN, 2),
+                        session(3, SessionPhase.MAIN, 5)));
+
+        assertThat(m.getSessions()).extracting(MissionSession::position).containsExactly(1, 2, 3);
+        assertThat(m.getSessions())
+                .extracting(MissionSession::phase)
+                .containsExactly(SessionPhase.COOLDOWN, SessionPhase.WARMUP, SessionPhase.MAIN);
+        assertThat(m.getTargetValue()).isEqualTo(8);
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 45).getSessions()).isEmpty();
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 45).getTargetValue()).isEqualTo(45);
+    }
+
+    @Test
+    @DisplayName("칸 번호가 1..n 이 아니거나 칸이 있는데 지표가 분이 아니면 만들 수 없다")
+    void 칸_번호가_1부터_n이_아니거나_칸이_있는데_지표가_분이_아니면_만들_수_없다() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withSessions(
+                        TargetMetric.TIMER_MINUTES,
+                        3,
+                        List.of(session(1, SessionPhase.MAIN, 1), session(1, SessionPhase.MAIN, 2))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withSessions(
+                        TargetMetric.TIMER_MINUTES,
+                        3,
+                        List.of(session(1, SessionPhase.MAIN, 1), session(3, SessionPhase.MAIN, 2))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withSessions(TargetMetric.STEPS, 3000, List.of(session(1, SessionPhase.MAIN, 1))));
+        assertThrows(IllegalArgumentException.class, () -> session(1, SessionPhase.MAIN, 0));
+    }
+
+    @Test
+    @DisplayName("칸이 있는데 목표 분이 칸 시간의 합과 다르면 고쳐 넣지 않고 만들 수 없다")
+    void 칸이_있는데_목표_분이_칸_시간의_합과_다르면_만들_수_없다() {
+        List<MissionSession> sessions = List.of(session(1, SessionPhase.WARMUP, 2), session(2, SessionPhase.MAIN, 3));
+
+        IllegalArgumentException larger = assertThrows(
+                IllegalArgumentException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 999, sessions));
+        assertThat(larger.getMessage()).contains("999").contains("5분");
+        assertThrows(IllegalArgumentException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 4, sessions));
+        assertThat(withSessions(TargetMetric.TIMER_MINUTES, 5, sessions).getTargetValue())
+                .isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("영상 구간은 끝이 시작보다 뒤여야 하고 끝이 없으면 영상 한 편이다")
+    void 영상_구간은_끝이_시작보다_뒤여야_하고_끝이_없으면_영상_한_편이다() {
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", 78, 78, null));
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", 78, 6, null));
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", -1, 6, null));
+        assertThat(new SessionClip("-EATykJOvBQ", 0, null, null).endSec()).isNull();
     }
 
     @Test
@@ -181,5 +266,6 @@ class MissionTest {
                 .extracting(MissionParticipant::getCoachRole)
                 .isEqualTo("주행자");
         assertThat(mission.getRationale()).isEqualTo("부모용 문구");
+        assertThat(mission.getSessions()).isEmpty();
     }
 }

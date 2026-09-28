@@ -3,16 +3,16 @@ package kr.ac.kookmin.familyfitness.fitness.domain;
 import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Arrays;
 
-/** 등급. 와이어 값은 한글 라벨. 백분위→등급 임계값 ▲ 확정 필요 (잠정 1등급≥90 · 2등급≥75 · 3등급≥50 · 그 외 참가). */
+/** 등급. 와이어 값은 한글 라벨. 백분위→등급: 1등급≥85 · 2등급≥65 · 3등급≥40 · 그 외 참가(BE 설계안 ⑪). */
 public enum Grade {
     FIRST("1등급"),
     SECOND("2등급"),
     THIRD("3등급"),
     PARTICIPATION("참가");
 
-    public static final int FIRST_FROM = 90;
-    public static final int SECOND_FROM = 75;
-    public static final int THIRD_FROM = 50;
+    public static final int FIRST_FROM = 85;
+    public static final int SECOND_FROM = 65;
+    public static final int THIRD_FROM = 40;
 
     private final String label;
 

@@ -57,7 +57,7 @@ public class CoachRunExecutor {
         try {
             CoachRunRequest request = pipeline.prepare(runId);
             CoachRunAccepted accepted = gateway.startCoachRun(request);
-            pipeline.attachAiRun(runId, accepted.runId());
+            if (!pipeline.attachAiRun(runId, accepted.runId())) return; // 그 사이 정리 작업이 끝낸 실행은 폴링하지 않는다
             CoachRunResult result = poll(accepted.runId());
             if (result == null) {
                 pipeline.fail(
@@ -84,26 +84,36 @@ public class CoachRunExecutor {
             try {
                 fallbackOrFail(runId, e.getMessage() == null ? "unavailable" : e.getMessage());
             } catch (RuntimeException failure) {
+                // RUNNING 으로 남으면 그 (프로필, 날짜)가 정리 작업 전까지 잠긴다
                 log.error("대체 편성도 실패: run={}", runId, failure);
+                failQuietly(runId, "AI 장애 뒤 대체 편성도 실패: " + describe(failure));
             }
         } catch (Exception e) {
             log.error("코치 실행 실패: run={}", runId, e);
-            try {
-                pipeline.fail(runId, e.getClass().getSimpleName() + ": " + e.getMessage(), null, false, null);
-            } catch (RuntimeException failure) {
-                log.error("실패 기록도 실패: run={}", runId, failure);
-            }
+            failQuietly(runId, describe(e));
         }
     }
 
-    /** 보드 F3 「LLM 없이도 돈다」 — 라벨만으로 편성. 근거를 만들 측정이 없으면 FAILED. */
+    /** 보드 F3 「LLM 없이도 돈다」 — 라벨만으로 편성. 고를 요인도 인용할 근거도 없으면 FAILED. */
     private void fallbackOrFail(UUID runId, String reason) {
         CoachRunResult result = pipeline.planFallback(runId, reason);
         if (result == null) {
-            pipeline.fail(runId, "AI 장애(" + reason + ") 이고 대체 편성 근거(측정)도 없다", null, false, null);
+            pipeline.fail(runId, "AI 장애(" + reason + ") 이고 대체 편성 근거(측정 · 고른 힘)도 없다", null, false, null);
         } else {
             pipeline.complete(runId, result);
         }
+    }
+
+    private void failQuietly(UUID runId, String reason) {
+        try {
+            pipeline.fail(runId, reason, null, false, null);
+        } catch (RuntimeException failure) {
+            log.error("실패 기록도 실패: run={}", runId, failure);
+        }
+    }
+
+    private static String describe(Exception e) {
+        return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
     private @Nullable CoachRunResult poll(String aiRunId) throws InterruptedException {

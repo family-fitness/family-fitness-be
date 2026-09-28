@@ -152,12 +152,13 @@ public class VideoService {
     /**
      * 진행률 보고. 최대값만 남기고, 최초로 0.9 이상이 되면 `activity_daily`(VIDEO) 에 영상 길이(분, 올림)를 1회 적립한다.
      * missionId 가 있으면 그 미션의 참여자 진행도도 갱신한다.
+     * 보호자 동의가 없거나 거둔 프로필은 기록하지 않는다(422 CONSENT_REQUIRED).
      */
     @Transactional
     public VideoProgressView progress(UUID userId, String videoId, VideoProgressCommand command) {
         ExerciseVideo video = videos.findById(videoId);
         if (video == null) throw new VideoNotFoundException(videoId);
-        familyAccess.requireSameFamilyAsProfile(userId, command.profileId());
+        ParticipantConsent.require(familyAccess.requireSameFamilyAsProfile(userId, command.profileId()));
         Instant now = time.now();
         VideoInteraction interaction = interactions.find(command.profileId(), videoId);
         if (interaction == null) {

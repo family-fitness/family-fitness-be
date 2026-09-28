@@ -11,7 +11,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
 
-/** `exercise_videos` 행. 수집 배치가 채우고 이 모듈은 읽기만 한다. */
+/** `exercise_videos` 행. AI 영상은 V132 적재 마이그레이션(scripts/ai_clips_to_sql.py)이 채우고 이 모듈은 읽기만 한다. */
 @Entity
 @Table(name = "exercise_videos")
 public class ExerciseVideoEntity {
