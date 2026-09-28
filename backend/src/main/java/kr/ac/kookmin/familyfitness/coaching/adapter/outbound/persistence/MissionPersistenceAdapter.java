@@ -12,6 +12,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
@@ -85,6 +86,21 @@ public class MissionPersistenceAdapter implements MissionRepository {
     @Override
     public int countByCoachRun(UUID coachRunId) {
         return (int) missions.countByCoachRunId(coachRunId);
+    }
+
+    @Override
+    public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
+        return participants.findSpans(profileId, from, to).stream()
+                .map(it -> {
+                    boolean completed = ParticipantStatus.valueOf(it.status()) == ParticipantStatus.COMPLETED;
+                    return new MissionSpan(
+                            it.startsOn(),
+                            it.endsOn(),
+                            TargetMetric.valueOf(it.targetMetric()),
+                            completed || it.progress().signum() > 0,
+                            completed ? it.verifiedAt() : null);
+                })
+                .toList();
     }
 
     /** 참여자 · 칸을 missionId IN 으로 한 번씩만 읽는다(미션마다 따로 읽지 않는다). */
