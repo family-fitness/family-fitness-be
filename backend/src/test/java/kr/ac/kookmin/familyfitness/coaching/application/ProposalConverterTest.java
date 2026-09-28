@@ -4,11 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
@@ -27,105 +24,174 @@ import org.junit.jupiter.api.Test;
 
 class ProposalConverterTest {
     private final Family family = new Family();
-    private final ProposalConverter converter = new ProposalConverter(
-            ProfileRef.indexOf(
-                    family.members().stream().map(ProfileDetails::profileId).toList()),
-            roles(),
-            Map.of(
-                    family.child.profileId(), "주행자",
-                    family.parent.profileId(), "동반자",
-                    family.cheerParent.profileId(), "응원"),
-            Set.of("IdpXx2gm90o"));
-
-    private Map<UUID, ProfileRole> roles() {
-        Map<UUID, ProfileRole> roles = new LinkedHashMap<>();
-        family.members().forEach(it -> roles.put(it.profileId(), it.role()));
-        return roles;
-    }
+    /** 대상 아이만, 보호자는 같이 하지 않는다. */
+    private final ProposalConverter converter =
+            new ProposalConverter(family.child.profileId(), ProfileRole.CHILD, null);
 
     private static CoachRunResult.Session session(
-            int offset, int minutes, CoachRunResult.@Nullable Video video, List<Integer> evidence) {
-        return new CoachRunResult.Session(offset, "운동", "유연성", minutes, video, evidence);
+            @Nullable Integer order, CoachRunResult.@Nullable Video video, List<Integer> evidence) {
+        return new CoachRunResult.Session(0, "본운동", order, "운동", "유연성", 40, video, evidence);
+    }
+
+    private static CoachRunResult.Mission mission(
+            List<CoachRunResult.ParticipantRef> participants,
+            @Nullable Integer durationMin,
+            List<CoachRunResult.Session> sessions,
+            String copyParent,
+            String reason) {
+        return new CoachRunResult.Mission(
+                "일간",
+                "t",
+                "2026-09-07",
+                "2026-09-07",
+                participants,
+                durationMin,
+                null,
+                sessions,
+                "아이 문구",
+                copyParent,
+                reason);
     }
 
     private static CoachRunResult.Proposal proposal(List<CoachRunResult.Mission> missions) {
-        return proposal(
+        return new CoachRunResult.Proposal(
                 missions,
                 List.of(
                         new Citation(1, "처방", "prescription:1", null),
                         new Citation(2, "영상", "video:IdpXx2gm90o", "https://y/1"),
-                        new Citation(3, "기타", "x", null)));
-    }
-
-    private static CoachRunResult.Proposal proposal(List<CoachRunResult.Mission> missions, List<Citation> citations) {
-        return new CoachRunResult.Proposal(missions, citations);
+                        new Citation(3, "기타", "x", null)),
+                List.of());
     }
 
     @Test
-    @DisplayName("미션은 위치·제목·부모 문구·TIMER_MINUTES·분 합계·첫 영상·역매핑 참여자·evidence 인용으로 바뀐다")
-    void 미션은_위치_제목_부모_문구_TIMER_MINUTES_분_합계_첫_영상_역매핑_참여자_evidence_인용으로_바뀐다() {
-        CoachRunResult.Mission mission = new CoachRunResult.Mission(
-                "같이 늘이는 한 주",
+    @DisplayName("AI 명세의 편성 결과 예시는 목표 15분 · 근거 문장 · 카탈로그에 없는 클립 영상 그대로 제안이 된다")
+    void AI_명세의_편성_결과_예시는_목표_15분_근거_문장_클립_영상_그대로_제안이_된다() {
+        // ai:docs/인터페이스-명세.md 4장 응답 200 예시. ref 만 이 가족 아이로 바꿨다.
+        CoachRunResult.Mission example = new CoachRunResult.Mission(
+                "일간",
+                "월요일 늘이기",
                 "2026-09-07",
-                "2026-09-13",
+                "2026-09-07",
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                15,
+                418,
+                List.of(new CoachRunResult.Session(
+                        0,
+                        "준비운동",
+                        1,
+                        "넙다리 안쪽 늘리기 (나비자세)",
+                        "유연성",
+                        38,
+                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182),
+                        List.of(1, 2))),
+                "이번 주는 몸을 길게 늘이는 동작, 엄마랑 같이 해볼까요",
+                "유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다",
+                "또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
+        CoachRunResult.Proposal proposal = new CoachRunResult.Proposal(
+                List.of(example),
+                List.of(new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null)),
+                List.of());
+
+        CoachProposalItem item = converter.convert(proposal).getFirst();
+
+        assertThat(item.position()).isEqualTo(0);
+        assertThat(item.title()).isEqualTo("월요일 늘이기");
+        assertThat(item.targetMetric()).isEqualTo("TIMER_MINUTES");
+        assertThat(item.targetValue()).isEqualTo(15);
+        assertThat(item.rationale()).isEqualTo("또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
+        assertThat(item.description()).isEqualTo("준비운동 넙다리 안쪽 늘리기 (나비자세)");
+        assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
+        assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
+        assertThat(item.participants())
+                .containsExactly(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"));
+        assertThat(item.citations().stream().map(ProposalCitation::index).toList())
+                .containsExactly(1);
+        assertThat(item.copyChild()).isEqualTo("이번 주는 몸을 길게 늘이는 동작, 엄마랑 같이 해볼까요");
+        assertThat(item.copyParent()).isEqualTo("유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다");
+    }
+
+    @Test
+    @DisplayName("세션은 order 순으로 보고 영상 없는 칸을 건너뛰어 첫 영상을 고르며, 참여자는 대상만 남기고 인용은 evidence 로 거른다")
+    void 세션은_order_순으로_보고_첫_영상을_고르며_참여자는_대상만_남기고_인용은_evidence_로_거른다() {
+        CoachRunResult.Mission mission = mission(
                 List.of(
                         new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자"),
                         new CoachRunResult.ParticipantRef(ProfileRef.of(family.parent.profileId()), "동반자"),
                         new CoachRunResult.ParticipantRef("p_unknown", "주행자")),
+                20,
                 List.of(
-                        session(0, 15, null, List.of(1)),
-                        session(2, 15, new CoachRunResult.Video("IdpXx2gm90o", 96), List.of(1, 2)),
-                        session(4, 20, new CoachRunResult.Video("other", 0), List.of())),
-                "아이 문구",
-                "부모 문구");
+                        session(3, new CoachRunResult.Video("later", 0, 30), List.of()),
+                        session(1, null, List.of(1)),
+                        session(2, new CoachRunResult.Video("IdpXx2gm90o", 96, 136), List.of(1, 2))),
+                "부모 문구",
+                "골랐습니다 [1].");
 
-        List<CoachProposalItem> items = converter.convert(proposal(List.of(mission)));
-        assertThat(items).hasSize(1);
-        CoachProposalItem item = items.getFirst();
+        CoachProposalItem item = converter.convert(proposal(List.of(mission))).getFirst();
 
-        assertThat(item.position()).isEqualTo(0);
-        assertThat(item.title()).isEqualTo("같이 늘이는 한 주");
-        assertThat(item.rationale()).isEqualTo("부모 문구");
-        assertThat(item.targetMetric()).isEqualTo("TIMER_MINUTES");
-        assertThat(item.targetValue()).isEqualTo(50);
         assertThat(item.video()).isEqualTo(new ProposalVideo("IdpXx2gm90o", 96));
-        assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
-        assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 13));
-        assertThat(item.participants().stream()
-                        .map(ProposalParticipant::profileId)
-                        .toList())
-                .containsExactly(family.child.profileId(), family.parent.profileId());
-        assertThat(item.participants().stream().map(ProposalParticipant::role).toList())
-                .containsExactly(ProfileRole.CHILD, ProfileRole.PARENT);
-        assertThat(item.participants().stream()
-                        .map(ProposalParticipant::coachRole)
-                        .toList())
-                .containsExactly("주행자", "동반자");
+        assertThat(item.targetValue()).isEqualTo(20);
+        assertThat(item.participants())
+                .containsExactly(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"));
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
                 .containsExactly(1, 2);
-        assertThat(item.copyChild()).isEqualTo("아이 문구");
     }
 
     @Test
-    @DisplayName("evidence 가 하나도 없으면 실행 전체 인용을 붙이고, 모르는 영상은 버린다")
-    void evidence_가_하나도_없으면_실행_전체_인용을_붙이고_모르는_영상은_버린다() {
-        CoachRunResult.Mission mission = new CoachRunResult.Mission(
-                "t",
-                "2026-09-07",
-                "2026-09-13",
-                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "")),
-                List.of(session(0, 0, new CoachRunResult.Video("unknown", null), List.of())),
-                "",
+    @DisplayName("AI 가 넣은 응원 부모는 빼고, withParent 면 요청한 보호자를 동반자로 덧붙인다")
+    void 응원_부모는_빼고_withParent_면_요청한_보호자를_동반자로_덧붙인다() {
+        ProposalConverter withParent =
+                new ProposalConverter(family.child.profileId(), ProfileRole.CHILD, family.parent.profileId());
+        CoachRunResult.Mission mission = mission(
+                List.of(
+                        new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자"),
+                        new CoachRunResult.ParticipantRef(ProfileRef.of(family.cheerParent.profileId()), "응원")),
+                20,
+                List.of(session(1, null, List.of(1))),
+                "부모 문구",
+                "골랐습니다 [1].");
+
+        CoachProposalItem item = withParent.convert(proposal(List.of(mission))).getFirst();
+
+        assertThat(item.participants())
+                .containsExactly(
+                        new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"),
+                        new ProposalParticipant(family.parent.profileId(), ProfileRole.PARENT, "동반자"));
+    }
+
+    @Test
+    @DisplayName("대상이 들지 않은 미션은 참여자가 비어 승인 때 미션이 되지 않는다 — 보호자만 남기지 않는다")
+    void 대상이_들지_않은_미션은_참여자가_비어_있다() {
+        ProposalConverter withParent =
+                new ProposalConverter(family.child.profileId(), ProfileRole.CHILD, family.parent.profileId());
+        CoachRunResult.Mission mission = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.parent.profileId()), "동반자")),
+                20,
+                List.of(),
+                "부모 문구",
                 "");
 
-        List<CoachProposalItem> items = converter.convert(proposal(List.of(mission)));
-        assertThat(items).hasSize(1);
-        CoachProposalItem item = items.getFirst();
+        assertThat(withParent.convert(proposal(List.of(mission))).getFirst().participants())
+                .isEmpty();
+    }
 
+    @Test
+    @DisplayName("duration_min 이 없으면 목표는 최소 1분, reason 이 비면 부모 문구, evidence 가 없으면 실행 전체 인용")
+    void duration_min_이_없으면_목표는_최소_1분_reason_이_비면_부모_문구_evidence_가_없으면_전체_인용() {
+        CoachRunResult.Mission mission = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "")),
+                null,
+                List.of(session(null, null, List.of())),
+                "부모 문구",
+                "");
+
+        CoachProposalItem item = converter.convert(proposal(List.of(mission))).getFirst();
+
+        assertThat(item.targetValue()).isEqualTo(1);
+        assertThat(item.rationale()).isEqualTo("부모 문구");
+        assertThat(item.video()).isNull();
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
                 .containsExactly(1, 2, 3);
-        assertThat(item.video()).isNull();
-        assertThat(item.targetValue()).isEqualTo(1);
         assertThat(item.participants())
                 .singleElement()
                 .extracting(ProposalParticipant::coachRole)
@@ -178,8 +244,7 @@ class ProposalConverterTest {
                 "r",
                 "succeeded",
                 steps,
-                proposal(List.of(new CoachRunResult.Mission(
-                        "t", "2026-09-07", "2026-09-13", List.of(), List.of(), "", "부모 요약"))),
+                proposal(List.of(mission(List.of(), 15, List.of(), "부모 요약", ""))),
                 false,
                 null);
         assertThat(ProposalConverter.summary(withProposal)).isEqualTo("부모 요약");

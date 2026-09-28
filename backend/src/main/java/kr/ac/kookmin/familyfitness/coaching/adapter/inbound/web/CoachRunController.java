@@ -7,7 +7,6 @@ import kr.ac.kookmin.familyfitness.coaching.application.CoachRunAcceptedView;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunService;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunView;
 import kr.ac.kookmin.familyfitness.coaching.application.RejectCoachRunView;
-import kr.ac.kookmin.familyfitness.coaching.application.StartCoachRunCommand;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -16,10 +15,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 코치 실행: 시작(202, 비동기) · 조회 · 승인(보호자) · 거절(보호자). */
+/** 코치 실행: 시작(202, 비동기, 보호자) · 조회 · 가장 최근 조회(구성원) · 승인(보호자) · 거절(보호자). */
 @RestController
 @RequestMapping("/api/v1")
 public class CoachRunController {
@@ -29,17 +29,21 @@ public class CoachRunController {
         this.service = service;
     }
 
+    /** 한 사람의 하루를 짠다. 몸통은 {@link StartCoachRunRequest}. */
     @PostMapping("/families/{familyId}/coach/runs")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public CoachRunAcceptedView start(
+            CurrentUser user, @PathVariable UUID familyId, @Valid @RequestBody StartCoachRunRequest body) {
+        return service.start(user.userId(), familyId, body.toCommand());
+    }
+
+    /** 가장 최근 실행. profileId 가 있으면 그 프로필을 대상으로 짠 것. 없으면 404 COACH_RUN_NOT_FOUND. */
+    @GetMapping("/families/{familyId}/coach/runs/latest")
+    public CoachRunView latest(
             CurrentUser user,
             @PathVariable UUID familyId,
-            @Valid @RequestBody(required = false) @Nullable StartCoachRunRequest body) {
-        StartCoachRunRequest request = body == null ? new StartCoachRunRequest() : body;
-        return service.start(
-                user.userId(),
-                familyId,
-                new StartCoachRunCommand(request.weekStart(), request.daysPerWeek(), request.minutesPerSession()));
+            @RequestParam(name = "profileId", required = false) @Nullable UUID profileId) {
+        return service.latest(user.userId(), familyId, profileId);
     }
 
     @GetMapping("/coach/runs/{runId}")

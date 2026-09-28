@@ -1,20 +1,25 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
+import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
@@ -25,6 +30,9 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
     private static final TypeReference<List<CoachStep>> STEPS = new TypeReference<>() {};
     private static final TypeReference<List<ProposalParticipant>> PARTICIPANTS = new TypeReference<>() {};
     private static final TypeReference<List<ProposalCitation>> CITATIONS = new TypeReference<>() {};
+
+    /** V134 의 (프로필, 날짜) 잠금 인덱스. 위반 오류 문구에 이 이름이 실린다(H2 · PostgreSQL 모두). */
+    static final String LOCK_INDEX = "ux_coach_runs_lock_key";
 
     private final CoachRunJpaRepository runs;
     private final CoachRunProposalItemJpaRepository items;
@@ -39,22 +47,65 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
 
     @Override
     public CoachRun save(CoachRun run) {
-        CoachRunEntity existing = runs.findById(run.getId()).orElse(null);
-        CoachRunEntity entity;
-        if (existing == null) {
-            entity = toEntity(run);
-        } else {
-            applyFrom(existing, run);
-            entity = existing;
+        if (runs.existsById(run.getId())) {
+            throw new IllegalStateException("이미 있는 실행은 조건부 전이로만 바꾼다: run=" + run.getId());
         }
-        runs.save(entity);
-        if (!run.getProposals().isEmpty()) {
-            items.deleteByIdCoachRunId(run.getId());
-            items.flush();
-            items.saveAll(
-                    run.getProposals().stream().map(it -> toEntity(it, run)).toList());
-        }
+        runs.save(toEntity(run));
+        replaceItems(run);
         return run;
+    }
+
+    @Override
+    public boolean attachAiRunIfRunning(CoachRun run) {
+        if (run.getStatus() != CoachRunStatus.RUNNING) {
+            throw new IllegalStateException("도메인 attachAiRun 후에 불러야 한다");
+        }
+        return runs.attachAiRunIfRunning(run.getId(), Objects.requireNonNull(run.getAiRunId()), run.getUpdatedAt())
+                == 1;
+    }
+
+    @Override
+    public boolean finishIfRunning(CoachRun run) {
+        if (run.getStatus() != CoachRunStatus.AWAITING_APPROVAL && run.getStatus() != CoachRunStatus.FAILED) {
+            throw new IllegalStateException("도메인 complete · fail 후에 불러야 한다");
+        }
+        boolean finished = runs.finishIfRunning(
+                        run.getId(),
+                        run.getStatus().name(),
+                        run.getSummary(),
+                        stepsJson(run),
+                        run.getProposalJson(),
+                        run.getModelName(),
+                        run.getFailureReason(),
+                        run.isAiRefused(),
+                        run.getAiRefusalReason(),
+                        run.getUpdatedAt())
+                == 1;
+        if (finished) replaceItems(run);
+        return finished;
+    }
+
+    private void replaceItems(CoachRun run) {
+        if (run.getProposals().isEmpty()) return;
+        items.deleteByIdCoachRunId(run.getId());
+        items.flush();
+        items.saveAll(run.getProposals().stream().map(it -> toEntity(it, run)).toList());
+    }
+
+    /**
+     * 곧바로 flush 해 유니크 인덱스 위반을 여기서 받는다. 잠금 인덱스 위반이면 false, 다른 제약 위반은 그대로 던진다.
+     * 위반 뒤 트랜잭션은 롤백 전용이 되므로 호출자는 예외를 던져 끝내야 한다(편성 시작은 409 로 끝낸다).
+     */
+    @Override
+    public boolean insertRunning(CoachRun run) {
+        try {
+            runs.saveAndFlush(toEntity(run));
+            return true;
+        } catch (DataIntegrityViolationException e) {
+            String message = e.getMostSpecificCause().getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains(LOCK_INDEX)) return false;
+            throw e;
+        }
     }
 
     @Override
@@ -70,20 +121,45 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
     }
 
     @Override
-    public boolean existsByFamilyAndStatus(UUID familyId, CoachRunStatus status) {
-        return runs.existsByFamilyIdAndStatus(familyId, status.name());
+    public boolean isLocked(String lockKey) {
+        return runs.existsByLockKey(lockKey);
     }
 
     @Override
-    public boolean existsByFamilyAndWeekAndStatusIn(
-            UUID familyId, LocalDate weekStart, Collection<CoachRunStatus> statuses) {
-        return runs.existsByFamilyIdAndWeekStartAndStatusIn(
-                familyId, weekStart, statuses.stream().map(Enum::name).toList());
+    public int failStaleLock(String lockKey, Instant before, String reason, Instant at) {
+        return runs.failStaleLock(lockKey, before, take(reason, CoachRun.MAX_REASON), at);
+    }
+
+    @Override
+    public int failRunningCreatedBefore(Instant before, String reason, Instant at) {
+        return runs.failRunningCreatedBefore(before, take(reason, CoachRun.MAX_REASON), at);
+    }
+
+    private static String take(String value, int n) {
+        return value.length() <= n ? value : value.substring(0, n);
+    }
+
+    @Override
+    public int rejectAwaitingOf(UUID subjectProfileId, LocalDate runDate, String reason, Instant at) {
+        return runs.rejectAwaitingOf(subjectProfileId, runDate, take(reason, CoachRun.MAX_REASON), at);
     }
 
     @Override
     public @Nullable CoachRun findLatestOfWeek(UUID familyId, LocalDate weekStart) {
-        CoachRunEntity entity = runs.findFirstByFamilyIdAndWeekStartOrderByCreatedAtDesc(familyId, weekStart);
+        return withItems(runs.findFirstByFamilyIdAndWeekStartOrderByCreatedAtDesc(familyId, weekStart));
+    }
+
+    @Override
+    public @Nullable CoachRun findLatestOfFamily(UUID familyId) {
+        return withItems(runs.findFirstByFamilyIdOrderByCreatedAtDesc(familyId));
+    }
+
+    @Override
+    public @Nullable CoachRun findLatestOfSubject(UUID familyId, UUID subjectProfileId) {
+        return withItems(runs.findFirstByFamilyIdAndSubjectProfileIdOrderByCreatedAtDesc(familyId, subjectProfileId));
+    }
+
+    private @Nullable CoachRun withItems(@Nullable CoachRunEntity entity) {
         return entity == null ? null : toDomain(entity, items.findByIdCoachRunIdOrderByIdPosition(entity.getId()));
     }
 
@@ -112,7 +188,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
     }
 
     private CoachRunEntity toEntity(CoachRun run) {
-        return new CoachRunEntity(
+        CoachRunEntity entity = new CoachRunEntity(
                 run.getId(),
                 run.getFamilyId(),
                 run.getWeekStart(),
@@ -135,24 +211,20 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 run.getAiRefusalReason(),
                 run.getCreatedAt(),
                 run.getUpdatedAt());
-    }
-
-    private void applyFrom(CoachRunEntity entity, CoachRun run) {
-        entity.setStatus(run.getStatus().name());
-        entity.setSummary(run.getSummary());
-        String steps = stepsJson(run);
-        entity.setStepsJson(steps == null ? entity.getStepsJson() : steps);
-        entity.setProposalJson(run.getProposalJson() == null ? entity.getProposalJson() : run.getProposalJson());
-        entity.setAiRunId(run.getAiRunId());
-        entity.setModelName(run.getModelName());
-        entity.setApprovedBy(run.getApprovedBy());
-        entity.setApprovedAt(run.getApprovedAt());
-        entity.setRejectedReason(run.getRejectedReason());
-        entity.setRejectedAt(run.getRejectedAt());
-        entity.setFailureReason(run.getFailureReason());
-        entity.setAiRefused(run.isAiRefused());
-        entity.setAiRefusalReason(run.getAiRefusalReason());
-        entity.setUpdatedAt(run.getUpdatedAt());
+        CoachRunConditions conditions = run.getConditions();
+        entity.setRequest(
+                run.getSubjectProfileId(),
+                run.getRunDate(),
+                conditions == null ? null : conditions.quiet(),
+                conditions == null || conditions.place() == null
+                        ? null
+                        : conditions.place().name(),
+                conditions == null || conditions.focusFactor() == null
+                        ? null
+                        : conditions.focusFactor().name(),
+                conditions == null ? null : conditions.withParent());
+        entity.setLockKey(run.lockKey());
+        return entity;
     }
 
     private @Nullable String stepsJson(CoachRun run) {
@@ -189,6 +261,9 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getMinutesPerSession(),
                 e.getRequestedByProfileId(),
                 e.getCreatedAt(),
+                e.getSubjectProfileId(),
+                e.getRunDate(),
+                conditionsOf(e),
                 CoachRunStatus.valueOf(e.getStatus()),
                 itemEntities.stream().map(this::toDomain).toList(),
                 stepsJson == null ? List.of() : jsonMapper.readValue(stepsJson, STEPS),
@@ -204,6 +279,19 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.isAiRefused(),
                 e.getAiRefusalReason(),
                 e.getUpdatedAt());
+    }
+
+    /** 옛 주간 실행 행(대상이 없음)은 조건도 없다. */
+    private static @Nullable CoachRunConditions conditionsOf(CoachRunEntity e) {
+        if (e.getSubjectProfileId() == null) return null;
+        String place = e.getPlace();
+        String focusFactor = e.getFocusFactor();
+        return new CoachRunConditions(
+                e.getMinutesPerSession(),
+                Boolean.TRUE.equals(e.getQuiet()),
+                place == null ? null : CoachPlace.valueOf(place),
+                focusFactor == null ? null : FitnessFactor.valueOf(focusFactor),
+                Boolean.TRUE.equals(e.getWithParent()));
     }
 
     private CoachProposalItem toDomain(CoachRunProposalItemEntity e) {

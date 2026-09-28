@@ -39,8 +39,18 @@ class HttpAiGatewayTest {
             Duration.ZERO);
     private final AiProfile child = new AiProfile("p_abc", 11, "세", "M", 140.5, 35.0, Map.of("012", 8.0));
 
+    /** 대상 아이 한 명의 그날 하루(20분 · 조용히 · 집 · 도구 없음 · 민첩성 · 보호자 같이). */
+    private CoachRunRequest dailyRequest() {
+        return new CoachRunRequest(
+                List.of(new CoachRunRequest.Participant(child, "주행자")),
+                "2026-09-09",
+                1,
+                new CoachRunRequest.Constraints(1, 20, null, true, true, true, "민첩성", true));
+    }
+
     @Test
-    @DisplayName("startCoachRun 은 snake_case 본문을 보내고 202 접수를 매핑한다")
+    @DisplayName(
+            "startCoachRun 은 snake_case 본문을 보내고 202 접수를 매핑한다 — 조건 칸(quiet · small_space · no_props · focus_factor · with_companion)도 싣는다")
     void startCoachRun_은_snake_case_본문을_보내고_202_접수를_매핑한다() {
         server.expect(requestTo("http://ai.internal:8000/v1/coach/runs"))
                 .andExpect(method(HttpMethod.POST))
@@ -51,16 +61,22 @@ class HttpAiGatewayTest {
                 .andExpect(jsonPath("$.profile_refs[0].input_level").value("L2"))
                 .andExpect(jsonPath("$.profile_refs[0].height_cm").value(140.5))
                 .andExpect(jsonPath("$.profile_refs[0].measurements.012").value(8.0))
-                .andExpect(jsonPath("$.period.start_date").value("2026-09-07"))
+                .andExpect(jsonPath("$.profile_refs.length()").value(1))
+                .andExpect(jsonPath("$.period.start_date").value("2026-09-09"))
                 .andExpect(jsonPath("$.period.weeks").value(1))
-                .andExpect(jsonPath("$.constraints.days_per_week").value(3))
-                .andExpect(jsonPath("$.constraints.minutes_per_session").value(15))
+                .andExpect(jsonPath("$.constraints.days_per_week").value(1))
+                .andExpect(jsonPath("$.constraints.minutes_per_session").value(20))
+                .andExpect(jsonPath("$.constraints.weekly_minutes").doesNotExist())
+                .andExpect(jsonPath("$.constraints.quiet").value(true))
+                .andExpect(jsonPath("$.constraints.small_space").value(true))
+                .andExpect(jsonPath("$.constraints.no_props").value(true))
+                .andExpect(jsonPath("$.constraints.focus_factor").value("민첩성"))
+                .andExpect(jsonPath("$.constraints.with_companion").value(true))
                 .andRespond(withStatus(HttpStatus.ACCEPTED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"run_id\":\"cr_1\",\"status\":\"running\",\"poll_after_ms\":1500}"));
 
-        CoachRunAccepted accepted = gateway.startCoachRun(
-                new CoachRunRequest(List.of(new CoachRunRequest.Participant(child, "주행자")), "2026-09-07", 1, 3, 15));
+        CoachRunAccepted accepted = gateway.startCoachRun(dailyRequest());
 
         assertThat(accepted).isEqualTo(new CoachRunAccepted("cr_1", "running", 1500));
         server.verify();
@@ -74,51 +90,113 @@ class HttpAiGatewayTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"error\":{\"code\":\"RUN_IN_PROGRESS\",\"message\":\"already running\"}}"));
 
-        AiRunInProgressException e = assertThrows(
-                AiRunInProgressException.class,
-                () -> gateway.startCoachRun(new CoachRunRequest(
-                        List.of(new CoachRunRequest.Participant(child, "주행자")), "2026-09-07", 1, 3, 15)));
+        AiRunInProgressException e =
+                assertThrows(AiRunInProgressException.class, () -> gateway.startCoachRun(dailyRequest()));
 
         assertThat(e.getCode()).isEqualTo("RUN_IN_PROGRESS");
         assertThat(e.getMessage()).isEqualTo("already running");
     }
 
     @Test
-    @DisplayName("getCoachRun 은 succeeded proposal 을 도메인 DTO 로 매핑한다")
-    void getCoachRun_은_succeeded_proposal_을_도메인_DTO_로_매핑한다() {
-        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_1"))
+    @DisplayName("getCoachRun 은 AI 명세의 편성 결과 예시(9/17 클립 형식)를 그대로 읽는다")
+    void getCoachRun_은_AI_명세의_편성_결과_예시를_그대로_읽는다() {
+        // ai:docs/인터페이스-명세.md 4장 응답 200 예시 그대로(extra_field 만 더했다).
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_01J7Q3M8VZ2K"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
-                        {"run_id":"cr_1","status":"succeeded",
-                         "steps":[{"seq":1,"name":"assess","status":"ok","summary":"측정 1명"}],
-                         "proposal":{"missions":[{"title":"같이 늘이는 한 주","period":{"start_date":"2026-09-07","end_date":"2026-09-13"},
-                           "participants":[{"ref":"p_abc","role":"주행자"}],
-                           "sessions":[{"day_offset":0,"exercise_name":"앞으로 숙이기","fitness_factor":"유연성","duration_min":15,
-                                        "video":{"video_id":"IdpXx2gm90o","start_sec":96},"evidence":[1]},
-                                       {"day_offset":2,"exercise_name":"옆으로 숙이기","fitness_factor":"유연성","duration_min":15,"video":null,"evidence":[]}],
-                           "copy":{"child":"해보자","parent":"부모 문구"}}],
-                          "citations":[{"index":1,"label":"처방","chunk_id":"prescription:1"}]},
+                        {"run_id":"cr_01J7Q3M8VZ2K","status":"succeeded",
+                         "steps":[{"seq":1,"name":"assess","status":"ok","summary":"유연성 백분위 24 · 대상 요인 = 유연성"},
+                                  {"seq":2,"name":"retrieve","status":"ok","summary":"처방 청크 6건 · 클립 후보 488개"},
+                                  {"seq":3,"name":"compose","status":"ok","summary":"미션 3건 · 클립 38개 · 코치가 편성"},
+                                  {"seq":4,"name":"verify","status":"ok","summary":"인용 2건 · 금지 어휘 0건"}],
+                         "proposal":{"missions":[{"kind":"일간","title":"월요일 늘이기",
+                           "period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                           "participants":[{"ref":"p_c7a91f","role":"주행자"}],
+                           "duration_min":15,"video_sec":418,
+                           "sessions":[{"day_offset":0,"phase":"준비운동","order":1,
+                                        "exercise_name":"넙다리 안쪽 늘리기 (나비자세)","fitness_factor":"유연성",
+                                        "duration_sec":38,
+                                        "video":{"video_id":"Eg3GpTv7z8s","start_sec":144,"end_sec":182},
+                                        "evidence":[1,2]}],
+                           "copy":{"child":"이번 주는 몸을 길게 늘이는 동작, 엄마랑 같이 해볼까요",
+                                   "parent":"유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다"},
+                           "reason":"또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1]."}],
+                          "citations":[{"index":1,"label":"국민체력100 운동처방 · 유소년 11세","chunk_id":"prescription:유소년-11-F-0142"}],
+                          "notices":[]},
                          "refused":false,"refusal_reason":null,"extra_field":"ignored"}\
                         """, MediaType.APPLICATION_JSON));
 
-        CoachRunResult result = gateway.getCoachRun("cr_1");
+        CoachRunResult result = gateway.getCoachRun("cr_01J7Q3M8VZ2K");
 
         assertThat(result.status()).isEqualTo("succeeded");
-        assertThat(result.steps()).singleElement().isEqualTo(new CoachRunResult.Step(1, "assess", "ok", "측정 1명"));
-        CoachRunResult.Mission mission = result.proposal().missions().getFirst();
+        assertThat(result.steps()).hasSize(4);
         assertThat(result.proposal().missions()).hasSize(1);
+        CoachRunResult.Mission mission = result.proposal().missions().getFirst();
+        assertThat(mission.kind()).isEqualTo("일간");
         assertThat(mission.startDate()).isEqualTo("2026-09-07");
-        assertThat(mission.participants()).singleElement().isEqualTo(new CoachRunResult.ParticipantRef("p_abc", "주행자"));
-        assertThat(mission.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", 96));
-        assertThat(mission.sessions().getLast().video()).isNull();
-        assertThat(mission.sessions().stream()
-                        .mapToInt(CoachRunResult.Session::durationMin)
-                        .sum())
-                .isEqualTo(30);
-        assertThat(mission.copyParent()).isEqualTo("부모 문구");
+        assertThat(mission.endDate()).isEqualTo("2026-09-07");
+        assertThat(mission.participants())
+                .singleElement()
+                .isEqualTo(new CoachRunResult.ParticipantRef("p_c7a91f", "주행자"));
+        assertThat(mission.durationMin()).isEqualTo(15);
+        assertThat(mission.videoSec()).isEqualTo(418);
+        assertThat(mission.reason()).isEqualTo("또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
+        assertThat(mission.copyParent()).isEqualTo("유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다");
+        assertThat(mission.sessions())
+                .singleElement()
+                .isEqualTo(new CoachRunResult.Session(
+                        0,
+                        "준비운동",
+                        1,
+                        "넙다리 안쪽 늘리기 (나비자세)",
+                        "유연성",
+                        38,
+                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182),
+                        List.of(1, 2)));
         assertThat(result.proposal().citations())
                 .singleElement()
-                .isEqualTo(new Citation(1, "처방", "prescription:1", null));
+                .isEqualTo(new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null));
+        assertThat(result.proposal().notices()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("숫자 칸이 빠져도 응답을 읽는다 — notices 가 없으면 빈 목록, 옛 모양이면 세션 duration_min 합을 목표 분으로 쓴다")
+    void 숫자_칸이_빠져도_응답을_읽는다() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_2"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_2","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"빠진 칸","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],
+                             "sessions":[{"phase":"본운동","exercise_name":"앞으로 숙이기","fitness_factor":"유연성",
+                                          "video":{"video_id":"IdpXx2gm90o"},"evidence":[1]}],
+                             "copy":{"child":"c","parent":"p"}},
+                            {"title":"옛 모양","period":{"start_date":"2026-09-07","end_date":"2026-09-13"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],
+                             "sessions":[{"day_offset":0,"exercise_name":"앞으로 숙이기","fitness_factor":"유연성","duration_min":15,"evidence":[1]},
+                                         {"day_offset":2,"exercise_name":"옆으로 숙이기","fitness_factor":"유연성","duration_min":15,"evidence":[]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"처방","chunk_id":"prescription:1"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        CoachRunResult result = gateway.getCoachRun("cr_2");
+
+        CoachRunResult.Mission missing = result.proposal().missions().getFirst();
+        assertThat(missing.durationMin()).isNull();
+        assertThat(missing.videoSec()).isNull();
+        assertThat(missing.reason()).isEmpty();
+        CoachRunResult.Session session = missing.sessions().getFirst();
+        assertThat(session.dayOffset()).isNull();
+        assertThat(session.order()).isNull();
+        assertThat(session.durationSec()).isNull();
+        assertThat(session.video()).isEqualTo(new CoachRunResult.Video("IdpXx2gm90o", null, null));
+
+        CoachRunResult.Mission legacy = result.proposal().missions().getLast();
+        assertThat(legacy.kind()).isEmpty();
+        assertThat(legacy.durationMin()).isEqualTo(30);
+        assertThat(legacy.sessions().getFirst().phase()).isEmpty();
+        assertThat(result.proposal().notices()).isEmpty();
     }
 
     @Test

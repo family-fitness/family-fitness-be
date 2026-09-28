@@ -241,6 +241,34 @@ class MissionServiceTest {
     }
 
     @Test
+    @DisplayName("보호자 동의를 거둔 아이의 타이머 · 걸음수 기록은 422 CONSENT_REQUIRED 이고 활동이 쌓이지 않는다")
+    void 보호자_동의를_거둔_아이의_타이머_걸음수_기록은_CONSENT_REQUIRED() {
+        UUID timer = create(TargetMetric.TIMER_MINUTES, 30).missionId();
+        UUID steps = create(TargetMetric.STEPS, 5000).missionId();
+        family.withdrawConsent(family.child.profileId());
+        Instant startedAt = Instant.parse("2026-09-08T23:30:00Z");
+
+        assertThat(assertThrows(
+                                ParticipantConsentRequiredException.class,
+                                () -> activityService.recordTimer(
+                                        family.childUser,
+                                        timer,
+                                        new RecordTimerCommand(
+                                                family.child.profileId(), startedAt, startedAt.plusSeconds(1200), 20)))
+                        .getCode())
+                .isEqualTo("CONSENT_REQUIRED");
+        assertThat(assertThrows(
+                                ParticipantConsentRequiredException.class,
+                                () -> activityService.recordSteps(
+                                        family.parentUser,
+                                        steps,
+                                        new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 3000)))
+                        .getCode())
+                .isEqualTo("CONSENT_REQUIRED");
+        assertThat(activity.rows).isEmpty();
+    }
+
+    @Test
     @DisplayName("목록은 scope·status 로 거르고 읽을 때 진행도를 다시 계산한다")
     void 목록은_scope_status_로_거르고_읽을_때_진행도를_다시_계산한다() {
         UUID mine = create(TargetMetric.TIMER_MINUTES, 30, List.of(family.child.profileId()), null)
