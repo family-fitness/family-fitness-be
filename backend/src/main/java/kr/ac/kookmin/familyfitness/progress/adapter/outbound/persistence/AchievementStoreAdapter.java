@@ -27,13 +27,13 @@ public class AchievementStoreAdapter implements AchievementStore {
         return earned;
     }
 
-    /** 있는지 먼저 본다. 동시에 같은 업적을 넣으면 늦은 쪽이 기본 키(profile_id, code)에 걸린다. */
+    /**
+     * 받은 적 없을 때만 넣는다 — 판단은 DB 의 ON CONFLICT DO NOTHING 이 한다({@link AchievementJpaRepository#insertIfAbsent}).
+     * 동시에 같은 업적을 넣어도 늦은 쪽은 false 이고 예외가 없다(QA SA-12). false 면 업적 이벤트도 내지 않는다(AchievementAwards).
+     */
     @Override
     @Transactional
     public boolean grant(UUID profileId, Achievement achievement, Instant earnedAt) {
-        AchievementId id = new AchievementId(profileId, achievement.code());
-        if (jpa.existsById(id)) return false;
-        jpa.save(new AchievementEntity(id, earnedAt));
-        return true;
+        return jpa.insertIfAbsent(profileId, achievement.code(), earnedAt) == 1;
     }
 }

@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import javax.crypto.spec.SecretKeySpec;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleAuthFailedException;
@@ -23,7 +25,17 @@ import kr.ac.kookmin.familyfitness.shared.security.ServiceTokenIssuer;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class AuthServiceTest {
     private final MutableClock clock = new MutableClock(Instant.parse("2026-09-08T10:00:00Z"));
@@ -54,8 +66,13 @@ class AuthServiceTest {
         @Nullable
         GoogleIdentity next = new GoogleIdentity("google-sub-1", "parent@example.com");
 
+        /** 토큰 교환을 부른 순간 트랜잭션이 열려 있었나. 부르지 않았으면 null */
+        @Nullable
+        Boolean transactionDuringExchange;
+
         @Override
         public GoogleIdentity exchange(String authorizationCode, String redirectUri) {
+            transactionDuringExchange = TransactionSynchronizationManager.isActualTransactionActive();
             GoogleIdentity identity = next;
             if (identity == null) throw new GoogleAuthFailedException();
             return identity;
@@ -73,7 +90,8 @@ class AuthServiceTest {
             summaries,
             tokenIssuer,
             refreshTokens,
-            identityClock);
+            identityClock,
+            new TransactionTemplate(new CountingTransactionManager()));
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
 
     @Test
@@ -106,6 +124,72 @@ class AuthServiceTest {
         assertThat(again.session().nextStep()).isEqualTo(NextStep.HOME);
         assertThat(again.session().profiles()).hasSize(1);
         assertThat(users.users).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("구글 토큰 교환(외부 HTTP)은 트랜잭션 밖에서 하고, 가입 · 토큰 발급만 트랜잭션 하나로 묶는다")
+    void 구글_토큰_교환은_트랜잭션_밖에서_한다() {
+        CountingTransactionManager transactions = new CountingTransactionManager();
+        List<Boolean> transactionDuringRegistration = new ArrayList<>();
+        UserRegistrationService registration = new UserRegistrationService(users) {
+            @Override
+            public User registerOrGet(String provider, String providerUserId, @Nullable String email) {
+                transactionDuringRegistration.add(TransactionSynchronizationManager.isActualTransactionActive());
+                return super.registerOrGet(provider, providerUserId, email);
+            }
+        };
+        AuthService transactional = withTransactionAdvice(
+                new AuthService(
+                        registration,
+                        google,
+                        users,
+                        families,
+                        summaries,
+                        tokenIssuer,
+                        refreshTokens,
+                        identityClock,
+                        new TransactionTemplate(transactions)),
+                transactions);
+
+        AuthResult result = transactional.loginWithGoogle("code", "https://app/redirect", null);
+
+        assertThat(google.transactionDuringExchange).isFalse();
+        assertThat(transactionDuringRegistration).containsExactly(true);
+        assertThat(transactions.begun).isOne();
+        assertThat(refreshTokens.findById(tokenIssuer
+                        .readRefreshToken(result.tokens().refreshToken())
+                        .tokenId()))
+                .isNotNull();
+    }
+
+    /** 스프링이 빈에 거는 것과 같은 @Transactional 해석기(TransactionInterceptor)로 감싼다. */
+    private static AuthService withTransactionAdvice(AuthService target, PlatformTransactionManager transactions) {
+        ProxyFactory factory = new ProxyFactory(target);
+        factory.setProxyTargetClass(true);
+        factory.addAdvice(new TransactionInterceptor(
+                (TransactionManager) transactions, new AnnotationTransactionAttributeSource()));
+        return (AuthService) factory.getProxy();
+    }
+
+    /** 자원 없는 트랜잭션 관리자. 새로 시작한 트랜잭션 수만 센다. */
+    private static final class CountingTransactionManager extends AbstractPlatformTransactionManager {
+        int begun;
+
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+            begun++;
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {}
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {}
     }
 
     @Test

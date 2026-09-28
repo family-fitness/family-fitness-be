@@ -18,6 +18,7 @@ import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
@@ -26,6 +27,8 @@ import org.springframework.web.client.RestClientResponseException;
  * coach/messages 10s·0회 / POST coach/runs 2s·0회 / GET coach/runs/{id} 3s.
  * 오류 봉투 `{"error":{"code","message"}}` → 409 {@link AiRunInProgressException} · 404 {@link AiRunNotFoundException} ·
  * 400 {@link AiBadRequestException} · 그 외와 연결 실패·타임아웃 → {@link AiUnavailableException}(503).
+ * 200 이어도 본문을 읽지 못하거나(깨진 JSON · text/html 오류 페이지) 도메인으로 바꾸지 못하면(칸이 빠져 NPE 등)
+ * {@link AiUnavailableException} 이다 — 코치 실행이 대체 편성으로 넘어가게 한다(결정 17 · QA SA-07).
  */
 @Component
 @ConditionalOnProperty(name = "app.ai.mode", havingValue = "http")
@@ -74,88 +77,111 @@ public class HttpAiGateway implements AiGateway {
 
     @Override
     public AssessmentResponse assess(AssessmentRequest request) {
-        return withRetry(2, "fitness/assessment", () -> post(
+        return withRetry(
+                2,
+                "fitness/assessment",
+                () -> post(
                         assessmentClient,
                         "/fitness/assessment",
                         AiWire.ProfileBody.of(request.profile()),
-                        AiWire.AssessmentBody.class)
-                .toDomain());
+                        AiWire.AssessmentBody.class,
+                        AiWire.AssessmentBody::toDomain));
     }
 
     @Override
     public TrajectoryResponse trajectory(TrajectoryRequest request) {
-        return withRetry(2, "fitness/trajectory", () -> post(
+        return withRetry(
+                2,
+                "fitness/trajectory",
+                () -> post(
                         assessmentClient,
                         "/fitness/trajectory",
                         AiWire.TrajectoryRequestBody.of(request),
-                        AiWire.TrajectoryBody.class)
-                .toDomain());
+                        AiWire.TrajectoryBody.class,
+                        AiWire.TrajectoryBody::toDomain));
     }
 
     @Override
     public VideoSearchResponse searchVideos(VideoSearchRequest request) {
-        return withRetry(2, "videos/search", () -> post(
+        return withRetry(
+                2,
+                "videos/search",
+                () -> post(
                         videoClient,
                         "/videos/search",
                         new AiWire.VideoSearchRequestBody(
                                 request.ageGroup(), request.fitnessFactors(), request.exerciseNames(), request.k()),
-                        AiWire.VideoSearchBody.class)
-                .toDomain());
+                        AiWire.VideoSearchBody.class,
+                        AiWire.VideoSearchBody::toDomain));
     }
 
     @Override
     public CoachRunAccepted startCoachRun(CoachRunRequest request) {
         return post(
-                        runStartClient,
-                        "/coach/runs",
-                        AiWire.CoachRunRequestBody.of(request),
-                        AiWire.CoachRunAcceptedBody.class)
-                .toDomain();
+                runStartClient,
+                "/coach/runs",
+                AiWire.CoachRunRequestBody.of(request),
+                AiWire.CoachRunAcceptedBody.class,
+                AiWire.CoachRunAcceptedBody::toDomain);
     }
 
     @Override
     public CoachRunResult getCoachRun(String runId) {
-        return call("GET coach/runs/" + runId, () -> runPollClient
+        return call(
+                "GET coach/runs/" + runId,
+                () -> runPollClient
                         .get()
                         .uri("/coach/runs/{id}", runId)
                         .accept(MediaType.APPLICATION_JSON)
                         .retrieve()
-                        .body(AiWire.CoachRunResultBody.class))
-                .toDomain();
+                        .body(AiWire.CoachRunResultBody.class),
+                AiWire.CoachRunResultBody::toDomain);
     }
 
     @Override
     public CoachMessageResponse ask(CoachMessageRequest request) {
         return post(
-                        messageClient,
-                        "/coach/messages",
-                        new AiWire.CoachMessageRequestBody(
-                                request.profileRef(), request.ageGroup(), request.question()),
-                        AiWire.CoachMessageBody.class)
-                .toDomain();
+                messageClient,
+                "/coach/messages",
+                new AiWire.CoachMessageRequestBody(request.profileRef(), request.ageGroup(), request.question()),
+                AiWire.CoachMessageBody.class,
+                AiWire.CoachMessageBody::toDomain);
     }
 
-    private <T> T post(RestClient client, String path, Object body, Class<T> type) {
-        return call("POST " + path, () -> client.post()
-                .uri(path)
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(type));
+    private <B, T> T post(RestClient client, String path, Object body, Class<B> type, Function<B, T> toDomain) {
+        return call(
+                "POST " + path,
+                () -> client.post()
+                        .uri(path)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(type),
+                toDomain);
     }
 
-    private <T> T call(String what, Supplier<@Nullable T> exchange) {
-        T result;
+    /**
+     * 판정 순서: 4xx · 5xx 응답 → {@link #translate} · 연결 실패 · 타임아웃 → 503 · 그 밖에 본문을 읽지 못함(RestClientException —
+     * 깨진 JSON · 모르는 Content-Type) → 503 · 빈 본문 → 503 · 도메인으로 바꾸다 실패(RuntimeException) → 503.
+     */
+    private <B, T> T call(String what, Supplier<@Nullable B> exchange, Function<B, T> toDomain) {
+        B body;
         try {
-            result = exchange.get();
+            body = exchange.get();
         } catch (RestClientResponseException e) {
             throw translate(what, e);
         } catch (ResourceAccessException e) {
             throw new AiUnavailableException("AI 연결 실패·타임아웃: " + what + " — " + e.getMessage(), e);
+        } catch (RestClientException e) {
+            throw new AiUnavailableException("AI 응답 본문을 읽지 못했다: " + what + " — " + e.getMessage(), e);
         }
-        if (result == null) throw new AiUnavailableException("AI 응답이 비어 있다: " + what);
-        return result;
+        if (body == null) throw new AiUnavailableException("AI 응답이 비어 있다: " + what);
+        try {
+            return toDomain.apply(body);
+        } catch (RuntimeException e) {
+            throw new AiUnavailableException("AI 응답을 해석하지 못했다: " + what + " — " + e, e);
+        }
     }
 
     private DomainException translate(String what, RestClientResponseException e) {
