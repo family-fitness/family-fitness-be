@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
+import kr.ac.kookmin.familyfitness.identity.api.CheerView;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
@@ -123,5 +124,11 @@ public class FakeIdentity implements ProfileQuery, FamilyAccess, CheerQuery {
     @Override
     public int countCheers(UUID familyId, Instant from, Instant to) {
         return cheerCount;
+    }
+
+    /** coaching 시험은 받은 응원을 읽지 않는다. */
+    @Override
+    public List<CheerView> received(UUID toProfileId, Instant from, Instant to) {
+        return List.of();
     }
 }
