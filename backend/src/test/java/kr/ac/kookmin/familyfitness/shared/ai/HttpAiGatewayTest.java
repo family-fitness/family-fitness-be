@@ -232,6 +232,54 @@ class HttpAiGatewayTest {
     }
 
     @Test
+    @DisplayName("200 인데 JSON 이 깨졌으면 AiUnavailableException — 코치 실행이 대체 편성으로 넘어간다")
+    void 깨진_JSON_은_AiUnavailableException() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs"))
+                .andRespond(withSuccess("{\"run_id\":\"cr_1\",\"status\":", MediaType.APPLICATION_JSON));
+
+        AiUnavailableException e =
+                assertThrows(AiUnavailableException.class, () -> gateway.startCoachRun(dailyRequest()));
+
+        assertThat(e.getCode()).isEqualTo("TEMPORARILY_UNAVAILABLE");
+        assertThat(e.getMessage()).contains("POST /coach/runs");
+    }
+
+    @Test
+    @DisplayName("프록시 오류 페이지처럼 text/html 이 오면 AiUnavailableException")
+    void HTML_응답은_AiUnavailableException() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_1"))
+                .andRespond(withSuccess("<html><body>502 Bad Gateway</body></html>", MediaType.TEXT_HTML));
+
+        assertThrows(AiUnavailableException.class, () -> gateway.getCoachRun("cr_1"));
+    }
+
+    @Test
+    @DisplayName("칸이 빠져 도메인으로 바꾸다 실패하면(period 없음 → NPE) AiUnavailableException")
+    void 변환_실패는_AiUnavailableException() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_4"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_4","status":"succeeded","steps":[],
+                         "proposal":{"missions":[{"kind":"일간","title":"기간 빠짐",
+                            "participants":[{"ref":"p_abc","role":"주행자"}],"sessions":[]}],"citations":[]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        AiUnavailableException e = assertThrows(AiUnavailableException.class, () -> gateway.getCoachRun("cr_4"));
+
+        assertThat(e.getMessage()).contains("GET coach/runs/cr_4");
+    }
+
+    @Test
+    @DisplayName("assessment 는 해석 실패에도 재시도하고, 세 번 다 실패하면 AiUnavailableException")
+    void assessment_는_해석_실패에도_재시도한다() {
+        server.expect(ExpectedCount.times(3), requestTo("http://ai.internal:8000/v1/fitness/assessment"))
+                .andRespond(withSuccess("not json", MediaType.APPLICATION_JSON));
+
+        assertThrows(AiUnavailableException.class, () -> gateway.assess(new AssessmentRequest(child)));
+        server.verify();
+    }
+
+    @Test
     @DisplayName("404 는 RUN_NOT_FOUND 다")
     void 는_RUN_NOT_FOUND_다() {
         server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_x"))

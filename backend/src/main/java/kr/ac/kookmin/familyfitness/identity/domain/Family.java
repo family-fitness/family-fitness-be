@@ -223,14 +223,15 @@ public class Family {
     }
 
     /**
-     * 동의 변경 — 이 가족의 PARENT 만. 판정 순서: 구성원 · 보호자 → 대상 있음 → 자기 프로필 아님 → 행위자 만 14세 이상.
-     * 부여든 철회든 한 번에 이력 한 줄을 남긴다. 재동의는 지금 상태의 철회 시각을 걷지만 이력의 철회 줄은 그대로다.
+     * 동의 변경 — 이 가족의 PARENT 만, 대상은 CHILD 만. 판정 순서: 구성원 · 보호자 → 대상 있음 → 자기 프로필 아님 → 대상이 CHILD
+     * → 행위자 만 14세 이상. 부여든 철회든 한 번에 이력 한 줄을 남긴다. 재동의는 지금 상태의 철회 시각을 걷지만 이력의 철회 줄은 그대로다.
      */
     public Profile updateConsent(
             UUID actorUserId, UUID profileId, GuardianConsent decision, Instant at, LocalDate today) {
         Profile actor = requireParent(actorUserId);
         Profile profile = profile(profileId);
         if (actor.getId().equals(profile.getId())) throw new SelfConsentException();
+        if (profile.isParent()) throw new ConsentNotApplicableException();
         requireGuardianAge(actor.getBirthDate(), today);
         profile.recordConsent(decision, actorUserId, at);
         pendingConsentEvents.add(ConsentEvent.of(profileId, actorUserId, decision, at));

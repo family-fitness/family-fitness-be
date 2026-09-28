@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -28,7 +29,8 @@ public record CheerRequest(
         return isNullOrBlank(emoji) ? null : emoji;
     }
 
-    /** message/스티커 중 최소 하나. */
+    /** message/스티커 중 최소 하나. 검증용 getter 라 JSON 칸이 아니다(OpenAPI 에 contentPresent 로 싣지 않는다). */
+    @JsonIgnore
     @AssertTrue(message = "message 나 stickerId 중 하나는 있어야 합니다")
     public boolean isContentPresent() {
         return !isNullOrBlank(message) || effectiveStickerId() != null;

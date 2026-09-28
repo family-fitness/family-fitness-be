@@ -405,6 +405,15 @@ class IdentityApiTest {
                         .get("nextStep")
                         .asString())
                 .isEqualTo("SUPPORT_MODE");
+        // 참여 방식을 고르기 전에 닫고 다시 열면 /me 도 SUPPORT_MODE 다(QA CT-08). 가족을 만든 엄마는 그대로 HOME
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), dadUser)))
+                        .get("nextStep")
+                        .asString())
+                .isEqualTo("SUPPORT_MODE");
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), parent)))
+                        .get("nextStep")
+                        .asString())
+                .isEqualTo("HOME");
 
         // 참여 수준: 본인 PARENT 프로필만
         JsonNode changed = read(mvc.perform(json(
@@ -413,6 +422,10 @@ class IdentityApiTest {
                 .andExpect(status().isOk()));
         assertThat(changed.get("supportMode").asString()).isEqualTo("WEEKEND");
         assertThat(changed.get("profileId").asString()).isEqualTo(dadId);
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), dadUser)))
+                        .get("nextStep")
+                        .asString())
+                .isEqualTo("HOME");
         mvc.perform(json(
                         auth(patch("/api/v1/profiles/" + childId + "/support-mode"), childUser),
                         Map.of("supportMode", "FULL")))
@@ -461,6 +474,23 @@ class IdentityApiTest {
         mvc.perform(json(auth(patch("/api/v1/profiles/" + childId + "/consent"), parent), Map.of("personalData", true)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+
+        // 보호자 동의는 아이에게만 있다 — 아빠가 엄마(PARENT)의 동의를 거두지 못하고, 엄마는 막히지 않는다(QA KP-01)
+        mvc.perform(json(
+                        auth(patch("/api/v1/profiles/" + ownerId + "/consent"), dadUser),
+                        Map.of("personalData", false, "healthData", false)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("CONSENT_NOT_APPLICABLE"));
+        JsonNode momAfter = read(mvc.perform(auth(get("/api/v1/me"), parent)))
+                .get("profiles")
+                .get(0);
+        assertThat(momAfter.get("consentRequired").asBoolean()).isFalse();
+        assertThat(momAfter.get("consentGiven").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from consent_events where profile_id = ?",
+                        Integer.class,
+                        UUID.fromString(ownerId)))
+                .isZero();
     }
 
     @Test

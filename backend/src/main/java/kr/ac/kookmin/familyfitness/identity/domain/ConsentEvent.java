@@ -12,7 +12,9 @@ public record ConsentEvent(
         UUID profileId, UUID actorUserId, Kind kind, boolean personalData, boolean healthData, Instant occurredAt) {
     public enum Kind {
         GRANTED,
-        REVOKED
+        REVOKED,
+        /** 앞선 철회를 무효로 했다. 앱은 만들지 않는다 — V151 이 보호자(PARENT)에게 잘못 걸린 철회를 풀며 남긴 줄이다. */
+        VOIDED
     }
 
     static ConsentEvent of(UUID profileId, UUID actorUserId, GuardianConsent decision, Instant at) {
