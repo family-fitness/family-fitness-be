@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
@@ -54,6 +55,14 @@ public class FamilyAccessService implements FamilyAccess {
     @Override
     public ProfileSummary requireParentOfProfile(UUID userId, UUID profileId) {
         return parentOf(familyOfProfile(profileId), userId);
+    }
+
+    @Override
+    public ProfileSummary requireActingAs(UUID userId, UUID profileId) {
+        Family family = familyOfProfile(profileId);
+        memberOf(family, userId);
+        if (!family.canActAs(userId, profileId)) throw new CannotActAsProfileException();
+        return summaries.summary(family.profile(profileId));
     }
 
     private Family family(UUID familyId) {

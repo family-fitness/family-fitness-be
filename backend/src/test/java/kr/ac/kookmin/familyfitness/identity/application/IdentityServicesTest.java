@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
@@ -442,9 +443,6 @@ class IdentityServicesTest {
                     NotFamilyMemberException.class,
                     () -> cheerService.cheer(parentUser, family.familyId(), owner, UUID.randomUUID(), "?", null, null));
             assertThrows(
-                    NotOwnProfileException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), child, owner, "?", null, null));
-            assertThrows(
                     FamilyAccessDeniedException.class,
                     () -> cheerService.cheer(UUID.randomUUID(), family.familyId(), owner, child, "?", null, null));
             assertThrows(
@@ -453,6 +451,41 @@ class IdentityServicesTest {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> cheerService.cheer(parentUser, family.familyId(), owner, child, " ", null, null));
+        }
+
+        @Test
+        @DisplayName("보호자는 계정 없는 아이 이름으로 보낼 수 있고 계정 있는 아이나 부모 자리 이름으로는 못 보낸다")
+        void 보호자는_계정_없는_아이_이름으로_보낼_수_있고_계정_있는_아이나_부모_자리_이름으로는_못_보낸다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            UUID dadSeat = familyService
+                    .addMember(
+                            parentUser,
+                            family.familyId(),
+                            "아빠",
+                            LocalDate.of(1986, 1, 1),
+                            Sex.M,
+                            ProfileRole.PARENT,
+                            null)
+                    .profileId();
+
+            Cheer thanks = cheerService.cheer(parentUser, family.familyId(), child, owner, "고마워요", null, null);
+
+            assertThat(thanks.fromProfileId()).isEqualTo(child);
+            assertThat(thanks.toProfileId()).isEqualTo(owner);
+            assertThat(cheers.cheers).hasSize(1);
+            assertThrows(
+                    CannotActAsProfileException.class,
+                    () -> cheerService.cheer(parentUser, family.familyId(), dadSeat, child, "?", null, null));
+
+            UUID childUser = UUID.randomUUID();
+            families.attachUserIfUnclaimed(child, childUser, clock.instant());
+            assertThrows(
+                    CannotActAsProfileException.class,
+                    () -> cheerService.cheer(parentUser, family.familyId(), child, owner, "?", null, null));
+            cheerService.cheer(childUser, family.familyId(), child, owner, "다 했어요", null, null);
+            assertThat(cheers.cheers).hasSize(2);
         }
 
         @Test
@@ -536,6 +569,32 @@ class IdentityServicesTest {
                             .profileId())
                     .isEqualTo(family.ownerProfile().profileId());
             assertThrows(NotAParentException.class, () -> access.requireParentOfProfile(childUser, child.profileId()));
+        }
+
+        @Test
+        @DisplayName("FamilyAccess.requireActingAs 는 본인 프로필과 계정 없는 아이 프로필만 통과시킨다")
+        void FamilyAccess_requireActingAs_는_본인_프로필과_계정_없는_아이_프로필만_통과시킨다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            ProfileSummary child = addChild(family.familyId());
+            ProfileSummary claimedChild =
+                    addChild(family.familyId(), new GuardianConsent(true, true), LocalDate.of(2016, 1, 1), "둘째");
+            UUID childUser = UUID.randomUUID();
+            families.attachUserIfUnclaimed(claimedChild.profileId(), childUser, clock.instant());
+
+            assertThat(access.requireActingAs(parentUser, owner).profileId()).isEqualTo(owner);
+            assertThat(access.requireActingAs(parentUser, child.profileId()).profileId())
+                    .isEqualTo(child.profileId());
+            assertThat(access.requireActingAs(childUser, claimedChild.profileId())
+                            .profileId())
+                    .isEqualTo(claimedChild.profileId());
+
+            assertThrows(
+                    CannotActAsProfileException.class,
+                    () -> access.requireActingAs(parentUser, claimedChild.profileId()));
+            assertThrows(CannotActAsProfileException.class, () -> access.requireActingAs(childUser, child.profileId()));
+            assertThrows(NotSameFamilyException.class, () -> access.requireActingAs(UUID.randomUUID(), owner));
+            assertThrows(ProfileNotFoundException.class, () -> access.requireActingAs(parentUser, UUID.randomUUID()));
         }
 
         @Test

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
@@ -12,6 +13,7 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
 
 /** identity 공개 API 의 결정적 가짜. 여러 가족을 등록할 수 있다. */
@@ -105,6 +107,17 @@ public class FakeIdentity implements ProfileQuery, FamilyAccess, CheerQuery {
         ProfileDetails target = findDetails(profileId);
         if (target == null) throw new ProfileNotFoundException(profileId);
         return requireParent(userId, target.familyId());
+    }
+
+    @Override
+    public ProfileSummary requireActingAs(UUID userId, UUID profileId) {
+        ProfileDetails target = findDetails(profileId);
+        if (target == null) throw new ProfileNotFoundException(profileId);
+        ProfileSummary actor = requireMember(userId, target.familyId());
+        boolean own = userId.equals(target.userId());
+        boolean accountlessChild = actor.isParent() && target.role() == ProfileRole.CHILD && target.userId() == null;
+        if (!own && !accountlessChild) throw new CannotActAsProfileException();
+        return Summaries.summary(target);
     }
 
     @Override
