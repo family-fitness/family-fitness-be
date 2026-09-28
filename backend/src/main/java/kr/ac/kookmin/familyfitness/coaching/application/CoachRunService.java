@@ -138,12 +138,15 @@ public class CoachRunService {
     /**
      * 가장 최근 실행(상태와 상관없이). profileId 가 있으면 그 프로필을 대상으로 짠 것, 없으면 가족 전체에서.
      * 아이마다 제안을 따로 찾게 하려는 것이다 — 가족 하나로만 주면 형제의 제안이 서로를 가린다. 없으면 404 COACH_RUN_NOT_FOUND.
+     * 승인했는데 그 실행으로 만든 미션이 하나도 남지 않은 실행(보호자가 모두 지움)은 건너뛴다(GF-04) — 「오늘 운동으로 등록했어요」인데
+     * 운동이 없는 회차를 띄우지 않고 그 앞 실행을 준다. 그 실행의 단건 조회({@link #get})는 그대로 APPROVED · missionCount 0 이다.
      */
     @Transactional(readOnly = true)
     public CoachRunView latest(UUID userId, UUID familyId, @Nullable UUID profileId) {
         ProfileSummary caller = familyAccess.requireMember(userId, familyId);
-        CoachRun run =
-                profileId == null ? runs.findLatestOfFamily(familyId) : runs.findLatestOfSubject(familyId, profileId);
+        CoachRun run = profileId == null
+                ? runs.findLatestShownOfFamily(familyId)
+                : runs.findLatestShownOfSubject(familyId, profileId);
         if (run == null) throw CoachRunNotFoundException.latestOf(familyId, profileId);
         return toView(run, canApprove(run, caller));
     }
@@ -193,20 +196,30 @@ public class CoachRunService {
                 List.copyOf(created));
     }
 
-    /** 승인 단추를 보일지 — 승인 대기이고, 부르는 계정이 보호자이고, 만들 항목이 모두 지난 것은 아니다(지났으면 승인이 409). */
+    /**
+     * 승인 단추를 보일지 — 승인 대기이고, 부르는 계정이 보호자이고, 만들 항목이 모두 지난 것은 아니고(지났으면 승인이 409), 미션으로
+     * 옮길 참여자가 모두 보호자 동의가 있다(없으면 승인이 422 CONSENT_REQUIRED — 단추를 보였다가 눌러야 막히던 것, GF-03).
+     * 동의는 앞의 조건이 모두 맞을 때만 식구 목록을 읽어 본다.
+     */
     private boolean canApprove(CoachRun run, ProfileSummary caller) {
-        return run.isAwaitingApproval() && caller.isParent() && !run.isExpiredOn(time.today());
+        return run.isAwaitingApproval()
+                && caller.isParent()
+                && !run.isExpiredOn(time.today())
+                && !missingParticipantConsent(run);
     }
 
-    /** 미션으로 복사될 참여자의 동의만 본다. 가족에서 빠진 프로필은 판정하지 않는다. */
     private void requireParticipantConsent(CoachRun run) {
+        if (missingParticipantConsent(run)) throw new ParticipantConsentRequiredException();
+    }
+
+    /** 미션으로 복사될 참여자 중 보호자 동의가 없거나 거둔 사람이 있는가. 가족에서 빠진 프로필은 판정하지 않는다. */
+    private boolean missingParticipantConsent(CoachRun run) {
         Map<UUID, ProfileSummary> members = profileQuery.summariesOfFamily(run.getFamilyId()).stream()
                 .collect(Collectors.toMap(ProfileSummary::profileId, Function.identity(), (a, b) -> a));
-        boolean missing = run.getProposals().stream()
+        return run.getProposals().stream()
                 .flatMap(item -> item.participants().stream())
                 .map(participant -> members.get(participant.profileId()))
                 .anyMatch(member -> member != null && ParticipantConsent.missing(member));
-        if (missing) throw new ParticipantConsentRequiredException();
     }
 
     @Transactional

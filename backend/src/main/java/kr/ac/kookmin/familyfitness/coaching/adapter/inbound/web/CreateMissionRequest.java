@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import org.jspecify.annotations.Nullable;
 
@@ -17,7 +18,8 @@ import org.jspecify.annotations.Nullable;
  * 날짜는 둘 중 하나로 보낸다 — {@code startDate} · {@code endDate}(미션 한 건) 또는 {@code dates}(날마다 하루짜리 한 건씩).
  * 둘 다 보내거나 둘 다 없으면 400 이다. 어느 날이든 오늘(KST)보다 앞이면 422 INVALID_DATE 이고 아무것도 만들지 않는다.
  *
- * @param targetValue 칸({@code sessions})이 있으면 칸 {@code minutes} 의 합과 같아야 한다. 다르면 400 이다
+ * @param targetValue 칸({@code sessions})이 있으면 칸 {@code minutes} 의 합과 같아야 한다. 다르면 400 이다. 칸 없는 분 목표
+ *     (TIMER_MINUTES)는 {@link Mission#MAX_WHOLE_MINUTES}(360)분까지 — 넘으면 칸 끝으로 끝낼 수 없어 400 이다
  * @param sessions 칸. 최대 10개(직접 짜기 화면의 상한). 없거나 비면 칸 없는 미션이다
  */
 public record CreateMissionRequest(
@@ -36,7 +38,16 @@ public record CreateMissionRequest(
         LocalDate endDate,
 
         @NotNull @Nullable TargetMetric targetMetric,
-        @NotNull @Min(1) @Nullable Integer targetValue,
+
+        @Schema(
+                description = "목표값(1 이상). 칸이 있으면 칸 minutes 의 합과 같아야 한다(다르면 400). 칸 없는 TIMER_MINUTES 는 1~"
+                        + Mission.MAX_WHOLE_MINUTES + "분(넘으면 400 — 칸 끝의 재생 상한 10800초의 두 배를 넘어 끝낼 수 없다)",
+                minimum = "1")
+        @NotNull
+        @Min(1)
+        @Nullable
+        Integer targetValue,
+
         @Nullable String videoId,
         @NotEmpty @Size(min = 1, max = 5) List<UUID> participantProfileIds,
         @Size(max = 10) @Nullable List<@NotNull @Valid MissionSessionRequest> sessions,

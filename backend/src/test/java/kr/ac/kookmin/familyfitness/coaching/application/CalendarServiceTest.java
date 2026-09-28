@@ -486,6 +486,28 @@ class CalendarServiceTest {
     }
 
     @Test
+    @DisplayName("기간 — 날짜로 셈할 수 있는 1900-01-01 ~ 2100-12-31 밖이면 400 BAD_REQUEST(날을 더하다 연도가 넘쳐 500 이 나던 곳)")
+    void 셈할_수_없는_날짜는_400() {
+        CalendarRangeException farFuture = assertThrows(
+                CalendarRangeException.class, () -> calendarOf(child, LocalDate.of(999_999_999, 12, 1), LocalDate.MAX));
+        assertThat(farFuture.getCode()).isEqualTo("BAD_REQUEST");
+        assertThat(farFuture.getMessage()).contains("1900-01-01").contains("2100-12-31");
+        assertThrows(
+                CalendarRangeException.class,
+                () -> calendarOf(child, LocalDate.of(2100, 12, 31), LocalDate.of(2101, 1, 1)));
+        assertThrows(
+                CalendarRangeException.class,
+                () -> calendarOf(child, LocalDate.of(1899, 12, 31), LocalDate.of(1900, 1, 1)));
+
+        assertThat(calendarOf(child, LocalDate.of(2100, 12, 1), LocalDate.of(2100, 12, 31))
+                        .days())
+                .isEmpty();
+        assertThat(calendarOf(child, LocalDate.of(1900, 1, 1), LocalDate.of(1900, 1, 31))
+                        .days())
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("42일 · 미션 여럿이어도 미션 · 칸 끝 · 활동 · 응원 · 쉬는 날을 한 번씩 읽고, 진행도를 다시 저장하지 않는다")
     void 한_번씩_읽는다() {
         LocalDate from = TODAY.minusDays(35);

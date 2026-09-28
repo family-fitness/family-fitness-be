@@ -19,6 +19,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 코치 대화. USER·ASSISTANT 메시지를 모두 저장한다(거부도 저장).
  * AI 호출은 트랜잭션 밖에서 하고, 성공했을 때만 두 메시지를 한 트랜잭션으로 저장한다 — AI 장애(503)면 아무것도 남지 않는다.
+ * 누구 이름으로 묻는지는 칸 끝과 같다: 이 계정이 그 프로필 이름으로 할 수 있어야 한다(자기 프로필이거나, 보호자가 계정 없는 아이를
+ * 대신할 때). 같은 가족이기만 하면 되던 때는 자녀 계정이 부모 이름으로 대화를 남겼다(KP-09).
  */
 @Service
 public class CoachChatService {
@@ -42,7 +44,7 @@ public class CoachChatService {
     }
 
     public ChatView chat(UUID userId, ChatCommand command) {
-        ProfileSummary profile = familyAccess.requireSameFamilyAsProfile(userId, command.profileId());
+        ProfileSummary profile = familyAccess.requireActingAs(userId, command.profileId());
         UUID conversationId = command.conversationId();
         if (conversationId == null) {
             conversationId = UUID.randomUUID();

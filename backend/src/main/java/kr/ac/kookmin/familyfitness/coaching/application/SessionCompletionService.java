@@ -14,6 +14,7 @@ import kr.ac.kookmin.familyfitness.coaching.api.MissionCompleted;
 import kr.ac.kookmin.familyfitness.coaching.api.SessionCompleted;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.SessionCompletionRepository;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotActiveException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
@@ -39,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>판정 차례(FE 목 fe:src/mocks/handlers.ts 칸 끝과 같은 차례에 권한 · 기간 · 시간을 끼웠다):
  *
  * <ol>
- *   <li>미션 없음 404 MISSION_NOT_FOUND
+ *   <li>미션 행을 SELECT … FOR UPDATE 로 잠그고 읽는다. 없거나 기다리는 사이 지워졌으면 404 MISSION_NOT_FOUND
  *   <li>칸 없음 404 SESSION_NOT_FOUND — 칸 없는 미션은 1번을 미션 전체 한 칸으로 받는다(결정 35)
  *   <li>이 계정이 그 프로필 이름으로 할 수 없음 403 — 자기 프로필이거나, 부모가 계정 없는 아이 이름으로만 된다
  *   <li>참여자 아님 403 NOT_A_PARTICIPANT
@@ -54,8 +55,11 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link Mission#companionsOf}) — 형제에게는 번지지 않고, 보호자가 끝낸 칸은 그 보호자 것뿐이다. 새로 적은 사람마다 같은 인정 초를
  * 활동(VIDEO)에 쌓고, 진행도를 다시 셈한 뒤 경험치를 적립한다(활동을 먼저 쌓아야 누적 분 업적이 이번 칸까지 센다).
  *
- * <p>미션 행은 잠그지 않는다. 미션을 읽은 뒤 보호자가 그 미션을 지워 커밋하면 칸 끝 행을 넣는 순간 미션 외래 키에 걸리고, 저장소가
- * 이것을 404 MISSION_NOT_FOUND 로 바꾼다({@link SessionCompletionRepository#insert}). 칸 끝 행이 첫 쓰기라 그 앞에 남는 기록은 없다.
+ * <p>미션 행을 맨 앞에서 잠그는 까닭(지우기 · 느낌과 같은 잠금): 진행도는 커밋된 칸 끝 기록으로 셈해 참여자 행을 통째로 덮어쓴다. 잠그지
+ * 않으면 같은 미션의 서로 다른 칸을 동시에 끝낸 두 요청이 서로의 칸 끝 행을 못 본 채 셈해, 두 칸 모두 번진 보호자가 끝나지 않고
+ * MissionCompleted · 미션 끝 +20 이 빠졌다(SA-10). 같은 날 활동 행도 두 요청이 같은 값을 읽어 고쳐 써 한 칸 분을 잃었다. 잠그면 같은
+ * 미션의 칸 끝 · 느낌 · 지우기가 차례로 돈다 — 늦은 쪽은 먼저 온 쪽이 커밋하길 기다렸다가 그 기록을 보고 셈한다. 셋 다 미션 행을 먼저
+ * 잠그므로 서로를 기다리다 멈추지 않는다. 지우기가 먼저 잠갔으면 기다렸다가 지워진 미션을 보고 404 다.
  */
 @Service
 public class SessionCompletionService {
@@ -92,7 +96,7 @@ public class SessionCompletionService {
 
     @Transactional
     public SessionCompletedView complete(UUID userId, UUID missionId, int position, CompleteSessionCommand command) {
-        Mission mission = missions.findById(missionId);
+        Mission mission = missions.findByIdForUpdate(missionId);
         if (mission == null) throw new MissionNotFoundException(missionId);
         MissionSession session = mission.plannedSession(position);
         if (session == null) throw new SessionNotFoundException(missionId, position);
@@ -137,14 +141,15 @@ public class SessionCompletionService {
     /**
      * 인정 초. endedAt ≤ startedAt 이면 400. 재생 초가 기기 시각의 간격보다 길면 간격으로 자른다.
      * 칸 시간(분 × 60)의 절반 미만이면 422 TOO_SHORT(FE 목 {@code activeSeconds < planned × 0.5} 와 같다).
+     * 칸 시간은 long 으로 셈한다 — 상한이 생기기 전에 만든 칸 없는 미션은 분이 아주 커서 int 곱셈이 음수로 넘쳤다(SA-11).
      */
     private static int creditedSeconds(MissionSession session, CompleteSessionCommand command) {
         if (!command.endedAt().isAfter(command.startedAt())) {
-            throw new IllegalArgumentException("endedAt 은 startedAt 이후여야 합니다");
+            throw new InvalidInputException("endedAt 은 startedAt 이후여야 합니다");
         }
         long elapsed = Duration.between(command.startedAt(), command.endedAt()).getSeconds();
         long active = Math.min(command.activeSeconds(), elapsed);
-        int planned = session.minutes() * 60;
+        long planned = session.minutes() * 60L;
         if (active * 2 < planned) throw new SessionTooShortException(active, planned);
         return (int) active;
     }

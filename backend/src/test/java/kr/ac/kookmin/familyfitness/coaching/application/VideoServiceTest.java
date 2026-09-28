@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotParticipantException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
@@ -22,6 +23,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import org.jspecify.annotations.Nullable;
@@ -91,7 +93,7 @@ class VideoServiceTest {
     @DisplayName("즐겨찾기·최근 목록은 profileId 가 필요하고 프로필의 상호작용만 본다")
     void 즐겨찾기_최근_목록은_profileId_가_필요하고_프로필의_상호작용만_본다() {
         assertThrows(
-                IllegalArgumentException.class,
+                InvalidInputException.class,
                 () -> service.list(family.childUser, query(VideoListType.FAVORITES, null, null, null, 20, false)));
         assertThrows(
                 NotSameFamilyException.class,
@@ -181,6 +183,25 @@ class VideoServiceTest {
                         .getCode())
                 .isEqualTo("CONSENT_REQUIRED");
         assertThat(interactions.find(childId, "IdpXx2gm90o")).isNull();
+        assertThat(activity.rows).isEmpty();
+    }
+
+    @Test
+    @DisplayName("영상 진행 기록은 이 계정이 그 프로필 이름으로 할 수 있을 때만 — 보호자가 계정 있는 아이 이름으로, 자녀 계정이 부모 이름으로 보내면 403 이고 아무것도 남지 않는다")
+    void 영상_진행_기록은_그_프로필_이름으로_할_수_있을_때만() {
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> service.progress(
+                        family.parentUser, "IdpXx2gm90o", new VideoProgressCommand(childId, 0.95, 570, null)));
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> service.progress(
+                        family.childUser,
+                        "IdpXx2gm90o",
+                        new VideoProgressCommand(family.parent.profileId(), 0.95, 570, null)));
+
+        assertThat(interactions.find(childId, "IdpXx2gm90o")).isNull();
+        assertThat(interactions.find(family.parent.profileId(), "IdpXx2gm90o")).isNull();
         assertThat(activity.rows).isEmpty();
     }
 
