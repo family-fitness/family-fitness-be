@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
@@ -24,5 +25,13 @@ public class ExerciseClipPersistenceAdapter implements ExerciseClipRepository {
     @Override
     public @Nullable ExerciseClip findById(String clipId) {
         return clips.findById(clipId).map(ExerciseClipEntity::toDomain).orElse(null);
+    }
+
+    @Override
+    public List<ExerciseClip> findAllByIds(Collection<String> clipIds) {
+        if (clipIds.isEmpty()) return List.of();
+        return clips.findAllById(clipIds).stream()
+                .map(ExerciseClipEntity::toDomain)
+                .toList();
     }
 }

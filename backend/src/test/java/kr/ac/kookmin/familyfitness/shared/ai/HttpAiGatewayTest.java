@@ -200,6 +200,38 @@ class HttpAiGatewayTest {
     }
 
     @Test
+    @DisplayName("video 에 video_id 가 없거나 null · 빈칸이면 영상 없는 세션으로 읽는다 — 다른 칸은 그대로 읽는다")
+    void video_id_가_없는_영상은_영상_없는_세션으로_읽는다() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_3"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_3","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"영상 id 빠짐","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],"duration_min":10,
+                             "sessions":[{"phase":"준비운동","order":1,"exercise_name":"목 돌리기","fitness_factor":"유연성",
+                                          "video":{"start_sec":10,"end_sec":40},"evidence":[1]},
+                                         {"phase":"본운동","order":2,"exercise_name":"앞으로 숙이기","fitness_factor":"유연성",
+                                          "video":{"video_id":null,"start_sec":50,"end_sec":90},"evidence":[]},
+                                         {"phase":"본운동","order":3,"exercise_name":"옆으로 숙이기","fitness_factor":"유연성",
+                                          "video":{"video_id":"  ","start_sec":0},"evidence":[]},
+                                         {"phase":"정리운동","order":4,"exercise_name":"나비자세","fitness_factor":"유연성",
+                                          "video":{"video_id":"Eg3GpTv7z8s","start_sec":144,"end_sec":182},"evidence":[]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"처방","chunk_id":"prescription:1"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        List<CoachRunResult.Session> sessions =
+                gateway.getCoachRun("cr_3").proposal().missions().getFirst().sessions();
+
+        assertThat(sessions).hasSize(4);
+        assertThat(sessions.subList(0, 3))
+                .allSatisfy(it -> assertThat(it.video()).isNull());
+        assertThat(sessions.get(1).exerciseName()).isEqualTo("앞으로 숙이기");
+        assertThat(sessions.getLast().video()).isEqualTo(new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182));
+    }
+
+    @Test
     @DisplayName("404 는 RUN_NOT_FOUND 다")
     void 는_RUN_NOT_FOUND_다() {
         server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_x"))
