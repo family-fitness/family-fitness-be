@@ -1,7 +1,9 @@
 package kr.ac.kookmin.familyfitness.fitness.application;
 
+import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.childAccountOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.detailsOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.norms;
+import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.parentOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.summaryOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,6 +33,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.NoItemsException;
 import kr.ac.kookmin.familyfitness.fitness.domain.NormPoint;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
+import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
@@ -43,6 +46,7 @@ class FitnessTestServiceTest {
     private final UUID actorId = UUID.randomUUID();
     private final UUID familyId = UUID.randomUUID();
     private final UUID profileId = UUID.randomUUID();
+    private final UUID parentId = UUID.randomUUID();
 
     /** 2026-09-09 12:00 KST */
     private final Clock clock = Clock.fixed(Instant.parse("2026-09-09T03:00:00Z"), ZoneOffset.UTC);
@@ -82,11 +86,20 @@ class FitnessTestServiceTest {
         childProfile(birthDate, true, true, true);
     }
 
+    /** 대상은 아이 프로필, 호출 계정은 같은 가족의 보호자다. */
     private void childProfile(LocalDate birthDate, boolean consentRequired, boolean consentGiven, boolean measurable) {
         when(familyAccess.requireSameFamilyAsProfile(actorId, profileId))
                 .thenReturn(summaryOf(profileId, familyId, AgeGroup.YOUTH, measurable, consentRequired, consentGiven));
+        when(familyAccess.requireParentOfProfile(actorId, profileId)).thenReturn(parentOf(parentId, familyId));
+        when(familyAccess.requireMember(actorId, familyId)).thenReturn(parentOf(parentId, familyId));
         when(profileQuery.findDetails(profileId))
                 .thenReturn(detailsOf(profileId, familyId, birthDate, Sex.F, null, null, true));
+    }
+
+    /** 같은 조건에서 호출 계정만 자녀(CHILD) 본인 계정으로 바꾼다. */
+    private void callerIsChildAccount() {
+        when(familyAccess.requireParentOfProfile(actorId, profileId)).thenThrow(new NotAParentException());
+        when(familyAccess.requireMember(actorId, familyId)).thenReturn(childAccountOf(UUID.randomUUID(), familyId));
     }
 
     private record ItemPair(String code, int value) {}
@@ -114,6 +127,7 @@ class FitnessTestServiceTest {
     @Test
     @DisplayName("같은 가족이 아니면 identity 의 예외가 그대로 올라간다")
     void 같은_가족이_아니면_identity_의_예외가_그대로_올라간다() {
+        when(familyAccess.requireParentOfProfile(actorId, profileId)).thenThrow(new NotSameFamilyException());
         when(familyAccess.requireSameFamilyAsProfile(actorId, profileId)).thenThrow(new NotSameFamilyException());
         assertThatThrownBy(() -> service.register(actorId, profileId, command(new ItemPair("028", 36))))
                 .isInstanceOf(NotSameFamilyException.class);
@@ -214,18 +228,18 @@ class FitnessTestServiceTest {
     @DisplayName("최신 회차는 testedOn 이 가장 늦은 것이고 없으면 null")
     void 최신_회차는_testedOn_이_가장_늦은_것이고_없으면_null() {
         childProfile();
-        assertThat(service.latest(actorId, profileId)).isNull();
+        assertThat(service.latest(actorId, profileId).test()).isNull();
         service.register(actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)));
         FitnessTest newer =
                 service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)));
-        assertThat(service.latest(actorId, profileId).getId()).isEqualTo(newer.getId());
+        assertThat(service.latest(actorId, profileId).test().getId()).isEqualTo(newer.getId());
     }
 
     @Test
     @DisplayName("측정 이력은 testedOn 이 늦은 회차부터 size 개이고 없으면 빈 목록")
     void 측정_이력은_testedOn_이_늦은_회차부터_size_개이고_없으면_빈_목록() {
         childProfile();
-        assertThat(service.history(actorId, profileId, 20)).isEmpty();
+        assertThat(service.history(actorId, profileId, 20).tests()).isEmpty();
 
         FitnessTest august =
                 service.register(actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)));
@@ -234,10 +248,10 @@ class FitnessTestServiceTest {
         FitnessTest july =
                 service.register(actorId, profileId, command(LocalDate.of(2026, 7, 1), new ItemPair("028", 36)));
 
-        assertThat(service.history(actorId, profileId, 20))
+        assertThat(service.history(actorId, profileId, 20).tests())
                 .extracting(FitnessTest::getId)
                 .containsExactly(september.getId(), august.getId(), july.getId());
-        assertThat(service.history(actorId, profileId, 2))
+        assertThat(service.history(actorId, profileId, 2).tests())
                 .extracting(FitnessTest::getId)
                 .containsExactly(september.getId(), august.getId());
     }
@@ -249,7 +263,8 @@ class FitnessTestServiceTest {
         assertThatThrownBy(() -> service.history(actorId, profileId, 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.history(actorId, profileId, FitnessTestService.HISTORY_MAX_SIZE + 1))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(service.history(actorId, profileId, FitnessTestService.HISTORY_MAX_SIZE))
+        assertThat(service.history(actorId, profileId, FitnessTestService.HISTORY_MAX_SIZE)
+                        .tests())
                 .isEmpty();
     }
 
@@ -258,5 +273,64 @@ class FitnessTestServiceTest {
     void 측정_이력도_같은_가족이_아니면_identity_의_예외가_그대로_올라간다() {
         when(familyAccess.requireSameFamilyAsProfile(actorId, profileId)).thenThrow(new NotSameFamilyException());
         assertThatThrownBy(() -> service.history(actorId, profileId, 20)).isInstanceOf(NotSameFamilyException.class);
+    }
+
+    @Test
+    @DisplayName("자녀 계정은 남의 측정도 자기 측정도 등록하지 못한다(NOT_A_PARENT)")
+    void 자녀_계정은_남의_측정도_자기_측정도_등록하지_못한다() {
+        childProfile();
+        callerIsChildAccount();
+        assertThatThrownBy(() -> service.register(actorId, profileId, command(new ItemPair("028", 36))))
+                .isInstanceOf(NotAParentException.class);
+        assertThat(tests.saved).isEmpty();
+    }
+
+    @Test
+    @DisplayName("latest · 이력은 부모 계정이면 parentScope=true, 자녀 계정이면 false 로 돌려준다")
+    void latest_이력은_부모_계정이면_parentScope_true_자녀_계정이면_false() {
+        childProfile();
+        service.register(actorId, profileId, command(new ItemPair("028", 36)));
+        assertThat(service.latest(actorId, profileId).parentScope()).isTrue();
+        assertThat(service.history(actorId, profileId, 20).parentScope()).isTrue();
+
+        callerIsChildAccount();
+        LatestFitnessView latest = service.latest(actorId, profileId);
+        assertThat(latest.parentScope()).isFalse();
+        assertThat(latest.test()).isNotNull();
+        FitnessHistoryView history = service.history(actorId, profileId, 20);
+        assertThat(history.parentScope()).isFalse();
+        assertThat(history.tests()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("항목표 연령대는 측정일 기준 만 나이로 정한다 — 13세 생일 전 날짜면 유소년, 뒤면 청소년")
+    void 항목표_연령대는_측정일_기준_만_나이로_정한다() {
+        // 2013-09-05 생 — 오늘(2026-09-09)은 만 13세(청소년), 2026-09-04 는 만 12세(유소년)
+        childProfile(LocalDate.of(2013, 9, 5));
+        assertThat(service.ageGroupOn(actorId, profileId, LocalDate.of(2026, 9, 4)))
+                .isEqualTo(AgeGroup.YOUTH);
+        assertThat(service.ageGroupOn(actorId, profileId, LocalDate.of(2026, 9, 5)))
+                .isEqualTo(AgeGroup.ADOLESCENT);
+        assertThat(service.ageGroupOn(actorId, profileId, null)).isEqualTo(AgeGroup.ADOLESCENT);
+
+        // 항목표와 등록 검사가 같은 셈이다 — 유소년 날짜에 유소년 항목 043 은 저장되고 청소년 항목 010 은 거절된다
+        service.register(actorId, profileId, command(LocalDate.of(2026, 9, 4), new ItemPair("043", 30)));
+        assertThatThrownBy(() -> service.register(
+                        actorId, profileId, command(LocalDate.of(2026, 9, 3), new ItemPair("010", 30))))
+                .isInstanceOf(ItemNotForAgeGroupException.class);
+    }
+
+    @Test
+    @DisplayName("항목표 연령대 — 미래 날짜 400, 만 4세 미만 NOT_MEASURABLE, 자녀 계정 NOT_A_PARENT")
+    void 항목표_연령대_미래_날짜_만_4세_미만_자녀_계정() {
+        childProfile(LocalDate.of(2022, 12, 1));
+        assertThatThrownBy(() -> service.ageGroupOn(actorId, profileId, today.plusDays(1)))
+                .isInstanceOf(FutureTestDateException.class);
+        // 2026-09-09 는 만 3세
+        assertThatThrownBy(() -> service.ageGroupOn(actorId, profileId, today))
+                .isInstanceOf(NotMeasurableException.class);
+
+        callerIsChildAccount();
+        assertThatThrownBy(() -> service.ageGroupOn(actorId, profileId, today)).isInstanceOf(NotAParentException.class);
     }
 }

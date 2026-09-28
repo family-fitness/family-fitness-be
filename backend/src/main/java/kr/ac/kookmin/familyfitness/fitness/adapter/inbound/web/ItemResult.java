@@ -29,4 +29,19 @@ public record ItemResult(
                         it.score().topPercentText()))
                 .toList();
     }
+
+    /** 자녀 계정용 — 잰 값만 싣고 백분위 · 등급 · 구간 · 「상위 n%」 는 비운다. */
+    static List<ItemResult> valuesOnly(FitnessTest test) {
+        return test.getItems().stream()
+                .map(it -> new ItemResult(
+                        it.item().getCode(),
+                        it.item().label(test.getAgeGroup()),
+                        it.item().getUnit(),
+                        it.value(),
+                        null,
+                        null,
+                        null,
+                        null))
+                .toList();
+    }
 }

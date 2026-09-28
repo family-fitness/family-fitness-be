@@ -9,6 +9,6 @@ import org.jspecify.annotations.Nullable;
  */
 public record FitnessMapMember(
         ProfileSummary profile,
-        /** 예: `유소년 상위 37%`. 측정이 없으면 null. */
+        /** 예: `유소년 상위 37%`. 측정이 없거나 호출 계정이 CHILD 면 null. */
         @Nullable String headline,
         @Nullable FitnessMapLatest latest) {}
