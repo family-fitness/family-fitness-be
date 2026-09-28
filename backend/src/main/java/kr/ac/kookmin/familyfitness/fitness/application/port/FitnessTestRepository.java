@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.fitness.application.port;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import org.jspecify.annotations.Nullable;
@@ -27,4 +28,7 @@ public interface FitnessTestRepository {
     boolean existsByProfileIdAndTestedOn(UUID profileId, LocalDate testedOn);
 
     boolean existsByProfileIdIn(Collection<UUID> profileIds);
+
+    /** 프로필마다 가장 늦은 testedOn. 회차가 없는 프로필은 결과에 없다. */
+    Map<UUID, LocalDate> lastTestedOn(Collection<UUID> profileIds);
 }

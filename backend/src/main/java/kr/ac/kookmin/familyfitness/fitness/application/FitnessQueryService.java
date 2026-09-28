@@ -1,6 +1,8 @@
 package kr.ac.kookmin.familyfitness.fitness.application;
 
+import java.time.LocalDate;
 import java.util.Collection;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
@@ -39,5 +41,12 @@ public class FitnessQueryService implements FitnessQuery {
     @Transactional(readOnly = true)
     public boolean hasAnyTest(Collection<UUID> profileIds) {
         return !profileIds.isEmpty() && tests.existsByProfileIdIn(profileIds);
+    }
+
+    /** 쿼리 한 번(profile_id 로 묶은 max(tested_on)). 측정값은 읽지 않는다. */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, LocalDate> lastTestedOn(Collection<UUID> profileIds) {
+        return profileIds.isEmpty() ? Map.of() : tests.lastTestedOn(profileIds);
     }
 }

@@ -139,6 +139,7 @@ public class CheerService {
                 cheer.toProfileId(),
                 cheer.kind(),
                 cheer.stickerId(),
+                cheer.message(),
                 cheer.missionId(),
                 cheer.replyToCheerId(),
                 cheer.createdAt());

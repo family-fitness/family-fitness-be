@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -28,6 +29,7 @@ import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.progress.api.AchievementEarned;
 import kr.ac.kookmin.familyfitness.progress.api.SessionDone;
 import kr.ac.kookmin.familyfitness.progress.api.SessionDone.Phase;
 import kr.ac.kookmin.familyfitness.progress.api.SessionDone.Verification;
@@ -72,9 +74,15 @@ class ProgressServiceTest {
                     .sorted()
                     .toList(),
             (profileId, from, to) -> planned.getOrDefault(profileId, Set.of()));
+    /** 처음 받은 업적마다 발행한 AchievementEarned. */
+    private final List<AchievementEarned> earnedEvents = new ArrayList<>();
+
+    private final AchievementAwards awards = new AchievementAwards(achievements, event -> {
+        if (event instanceof AchievementEarned earned) earnedEvents.add(earned);
+    });
     private final ProgressRecorderService recorder =
-            new ProgressRecorderService(ledger, achievements, history, activity, profiles, clock);
-    private final ProgressEventListener listener = new ProgressEventListener(ledger, achievements, clock, KST);
+            new ProgressRecorderService(ledger, awards, history, activity, profiles, clock);
+    private final ProgressEventListener listener = new ProgressEventListener(ledger, awards, clock, KST);
     private final ProgressQueryService query =
             new ProgressQueryService(ledger, achievements, history, activity, familyAccess, clock, KST);
 
@@ -126,7 +134,8 @@ class ProgressServiceTest {
 
     private CheerSent cheer(CheerKind kind, UUID from, UUID to, String stickerId, UUID missionId) {
         clock.step();
-        return new CheerSent(UUID.randomUUID(), familyId, from, to, kind, stickerId, missionId, null, clock.instant());
+        return new CheerSent(
+                UUID.randomUUID(), familyId, from, to, kind, stickerId, null, missionId, null, clock.instant());
     }
 
     /** 새 회차 자신이 다시 잰 회차인 등록(그보다 이른 회차가 이미 있다). */
@@ -261,6 +270,30 @@ class ProgressServiceTest {
             assertThat(earnedAt(kid, Achievement.FIRST_STEP)).isEqualTo(first);
             assertThat(achievements.earnedOf(kid))
                     .doesNotContainKeys(Achievement.FULL_SET, Achievement.MIN_30, Achievement.WEEKEND);
+        }
+
+        @Test
+        @DisplayName("처음 받은 업적만 AchievementEarned 로 알린다 — 같은 업적을 다시 판정하면 내지 않는다(알림이 두 번 가지 않게)")
+        void 처음_받은_업적만_알린다() {
+            UUID mission = UUID.randomUUID();
+            move(kid, mission, 1, Phase.MAIN, today, 3);
+            move(kid, mission, 2, Phase.MAIN, today, 3);
+
+            assertThat(earnedEvents)
+                    .containsExactly(new AchievementEarned(
+                            kid, "FIRST_STEP", "첫걸음", "운동 한 칸을 처음 끝내요", earnedAt(kid, Achievement.FIRST_STEP)));
+        }
+
+        @Test
+        @DisplayName("응원 · 측정으로 받은 업적도 알린다 — 첫 스티커는 한 번, 부모가 받은 업적도 낸다(누구에게 알릴지는 듣는 쪽이 정한다)")
+        void 응원과_측정의_업적도_알린다() {
+            listener.on(cheer(CheerKind.PRAISE, mom, kid, "star", null));
+            listener.on(cheer(CheerKind.PRAISE, dad, kid, "crown", null));
+            move(mom, UUID.randomUUID(), 1, Phase.MAIN, today, 3);
+
+            assertThat(earnedEvents)
+                    .extracting(AchievementEarned::profileId, AchievementEarned::code)
+                    .containsExactly(tuple(kid, "FIRST_STICKER"), tuple(mom, "FIRST_STEP"));
         }
 
         @Test

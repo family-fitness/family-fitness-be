@@ -7,7 +7,6 @@ import java.time.ZoneId;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.CheerSent;
-import kr.ac.kookmin.familyfitness.progress.application.port.AchievementStore;
 import kr.ac.kookmin.familyfitness.progress.application.port.XpLedger;
 import kr.ac.kookmin.familyfitness.progress.domain.Achievement;
 import kr.ac.kookmin.familyfitness.progress.domain.XpEvent;
@@ -27,11 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class ProgressEventListener {
     private final XpLedger ledger;
-    private final AchievementStore achievements;
+    private final AchievementAwards achievements;
     private final Clock clock;
     private final ZoneId zone;
 
-    public ProgressEventListener(XpLedger ledger, AchievementStore achievements, Clock clock, ZoneId appZone) {
+    public ProgressEventListener(XpLedger ledger, AchievementAwards achievements, Clock clock, ZoneId appZone) {
         this.ledger = ledger;
         this.achievements = achievements;
         this.clock = clock;

@@ -3,7 +3,9 @@ package kr.ac.kookmin.familyfitness.fitness.adapter.outbound.persistence;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
@@ -62,6 +64,13 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
     @Override
     public boolean existsByProfileIdIn(Collection<UUID> profileIds) {
         return jpa.existsByProfileIdIn(profileIds);
+    }
+
+    @Override
+    public Map<UUID, LocalDate> lastTestedOn(Collection<UUID> profileIds) {
+        if (profileIds.isEmpty()) return Map.of();
+        return jpa.findLastTestedOn(profileIds).stream()
+                .collect(Collectors.toUnmodifiableMap(LastTestedRow::profileId, LastTestedRow::testedOn));
     }
 
     private static FitnessTestEntity toEntity(FitnessTest test) {
