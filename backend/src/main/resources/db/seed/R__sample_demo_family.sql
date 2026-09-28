@@ -1,5 +1,5 @@
 -- 로컬·테스트 전용 데모 가족. 프론트가 가입 흐름 없이 바로 붙어 볼 수 있게 계정·가족·프로필을 미리 넣는다.
--- 사용: POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"} → nextStep HOME, 프로필 3개.
+-- 사용: POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"} → nextStep HOME, profiles 는 이 계정의 프로필 1개(데모 엄마).
 --       두 번째 부모는 {"providerUserId":"demo-parent-2"} (아직 프로필 없음 → 초대코드 K7M2QT 로 /claim 가능).
 -- 없는 행만 넣는다(재기동해도 중복되지 않음).
 insert into users (id, provider, provider_user_id, email, status, created_at, updated_at)
@@ -44,6 +44,9 @@ select '00000000-0000-4000-8000-000000000013', '00000000-0000-4000-8000-00000000
        'K7M2QT', timestamp with time zone '2099-12-31 00:00:00+09', null, null, null, null, null,
        timestamp with time zone '2026-09-01 09:00:00+09', timestamp with time zone '2026-09-01 09:00:00+09'
 where not exists (select 1 from profiles where id = '00000000-0000-4000-8000-000000000013');
+-- K7M2QT 는 데모 엄마가 보냈다(미리 보기 invitedByName). 이미 들어간 행에도 채우되 다른 값이 있으면 두고 간다.
+update profiles set claim_code_issued_by = '00000000-0000-4000-8000-000000000011'
+where id = '00000000-0000-4000-8000-000000000013' and claim_code = 'K7M2QT' and claim_code_issued_by is null;
 
 -- 데모 첫째의 측정 1회 (2026-09-07, 만 11세 · 유소년 F). 백분위는 V3 규준으로 앱이 계산한 값을 그대로 굳힌 것.
 -- 홈 체력 지도·코치 실행이 측정 없이도 바로 시연되게 한다.

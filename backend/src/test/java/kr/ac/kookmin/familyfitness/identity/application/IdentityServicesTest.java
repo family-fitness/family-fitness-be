@@ -47,6 +47,7 @@ import kr.ac.kookmin.familyfitness.identity.domain.NotOwnProfileException;
 import kr.ac.kookmin.familyfitness.identity.domain.SelfCheerException;
 import kr.ac.kookmin.familyfitness.identity.domain.SupportModeNotApplicableException;
 import kr.ac.kookmin.familyfitness.identity.domain.TooManyCheersException;
+import kr.ac.kookmin.familyfitness.identity.domain.TooManyClaimAttemptsException;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -72,7 +73,8 @@ class IdentityServicesTest {
             new AppProperties.Ai());
 
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
-    private final InviteService inviteService = new InviteService(families, props, identityClock);
+    private final ClaimAttemptLimiter claimAttempts = new ClaimAttemptLimiter(identityClock);
+    private final InviteService inviteService = new InviteService(families, props, identityClock, claimAttempts);
     private final ProfileSettingsService settingsService =
             new ProfileSettingsService(families, summaries, identityClock);
     /** 미션 id → 가족 id. coaching 이 구현하는 {@link MissionLookup} 의 가짜. */
@@ -405,22 +407,169 @@ class IdentityServicesTest {
         }
 
         @Test
-        @DisplayName("재발급하면 이전 코드는 즉시 무효다")
-        void 재발급하면_이전_코드는_즉시_무효다() {
+        @DisplayName("살아 있는 코드가 있으면 다시 발급해도 같은 코드다 — 먼저 보낸 코드가 죽지 않는다")
+        void 살아_있는_코드가_있으면_다시_발급해도_같은_코드다() {
             CreatedFamily family = createFamily();
             ProfileSummary child = addChild(family.familyId());
-            String first = inviteService
-                    .issueInvite(parentUser, child.profileId())
-                    .claimCode()
-                    .code();
-            String second = inviteService
-                    .issueInvite(parentUser, child.profileId())
-                    .claimCode()
-                    .code();
+            ClaimCode first =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
 
-            assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.claim(UUID.randomUUID(), first));
-            assertThat(inviteService.claim(UUID.randomUUID(), second).profileId())
+            clock.setInstant(clock.instant().plus(Duration.ofDays(3)));
+            ClaimCode again =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
+
+            assertThat(again).isEqualTo(first);
+            assertThat(inviteService.claim(UUID.randomUUID(), first.code()).profileId())
                     .isEqualTo(child.profileId());
+        }
+
+        @Test
+        @DisplayName("만료된 코드만 새 코드로 바뀌고, 옛 코드는 없는 코드가 된다")
+        void 만료된_코드만_새_코드로_바뀌고_옛_코드는_없는_코드가_된다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child = addChild(family.familyId());
+            ClaimCode first =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
+
+            clock.setInstant(first.expiresAt());
+            ClaimCode second =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
+
+            assertThat(second.code()).isNotEqualTo(first.code());
+            assertThat(second.expiresAt()).isEqualTo(first.expiresAt().plus(Duration.ofDays(7)));
+            assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.claim(UUID.randomUUID(), first.code()));
+            assertThat(inviteService.claim(UUID.randomUUID(), second.code()).profileId())
+                    .isEqualTo(child.profileId());
+        }
+
+        @Test
+        @DisplayName("미리 보기는 가족 이름 · 자리 이름 · 역할 · 연령대 · 보낸 보호자 · 만료를 준다")
+        void 미리_보기는_자리와_보낸_보호자를_준다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child = addChild(family.familyId());
+            ClaimCode code =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
+
+            InvitePreview preview =
+                    inviteService.preview(UUID.randomUUID(), " " + code.code().toLowerCase() + " ");
+
+            assertThat(preview)
+                    .isEqualTo(new InvitePreview(
+                            "우리 가족", "첫째", ProfileRole.CHILD, AgeGroup.YOUTH, "엄마", code.expiresAt()));
+            // 구성원인지는 보지 않는다 — 보낸 사람도 볼 수 있다
+            assertThat(inviteService.preview(parentUser, code.code()).profileName())
+                    .isEqualTo("첫째");
+        }
+
+        @Test
+        @DisplayName("미리 보기 판정 — 없음 404 → 이미 사용 409 → 만료 410")
+        void 미리_보기_판정_없음_이미_사용_만료() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child = addChild(family.familyId());
+            ClaimCode code =
+                    inviteService.issueInvite(parentUser, child.profileId()).claimCode();
+
+            assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.preview(UUID.randomUUID(), "ZZZZZZ"));
+            assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.preview(UUID.randomUUID(), "AB"));
+            clock.setInstant(code.expiresAt());
+            assertThrows(ClaimCodeExpiredException.class, () -> inviteService.preview(UUID.randomUUID(), code.code()));
+
+            clock.setInstant(code.expiresAt().minusSeconds(1));
+            inviteService.claim(UUID.randomUUID(), code.code());
+            clock.setInstant(code.expiresAt());
+            // 쓴 코드는 기한이 지나도 이미 사용이다(수락과 같은 차례)
+            assertThrows(AlreadyClaimedException.class, () -> inviteService.preview(UUID.randomUUID(), code.code()));
+        }
+
+        @Test
+        @DisplayName("다른 가족에 프로필이 있는 계정은 코드를 쓸 수 없다 — ALREADY_IN_FAMILY, 계정은 붙지 않는다")
+        void 다른_가족에_프로필이_있는_계정은_코드를_쓸_수_없다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary dad = familyService.addMember(
+                    parentUser,
+                    family.familyId(),
+                    "아빠",
+                    LocalDate.of(1986, 1, 1),
+                    Sex.M,
+                    ProfileRole.PARENT,
+                    null,
+                    null,
+                    null);
+            String code = inviteService
+                    .issueInvite(parentUser, dad.profileId())
+                    .claimCode()
+                    .code();
+            UUID otherParent = UUID.randomUUID();
+            familyService.createFamily(otherParent, "아빠네", "아빠", LocalDate.of(1986, 1, 1), Sex.M);
+
+            assertThrows(AlreadyInFamilyException.class, () -> inviteService.claim(otherParent, code));
+            assertThat(families.attachCalls).isEmpty();
+            assertThat(families.findByProfileId(dad.profileId())
+                            .profile(dad.profileId())
+                            .hasAccount())
+                    .isFalse();
+            // 미리 보기에는 구성원 · 다른 가족 검사가 없다
+            assertThat(inviteService.preview(otherParent, code).profileName()).isEqualTo("아빠");
+        }
+
+        @Test
+        @DisplayName("없는 코드를 10분에 10번 넣으면 다음은 맞는 코드도 429 이고, 미리 보기와 셈을 같이 쓴다")
+        void 없는_코드를_10분에_10번_넣으면_다음은_맞는_코드도_429_다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child = addChild(family.familyId());
+            String code = inviteService
+                    .issueInvite(parentUser, child.profileId())
+                    .claimCode()
+                    .code();
+            UUID guesser = UUID.randomUUID();
+
+            for (int i = 0; i < 5; i++) {
+                assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.claim(guesser, "ZZZZZZ"));
+                assertThrows(ClaimCodeNotFoundException.class, () -> inviteService.preview(guesser, "ZZZZZ2"));
+            }
+
+            assertThrows(TooManyClaimAttemptsException.class, () -> inviteService.preview(guesser, code));
+            assertThrows(TooManyClaimAttemptsException.class, () -> inviteService.claim(guesser, code));
+            assertThat(families.attachCalls).isEmpty();
+            // 다른 계정은 막히지 않는다
+            assertThat(inviteService.preview(UUID.randomUUID(), code).profileName())
+                    .isEqualTo("첫째");
+
+            // 마지막으로 틀린 때부터 10분이 지나면 풀린다
+            clock.setInstant(clock.instant().plus(Duration.ofMinutes(10)));
+            assertThat(inviteService.claim(guesser, code).profileId()).isEqualTo(child.profileId());
+        }
+    }
+
+    @Nested
+    class ClaimAttempts {
+        private final UUID user = UUID.randomUUID();
+
+        @Test
+        @DisplayName("창 안에서 9번 틀렸으면 아직 열려 있고 10번째부터 막힌다")
+        void 창_안에서_9번_틀렸으면_아직_열려_있고_10번째부터_막힌다() {
+            for (int i = 0; i < 9; i++) claimAttempts.recordFailure(user);
+            claimAttempts.check(user);
+
+            claimAttempts.recordFailure(user);
+            assertThrows(TooManyClaimAttemptsException.class, () -> claimAttempts.check(user));
+        }
+
+        @Test
+        @DisplayName("창은 미끄러진다 — 가장 오래된 실패가 10분을 넘기면 하나만큼 풀린다")
+        void 창은_미끄러진다() {
+            Instant start = clock.instant();
+            for (int i = 0; i < 10; i++) {
+                clock.setInstant(start.plus(Duration.ofMinutes(i)));
+                claimAttempts.recordFailure(user);
+            }
+            assertThrows(TooManyClaimAttemptsException.class, () -> claimAttempts.check(user));
+
+            // 0분의 실패가 창 밖으로 나가면 9개가 남아 한 번 더 넣을 수 있다
+            clock.setInstant(start.plus(Duration.ofMinutes(10)));
+            claimAttempts.check(user);
+            claimAttempts.recordFailure(user);
+            assertThrows(TooManyClaimAttemptsException.class, () -> claimAttempts.check(user));
         }
     }
 

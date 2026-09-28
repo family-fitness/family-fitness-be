@@ -49,7 +49,8 @@ class AvailabilityServiceTest {
                     new AppProperties.Cors(),
                     new AppProperties.Auth(),
                     new AppProperties.Ai()),
-            identityClock);
+            identityClock,
+            new ClaimAttemptLimiter(identityClock));
     private final InMemoryAvailability store = new InMemoryAvailability();
     private final AvailabilityService service = new AvailabilityService(families, store, identityClock);
 

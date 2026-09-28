@@ -43,6 +43,10 @@ public class Profile {
     @Nullable
     private Instant claimCodeClaimedAt;
 
+    /** 지금 코드를 보낸 보호자 프로필. 이 칸이 생기기 전에 발급된 코드는 null 이다. */
+    @Nullable
+    private UUID claimCodeIssuedBy;
+
     private ConsentRecord consent;
 
     public Profile(
@@ -59,6 +63,7 @@ public class Profile {
             @Nullable SupportMode supportMode,
             @Nullable ClaimCode claimCode,
             @Nullable Instant claimCodeClaimedAt,
+            @Nullable UUID claimCodeIssuedBy,
             ConsentRecord consent) {
         if (displayName.isBlank()) throw new IllegalArgumentException("이름은 비어 있을 수 없다");
         this.id = id;
@@ -74,6 +79,7 @@ public class Profile {
         this.supportMode = supportMode;
         this.claimCode = claimCode;
         this.claimCodeClaimedAt = claimCodeClaimedAt;
+        this.claimCodeIssuedBy = claimCodeIssuedBy;
         this.consent = consent;
     }
 
@@ -129,6 +135,10 @@ public class Profile {
         return claimCodeClaimedAt;
     }
 
+    public @Nullable UUID getClaimCodeIssuedBy() {
+        return claimCodeIssuedBy;
+    }
+
     public ConsentRecord getConsent() {
         return consent;
     }
@@ -168,10 +178,16 @@ public class Profile {
         return InviteStatus.ISSUED;
     }
 
-    void issueInvite(ClaimCode code) {
+    /** 살아 있는 코드 — 발급됐고 아직 안 썼고 만료 전. 없으면 null. */
+    public @Nullable ClaimCode liveClaimCode(Instant now) {
+        return inviteStatus(now) == InviteStatus.ISSUED ? claimCode : null;
+    }
+
+    void issueInvite(ClaimCode code, UUID issuedBy) {
         if (hasAccount()) throw new AlreadyClaimedException();
         claimCode = code;
         claimCodeClaimedAt = null;
+        claimCodeIssuedBy = issuedBy;
     }
 
     /** 계정을 붙인다. 코드는 CLAIMED 상태를 파생하기 위해 남겨 둔다. */
