@@ -81,6 +81,29 @@ public class CoachRunEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** 하루 편성의 대상 · 날짜 · 조건(V134). 옛 주간 실행은 모두 null. 회당 분은 minutes_per_session 에 있다. */
+    @Column(name = "subject_profile_id")
+    private @Nullable UUID subjectProfileId;
+
+    @Column(name = "run_date")
+    private @Nullable LocalDate runDate;
+
+    @Column(name = "quiet")
+    private @Nullable Boolean quiet;
+
+    @Column(name = "place", length = 10)
+    private @Nullable String place;
+
+    @Column(name = "focus_factor", length = 20)
+    private @Nullable String focusFactor;
+
+    @Column(name = "with_parent")
+    private @Nullable Boolean withParent;
+
+    /** RUNNING 동안만 'profileId|runDate'. 유니크 인덱스 ux_coach_runs_lock_key 가 (프로필, 날짜) 잠금이다. */
+    @Column(name = "lock_key", length = 60)
+    private @Nullable String lockKey;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -275,5 +298,53 @@ public class CoachRunEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public @Nullable UUID getSubjectProfileId() {
+        return subjectProfileId;
+    }
+
+    public @Nullable LocalDate getRunDate() {
+        return runDate;
+    }
+
+    public @Nullable Boolean getQuiet() {
+        return quiet;
+    }
+
+    public @Nullable String getPlace() {
+        return place;
+    }
+
+    public @Nullable String getFocusFactor() {
+        return focusFactor;
+    }
+
+    public @Nullable Boolean getWithParent() {
+        return withParent;
+    }
+
+    /** 편성 요청(대상 · 날짜 · 조건). 행을 처음 만들 때만 쓴다. */
+    public void setRequest(
+            @Nullable UUID subjectProfileId,
+            @Nullable LocalDate runDate,
+            @Nullable Boolean quiet,
+            @Nullable String place,
+            @Nullable String focusFactor,
+            @Nullable Boolean withParent) {
+        this.subjectProfileId = subjectProfileId;
+        this.runDate = runDate;
+        this.quiet = quiet;
+        this.place = place;
+        this.focusFactor = focusFactor;
+        this.withParent = withParent;
+    }
+
+    public @Nullable String getLockKey() {
+        return lockKey;
+    }
+
+    public void setLockKey(@Nullable String lockKey) {
+        this.lockKey = lockKey;
     }
 }

@@ -1,13 +1,8 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
 import java.time.LocalDate;
-import org.jspecify.annotations.Nullable;
+import java.util.UUID;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 
-public record StartCoachRunCommand(@Nullable LocalDate weekStart, int daysPerWeek, int minutesPerSession) {
-    public static final int DEFAULT_DAYS_PER_WEEK = 3;
-    public static final int DEFAULT_MINUTES_PER_SESSION = 15;
-
-    public StartCoachRunCommand(@Nullable LocalDate weekStart) {
-        this(weekStart, DEFAULT_DAYS_PER_WEEK, DEFAULT_MINUTES_PER_SESSION);
-    }
-}
+/** 하루 편성 요청: 누구(profileId)의 어느 날(date)을 어떤 조건으로. */
+public record StartCoachRunCommand(UUID profileId, LocalDate date, CoachRunConditions conditions) {}

@@ -20,6 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * 로컬 시연용 자동 로그인. `Authorization` 헤더가 없는 요청을 {@code defaultUserId}(시드 데모 부모)로 인증한다.
  * `X-Dev-User-Id: <uuid>` 헤더로 다른 계정(예: 데모 두 번째 부모 …0002)이 될 수 있다.
  * `app.auth.dev-auto-login.enabled=true`(local/compose)일 때만 체인에 들어가며, 운영에서는 존재하지 않는다.
+ * local · compose · test 가 아닌 프로필에서 켜면 {@link DevFeatureGuard} 가 기동을 멈춘다.
  * Bearer 토큰을 보내면 평소처럼 토큰이 우선한다 — 프론트가 로그인 흐름을 붙인 뒤에도 그대로 동작한다.
  */
 public class DevAutoLoginFilter extends OncePerRequestFilter {

@@ -1,19 +1,17 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
-import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRoles;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
-import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
@@ -21,8 +19,6 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.shared.ai.AiProfile;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunRequest;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
-import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
-import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +38,6 @@ public class CoachRunPipeline {
     private final CoachRunRepository runs;
     private final ProfileQuery profileQuery;
     private final FitnessQuery fitnessQuery;
-    private final ExerciseVideoRepository videos;
     private final JsonMapper jsonMapper;
     private final AppTime time;
     private final LabelBasedProposalPlanner fallbackPlanner;
@@ -51,91 +46,82 @@ public class CoachRunPipeline {
             CoachRunRepository runs,
             ProfileQuery profileQuery,
             FitnessQuery fitnessQuery,
-            ExerciseVideoRepository videos,
             JsonMapper jsonMapper,
             AppTime time,
             LabelBasedProposalPlanner fallbackPlanner) {
         this.runs = runs;
         this.profileQuery = profileQuery;
         this.fitnessQuery = fitnessQuery;
-        this.videos = videos;
         this.jsonMapper = jsonMapper;
         this.time = time;
         this.fallbackPlanner = fallbackPlanner;
     }
 
-    /** AI 장애 시 라벨 기반 대체 편성. 실행 파라미터는 run 에 저장된 값을 쓴다. */
+    /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓴다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public @Nullable CoachRunResult planFallback(UUID runId, String reason) {
         CoachRun run = load(runId);
-        return fallbackPlanner.plan(
-                run.getFamilyId(),
-                run.getWeekStart(),
-                run.getDaysPerWeek(),
-                run.getMinutesPerSession(),
-                time.today(),
-                reason);
+        return fallbackPlanner.plan(subjectOf(run), requireRunDate(run), requireConditions(run), time.today(), reason);
     }
 
-    /** 가족 프로필과 최신 측정으로 AI 요청을 만든다. AI 로 이름·생년월일은 나가지 않는다. */
+    /**
+     * 대상 한 명(주행자)의 하루를 AI 에 요청한다(결정 2). 다른 구성원은 보내지 않는다 — 응원으로 보내면 AI 가 일간 참여자로 붙이고
+     * (ai:coach/compose.py 일간 참여자 = 주행자 + 응원), 여럿을 보내면 AI 잠금(ref 가 하나라도 겹치면 409)에 걸린다.
+     * AI 로 이름 · 생년월일은 나가지 않는다. 대상의 보호자 동의가 그 사이 거둬졌으면 예외 → FAILED.
+     * constraints: 하루 한 번(days_per_week 1) · minutes · 주간 미션 없음(weekly_minutes null) · quiet ·
+     * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
+     * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor · with_companion(둘은 AI 계약에 아직 없어 AI 가 무시한다).
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public CoachRunRequest prepare(UUID runId) {
         CoachRun run = load(runId);
-        var today = time.today();
-        List<CoachRunRequest.Participant> participants = profileQuery.detailsOfFamily(run.getFamilyId()).stream()
-                .map(details -> {
-                    LatestFitness latest = fitnessQuery.latestOf(details.profileId());
-                    AiProfile profile = AiProfileFactory.of(
-                            details,
-                            latest == null ? Map.of() : latest.measurements(),
-                            latest == null ? null : latest.heightCm(),
-                            latest == null ? null : latest.weightKg(),
-                            today);
-                    return AiProfileFactory.participant(details, profile);
-                })
-                .toList();
+        ProfileDetails subject = subjectOf(run);
+        CoachRunConditions conditions = requireConditions(run);
+        LatestFitness latest = fitnessQuery.latestOf(subject.profileId());
+        AiProfile profile = AiProfileFactory.of(
+                subject,
+                latest == null ? Map.of() : latest.measurements(),
+                latest == null ? null : latest.heightCm(),
+                latest == null ? null : latest.weightKg(),
+                time.today());
         return new CoachRunRequest(
-                participants, run.getWeekStart().toString(), 1, run.getDaysPerWeek(), run.getMinutesPerSession());
+                List.of(new CoachRunRequest.Participant(profile, CoachRoles.DRIVER)),
+                requireRunDate(run).toString(),
+                1,
+                new CoachRunRequest.Constraints(
+                        1,
+                        conditions.minutes(),
+                        null,
+                        conditions.quiet(),
+                        conditions.place() == CoachPlace.HOME,
+                        true,
+                        conditions.focusFactor() == null
+                                ? null
+                                : conditions.focusFactor().getLabel(),
+                        conditions.withParent()));
     }
 
+    /** AI 접수 번호를 남긴다. 그 사이 정리 작업이 끝낸 실행이면 false — 호출자는 폴링하지 않는다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void attachAiRun(UUID runId, String aiRunId) {
+    public boolean attachAiRun(UUID runId, String aiRunId) {
         CoachRun run = load(runId);
+        if (alreadyFinished(run, "AI 접수 기록")) return false;
         run.attachAiRun(aiRunId, time.now());
-        runs.save(run);
+        return written(runs.attachAiRunIfRunning(run), runId, "AI 접수 기록");
     }
 
     /** `succeeded` 결과를 제안 항목으로 바꿔 붙이고 AWAITING_APPROVAL 로 옮긴다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void complete(UUID runId, CoachRunResult result) {
         CoachRun run = load(runId);
+        if (alreadyFinished(run, "제안")) return;
         CoachRunResult.Proposal proposal = result.proposal();
         if (proposal == null) {
             throw new IllegalStateException("succeeded 인데 proposal 이 없다: " + result.runId());
         }
-        List<ProfileDetails> members = profileQuery.detailsOfFamily(run.getFamilyId());
-        Map<UUID, ProfileRole> roles = new LinkedHashMap<>();
-        Map<UUID, String> coachRoles = new LinkedHashMap<>();
-        for (ProfileDetails member : members) {
-            roles.put(member.profileId(), member.role());
-            coachRoles.put(member.profileId(), CoachRoles.of(member.role(), member.supportMode()));
-        }
-        Set<String> videoIds = new LinkedHashSet<>();
-        for (CoachRunResult.Mission mission : proposal.missions()) {
-            for (CoachRunResult.Session session : mission.sessions()) {
-                CoachRunResult.Video video = session.video();
-                if (video != null) videoIds.add(video.videoId());
-            }
-        }
-        Set<String> knownVideoIds = videos.findAllByIds(videoIds).stream()
-                .map(ExerciseVideo::getVideoId)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        ProposalConverter converter = new ProposalConverter(
-                ProfileRef.indexOf(
-                        members.stream().map(ProfileDetails::profileId).toList()),
-                roles,
-                coachRoles,
-                knownVideoIds);
+        ProfileDetails subject = subjectOf(run);
+        @Nullable UUID companion = requireConditions(run).withParent() ? run.getRequestedBy() : null;
+        ProposalConverter converter = new ProposalConverter(subject.profileId(), subject.role(), companion);
         run.complete(
                 ProposalConverter.steps(result),
                 converter.convert(proposal),
@@ -143,7 +129,7 @@ public class CoachRunPipeline {
                 ProposalConverter.summary(result),
                 null,
                 time.now());
-        runs.save(run);
+        written(runs.finishIfRunning(run), runId, "제안");
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -154,17 +140,55 @@ public class CoachRunPipeline {
             boolean refused,
             @Nullable String refusalReason) {
         CoachRun run = load(runId);
-        if (run.getStatus() != CoachRunStatus.RUNNING) {
-            log.warn("이미 끝난 실행의 실패 기록은 무시한다: run={} status={}", runId, run.getStatus());
-            return;
-        }
+        if (alreadyFinished(run, "실패 기록")) return;
         run.fail(reason, time.now(), steps == null ? run.getSteps() : steps, refused, refusalReason);
-        runs.save(run);
+        written(runs.finishIfRunning(run), runId, "실패 기록");
+    }
+
+    /** 읽었을 때 이미 RUNNING 이 아니다(정리 작업 · 새 요청이 FAILED 로 바꿨다). 결과를 버린다. */
+    private boolean alreadyFinished(CoachRun run, String what) {
+        if (run.getStatus() == CoachRunStatus.RUNNING) return false;
+        log.warn("이미 끝난 실행이라 {} 저장을 건너뛴다: run={} status={}", what, run.getId(), run.getStatus());
+        return true;
+    }
+
+    /** 조건부 UPDATE 가 0행이면 읽은 뒤 커밋 전에 다른 트랜잭션이 끝낸 것이다. 그쪽 상태를 그대로 둔다. */
+    private boolean written(boolean updated, UUID runId, String what) {
+        if (!updated) {
+            log.warn("읽은 뒤 다른 트랜잭션이 끝낸 실행이라 {} 저장을 건너뛴다: run={} status={}", what, runId, runs.currentStatus(runId));
+        }
+        return updated;
     }
 
     private CoachRun load(UUID runId) {
         CoachRun run = runs.findById(runId);
         if (run == null) throw new CoachRunNotFoundException(runId);
         return run;
+    }
+
+    /** 편성 대상. 가족에서 빠졌거나 보호자 동의가 없으면 짜지 않는다(예외 → FAILED). */
+    private ProfileDetails subjectOf(CoachRun run) {
+        UUID subjectId = run.getSubjectProfileId();
+        if (subjectId == null) throw new IllegalStateException("대상 프로필이 없는 옛 주간 실행이다: run=" + run.getId());
+        ProfileDetails subject = profileQuery.findDetails(subjectId);
+        if (subject == null || !subject.familyId().equals(run.getFamilyId())) {
+            throw new IllegalStateException("편성 대상이 이 가족 구성원이 아니다: run=" + run.getId());
+        }
+        if (ParticipantConsent.missing(subject)) {
+            throw new IllegalStateException("편성 대상의 보호자 동의가 없어 AI 요청을 만들지 않는다: run=" + run.getId());
+        }
+        return subject;
+    }
+
+    private static LocalDate requireRunDate(CoachRun run) {
+        LocalDate runDate = run.getRunDate();
+        if (runDate == null) throw new IllegalStateException("날짜가 없는 옛 주간 실행이다: run=" + run.getId());
+        return runDate;
+    }
+
+    private static CoachRunConditions requireConditions(CoachRun run) {
+        CoachRunConditions conditions = run.getConditions();
+        if (conditions == null) throw new IllegalStateException("조건이 없는 옛 주간 실행이다: run=" + run.getId());
+        return conditions;
     }
 }

@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
@@ -30,6 +31,15 @@ class InMemoryFitnessTestRepository implements FitnessTestRepository {
                 .filter(it -> it.getProfileId().equals(profileId))
                 .max(Comparator.comparing(FitnessTest::getTestedOn))
                 .orElse(null);
+    }
+
+    @Override
+    public List<FitnessTest> findRecentByProfileId(UUID profileId, int limit) {
+        return saved.values().stream()
+                .filter(it -> it.getProfileId().equals(profileId))
+                .sorted(Comparator.comparing(FitnessTest::getTestedOn).reversed())
+                .limit(limit)
+                .toList();
     }
 
     @Override

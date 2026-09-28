@@ -8,15 +8,15 @@ import org.junit.jupiter.api.Test;
 
 class GradeTest {
     @Test
-    @DisplayName("등급은 잠정 임계값 90·75·50 으로 나뉜다")
-    void 등급은_잠정_임계값_90_75_50_으로_나뉜다() {
+    @DisplayName("등급은 85·65·40 으로 나뉜다 — 1등급 ≥ 85 · 2등급 ≥ 65 · 3등급 ≥ 40 · 그 외 참가")
+    void 등급은_85_65_40_으로_나뉜다() {
         assertThat(Grade.ofPercentile(99)).isEqualTo(Grade.FIRST);
-        assertThat(Grade.ofPercentile(90)).isEqualTo(Grade.FIRST);
-        assertThat(Grade.ofPercentile(89)).isEqualTo(Grade.SECOND);
-        assertThat(Grade.ofPercentile(75)).isEqualTo(Grade.SECOND);
-        assertThat(Grade.ofPercentile(74)).isEqualTo(Grade.THIRD);
-        assertThat(Grade.ofPercentile(50)).isEqualTo(Grade.THIRD);
-        assertThat(Grade.ofPercentile(49)).isEqualTo(Grade.PARTICIPATION);
+        assertThat(Grade.ofPercentile(85)).isEqualTo(Grade.FIRST);
+        assertThat(Grade.ofPercentile(84)).isEqualTo(Grade.SECOND);
+        assertThat(Grade.ofPercentile(65)).isEqualTo(Grade.SECOND);
+        assertThat(Grade.ofPercentile(64)).isEqualTo(Grade.THIRD);
+        assertThat(Grade.ofPercentile(40)).isEqualTo(Grade.THIRD);
+        assertThat(Grade.ofPercentile(39)).isEqualTo(Grade.PARTICIPATION);
         assertThat(Grade.ofPercentile(1)).isEqualTo(Grade.PARTICIPATION);
     }
 

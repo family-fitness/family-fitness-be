@@ -6,7 +6,6 @@ import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepositor
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
-import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.shared.domain.Copy;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
@@ -36,7 +35,7 @@ public class FitnessMapService {
                     FitnessTest latest = tests.findLatestByProfileId(profile.profileId());
                     return new FitnessMapMember(
                             profile,
-                            latest == null ? null : headline(profile, latest),
+                            latest == null ? null : headline(latest),
                             latest == null ? null : summarize(latest));
                 })
                 .toList();
@@ -53,9 +52,13 @@ public class FitnessMapService {
                 test.getCoachDirection());
     }
 
-    private @Nullable String headline(ProfileSummary profile, FitnessTest test) {
+    /**
+     * 예: `유소년 상위 37%`. 백분위는 측정 당시 나이의 규준으로 굳힌 값이라, 연령대 이름도 그 회차의 연령대를 쓴다.
+     * 오늘 나이(프로필 연령대)를 쓰면 생일이 연령대 경계(7·13·19·65세)를 넘은 뒤 다른 또래와 견준 것처럼 읽힌다.
+     */
+    private static @Nullable String headline(FitnessTest test) {
         Integer overall = test.getOverallPercentile();
         if (overall == null) return null;
-        return profile.ageGroup().getLabel() + " " + Copy.topPercentText(overall);
+        return test.getAgeGroup().getLabel() + " " + Copy.topPercentText(overall);
     }
 }
