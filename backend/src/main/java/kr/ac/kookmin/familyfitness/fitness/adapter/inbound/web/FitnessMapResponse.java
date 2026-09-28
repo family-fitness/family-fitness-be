@@ -9,6 +9,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.CoachDirection;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.Copy;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
+import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
 import org.jspecify.annotations.Nullable;
 
@@ -19,6 +20,7 @@ public record FitnessMapResponse(UUID familyId, @Nullable String familyName, Lis
             String name,
             ProfileRole role,
             AgeGroup ageGroup,
+            Sex sex,
             boolean hasAccount,
             @Nullable SupportMode supportMode,
             boolean measurable,
@@ -46,6 +48,7 @@ public record FitnessMapResponse(UUID familyId, @Nullable String familyName, Lis
                                 m.profile().name(),
                                 m.profile().role(),
                                 m.profile().ageGroup(),
+                                m.profile().sex(),
                                 m.profile().hasAccount(),
                                 m.profile().supportMode(),
                                 m.profile().measurable(),

@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import jakarta.validation.Valid;
+import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.identity.application.ClaimResult;
@@ -47,7 +48,7 @@ public class ProfileController {
     @PatchMapping("/{profileId}/support-mode")
     public ProfileSummary supportMode(
             CurrentUser user, @PathVariable UUID profileId, @Valid @RequestBody SupportModeRequest request) {
-        return settings.changeSupportMode(user.userId(), profileId, request.supportMode());
+        return settings.changeSupportMode(user.userId(), profileId, Objects.requireNonNull(request.supportMode()));
     }
 
     @PatchMapping("/{profileId}/consent")

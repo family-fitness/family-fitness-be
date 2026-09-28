@@ -23,6 +23,7 @@ public class ProfileSummaries {
                 profile.getDisplayName(),
                 profile.getRole(),
                 profile.ageGroup(today),
+                profile.getSex(),
                 profile.hasAccount(),
                 profile.inviteStatus(clock.now()),
                 profile.getSupportMode(),

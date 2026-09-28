@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import jakarta.validation.Valid;
+import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.identity.application.CheerService;
@@ -32,12 +33,13 @@ public class FamilyController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public FamilyCreatedResponse create(CurrentUser user, @Valid @RequestBody CreateFamilyRequest request) {
+        OwnerRequest owner = Objects.requireNonNull(request.owner());
         CreatedFamily created = families.createFamily(
                 user.userId(),
                 request.familyName(),
-                request.owner().name(),
-                request.owner().birthDate(),
-                request.owner().sex());
+                owner.name(),
+                Objects.requireNonNull(owner.birthDate()),
+                Objects.requireNonNull(owner.sex()));
         return new FamilyCreatedResponse(created.familyId(), created.familyName(), created.ownerProfile());
     }
 
@@ -49,9 +51,11 @@ public class FamilyController {
                 user.userId(),
                 familyId,
                 request.name(),
-                request.birthDate(),
-                request.sex(),
-                request.role(),
+                Objects.requireNonNull(request.birthDate()),
+                Objects.requireNonNull(request.sex()),
+                Objects.requireNonNull(request.role()),
+                request.heightCm(),
+                request.weightKg(),
                 request.guardianConsent() == null
                         ? null
                         : request.guardianConsent().toDomain());
@@ -70,8 +74,8 @@ public class FamilyController {
         return CheerResponse.of(cheers.cheer(
                 user.userId(),
                 familyId,
-                request.fromProfileId(),
-                request.toProfileId(),
+                Objects.requireNonNull(request.fromProfileId()),
+                Objects.requireNonNull(request.toProfileId()),
                 request.message(),
                 request.emoji(),
                 request.missionId()));

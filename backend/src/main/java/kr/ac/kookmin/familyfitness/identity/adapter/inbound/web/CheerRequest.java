@@ -1,13 +1,14 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 public record CheerRequest(
-        UUID fromProfileId,
-        UUID toProfileId,
+        @NotNull @Nullable UUID fromProfileId,
+        @NotNull @Nullable UUID toProfileId,
         @Size(max = 100) @Nullable String message,
         @Size(max = 20) @Nullable String emoji,
         @Nullable UUID missionId) {

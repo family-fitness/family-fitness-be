@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.identity.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -59,6 +60,27 @@ class FamilyTest {
         assertThat(child.getWeightKg()).isNull();
         assertThat(child.getSupportMode()).isNull();
         assertThat(family.getProfiles().stream().map(Profile::getId).toList()).contains(child.getId());
+    }
+
+    @Test
+    @DisplayName("구성원을 추가할 때 적은 키 · 몸무게를 프로필에 담는다")
+    void 구성원을_추가할_때_적은_키_몸무게를_프로필에_담는다() {
+        Family family = newFamily();
+
+        Profile child = family.addMember(
+                parentUserId,
+                "아이",
+                childBirthDate,
+                Sex.M,
+                ProfileRole.CHILD,
+                new BigDecimal("128.5"),
+                new BigDecimal("27.3"),
+                new GuardianConsent(true, true),
+                consentedAt,
+                today);
+
+        assertThat(child.getHeightCm()).isEqualByComparingTo("128.5");
+        assertThat(child.getWeightKg()).isEqualByComparingTo("27.3");
     }
 
     @Test
@@ -134,13 +156,24 @@ class FamilyTest {
                         childBirthDate,
                         Sex.M,
                         ProfileRole.CHILD,
+                        null,
+                        null,
                         new GuardianConsent(true, false),
                         consentedAt,
                         today));
         assertThrows(
                 GuardianConsentRequiredException.class,
                 () -> family.addMember(
-                        parentUserId, "아이", childBirthDate, Sex.M, ProfileRole.CHILD, null, consentedAt, today));
+                        parentUserId,
+                        "아이",
+                        childBirthDate,
+                        Sex.M,
+                        ProfileRole.CHILD,
+                        null,
+                        null,
+                        null,
+                        consentedAt,
+                        today));
 
         assertThat(family.getProfiles()).hasSize(1);
     }
@@ -151,7 +184,16 @@ class FamilyTest {
         Family family = newFamily();
 
         Profile teen = family.addMember(
-                parentUserId, "큰애", today.minusYears(14), Sex.F, ProfileRole.CHILD, null, consentedAt, today);
+                parentUserId,
+                "큰애",
+                today.minusYears(14),
+                Sex.F,
+                ProfileRole.CHILD,
+                null,
+                null,
+                null,
+                consentedAt,
+                today);
 
         assertThat(teen.consentRequired(today)).isFalse();
         assertThat(teen.consentGiven(today)).isTrue();

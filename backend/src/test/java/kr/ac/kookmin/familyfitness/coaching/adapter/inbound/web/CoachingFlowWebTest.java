@@ -925,6 +925,7 @@ class CoachingFlowWebTest {
                 childSummary.name(),
                 childSummary.role(),
                 childSummary.ageGroup(),
+                childSummary.sex(),
                 childSummary.hasAccount(),
                 childSummary.inviteStatus(),
                 childSummary.supportMode(),
