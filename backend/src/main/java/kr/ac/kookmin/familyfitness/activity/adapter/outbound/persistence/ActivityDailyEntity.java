@@ -10,7 +10,10 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** `activity_daily` — unique(profile_id, activity_date, source). */
+/**
+ * `activity_daily` — unique(profile_id, activity_date, source). 시간은 {@code active_seconds} 가 기준이고(V144),
+ * {@code active_minutes} 는 호환용으로 그 초를 내림한 분을 같이 적는다.
+ */
 @Entity
 @Table(name = "activity_daily")
 public class ActivityDailyEntity {
@@ -34,6 +37,9 @@ public class ActivityDailyEntity {
     @Column(name = "active_minutes", nullable = false)
     private int activeMinutes;
 
+    @Column(name = "active_seconds", nullable = false)
+    private int activeSeconds;
+
     @Column(name = "recorded_at", nullable = false)
     private Instant recordedAt;
 
@@ -45,14 +51,15 @@ public class ActivityDailyEntity {
             LocalDate activityDate,
             String source,
             int steps,
-            int activeMinutes,
+            int activeSeconds,
             Instant recordedAt) {
         this.id = id;
         this.profileId = profileId;
         this.activityDate = activityDate;
         this.source = source;
         this.steps = steps;
-        this.activeMinutes = activeMinutes;
+        this.activeSeconds = activeSeconds;
+        this.activeMinutes = activeSeconds / 60;
         this.recordedAt = recordedAt;
     }
 
@@ -80,12 +87,14 @@ public class ActivityDailyEntity {
         this.steps = steps;
     }
 
-    public int getActiveMinutes() {
-        return activeMinutes;
+    public int getActiveSeconds() {
+        return activeSeconds;
     }
 
-    public void setActiveMinutes(int activeMinutes) {
-        this.activeMinutes = activeMinutes;
+    /** 초를 쓰면 호환용 분(내림)도 같이 맞춘다. */
+    public void setActiveSeconds(int activeSeconds) {
+        this.activeSeconds = activeSeconds;
+        this.activeMinutes = activeSeconds / 60;
     }
 
     public Instant getRecordedAt() {

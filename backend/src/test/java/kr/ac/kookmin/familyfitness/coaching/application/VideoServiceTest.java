@@ -19,6 +19,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
@@ -32,10 +33,12 @@ class VideoServiceTest {
     private final Family other = new Family();
     private final FakeIdentity identity = new FakeIdentity(family, other);
     private final FakeActivity activity = new FakeActivity();
-    private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+    private final InMemorySessionCompletionRepository completions = new InMemorySessionCompletionRepository();
+    private final InMemoryMissionRepository missions = new InMemoryMissionRepository(completions);
     private final InMemoryVideoInteractionRepository interactions = new InMemoryVideoInteractionRepository();
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(catalog());
-    private final MissionCompletionPolicy policy = new MissionCompletionPolicy(activity, interactions, missions);
+    private final MissionCompletionPolicy policy =
+            new MissionCompletionPolicy(activity, interactions, missions, completions);
     private final VideoService service =
             new VideoService(videos, interactions, missions, identity, activity, policy, Fixed.time());
     private final UUID childId = family.child.profileId();
@@ -184,7 +187,8 @@ class VideoServiceTest {
     @Test
     @DisplayName("missionId 가 있으면 VIDEO_DONE 미션의 참여자 진행도를 갱신한다")
     void missionId_가_있으면_VIDEO_DONE_미션의_참여자_진행도를_갱신한다() {
-        MissionService missionService = new MissionService(missions, videos, identity, identity, policy, Fixed.time());
+        MissionService missionService =
+                new MissionService(missions, completions, videos, identity, identity, policy, Fixed.time());
         MissionCreatedView mission = missionService.create(
                 family.parentUser,
                 family.familyId,

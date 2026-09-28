@@ -29,6 +29,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
@@ -46,12 +47,14 @@ class MissionServiceTest {
     private final Family other = new Family();
     private final FakeIdentity identity = new FakeIdentity(family, other);
     private final FakeActivity activity = new FakeActivity();
-    private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+    private final InMemorySessionCompletionRepository completions = new InMemorySessionCompletionRepository();
+    private final InMemoryMissionRepository missions = new InMemoryMissionRepository(completions);
     private final InMemoryVideoInteractionRepository interactions = new InMemoryVideoInteractionRepository();
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
-    private final MissionCompletionPolicy policy = new MissionCompletionPolicy(activity, interactions, missions);
+    private final MissionCompletionPolicy policy =
+            new MissionCompletionPolicy(activity, interactions, missions, completions);
     private final MissionService service =
-            new MissionService(missions, videos, identity, identity, policy, Fixed.time());
+            new MissionService(missions, completions, videos, identity, identity, policy, Fixed.time());
     private final MissionActivityService activityService =
             new MissionActivityService(missions, identity, activity, activity, policy, Fixed.time());
 
@@ -389,7 +392,8 @@ class MissionServiceTest {
                         .toList();
             }
         };
-        MissionService guarded = new MissionService(missions, videos, withdrawn, withdrawn, policy, Fixed.time());
+        MissionService guarded =
+                new MissionService(missions, completions, videos, withdrawn, withdrawn, policy, Fixed.time());
         CreateMissionCommand withChild = new CreateMissionCommand(
                 "함께 운동",
                 Fixed.TODAY,
@@ -499,6 +503,22 @@ class MissionServiceTest {
 
         assertThat(missionIds(familyWide)).containsExactly(both);
         assertThat(activity.totalsCalls).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("서버가 재는 미션을 덜 했을 때 보호자 확인은 422 가 아니라 바꾸지 않고 200 이다(FE 요청서 4장)")
+    void 서버가_재는_미션의_보호자_확인은_그대로_둔다() {
+        UUID missionId = create(TargetMetric.TIMER_MINUTES, 30).missionId();
+
+        ConfirmParticipantView view = service.confirm(family.parentUser, missionId, family.child.profileId());
+
+        assertThat(view.completed()).isFalse();
+        assertThat(view.verifiedBy()).isNull();
+        assertThat(view.confirmedBy()).isNull();
+        assertThat(missions.findById(missionId)
+                        .participantOf(family.child.profileId())
+                        .isCompleted())
+                .isFalse();
     }
 
     private static MissionParticipantView participant(MissionListView view, UUID missionId, UUID profileId) {
