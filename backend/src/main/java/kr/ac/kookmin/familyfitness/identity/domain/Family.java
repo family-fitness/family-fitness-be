@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
@@ -157,30 +158,47 @@ public class Family {
                 null,
                 null,
                 null,
+                null,
                 consent);
         members.add(profile);
         return profile;
     }
 
-    /** 초대 발급 — PARENT 만. 계정이 이미 붙은 프로필에는 발급하지 않는다. 재발급은 이전 코드를 즉시 무효화한다. */
-    public Profile issueInvite(UUID actorUserId, UUID profileId, ClaimCode code) {
-        requireParent(actorUserId);
+    /**
+     * 초대 발급 — PARENT 만. 계정이 이미 붙은 프로필에는 발급하지 않는다.
+     * 살아 있는 코드(만료 전 · 안 씀)가 있으면 그 코드를 그대로 돌려준다 — 새로 만들면 먼저 보낸 코드가 죽는다.
+     * 없을 때만 {@code newCode} 로 만들고, 보낸 보호자 프로필을 같이 남긴다.
+     */
+    public ClaimCode issueInvite(UUID actorUserId, UUID profileId, Instant now, Supplier<ClaimCode> newCode) {
+        Profile actor = requireParent(actorUserId);
         Profile profile = profile(profileId);
-        profile.issueInvite(code);
-        return profile;
+        if (profile.hasAccount()) throw new AlreadyClaimedException();
+        ClaimCode live = profile.liveClaimCode(now);
+        if (live != null) return live;
+        ClaimCode code = newCode.get();
+        profile.issueInvite(code, actor.getId());
+        return code;
     }
 
     /**
      * 초대 코드 사용 전 규칙 검사. 실제 계정 연결은 조건부 UPDATE(동시성)로 저장소가 하므로 여기서는 상태를 바꾸지 않는다.
-     * 순서: 코드 없음 → 이미 사용 → 만료 → 이미 이 가족 구성원.
+     * 순서: 코드 없음 → 이미 사용 → 만료 → 이미 이 가족 구성원 → 다른 가족에 프로필이 있음(한 계정 한 가족).
+     * {@code accountHasProfile} 은 이 계정에 붙은 프로필이 어느 가족에든 있는가다. 이 가족이면 앞에서 ALREADY_MEMBER 로 끝난다.
      */
-    public Profile prepareClaim(UUID profileId, UUID userId, Instant now) {
+    public Profile prepareClaim(UUID profileId, UUID userId, Instant now, boolean accountHasProfile) {
+        Profile profile = claimableSeat(profileId, now);
+        if (memberOf(userId) != null) throw new AlreadyMemberException();
+        if (accountHasProfile) throw new AlreadyInFamilyException("다른 가족에 이미 프로필이 있습니다");
+        return profile;
+    }
+
+    /** 미리 보기 판정 — 코드 사용과 같되 구성원 검사는 하지 않는다. 순서: 코드 없음 → 이미 사용 → 만료. */
+    public Profile claimableSeat(UUID profileId, Instant now) {
         Profile profile = profile(profileId);
         ClaimCode code = profile.getClaimCode();
         if (code == null) throw new ClaimCodeNotFoundException();
         if (profile.hasAccount()) throw new AlreadyClaimedException();
         if (code.isExpired(now)) throw new ClaimCodeExpiredException();
-        if (memberOf(userId) != null) throw new AlreadyMemberException();
         return profile;
     }
 
@@ -226,6 +244,7 @@ public class Family {
                 parentName,
                 birthDate,
                 sex,
+                null,
                 null,
                 null,
                 null,

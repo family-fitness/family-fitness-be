@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,8 +22,12 @@ import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.application.port.CheerRepository;
+import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyThankedException;
 import kr.ac.kookmin.familyfitness.identity.domain.Cheer;
+import kr.ac.kookmin.familyfitness.identity.domain.Family;
+import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.support.TestAuth;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +67,9 @@ class IdentityApiTest {
 
     @Autowired
     private CheerRepository cheerRepository;
+
+    @Autowired
+    private FamilyRepository familyRepository;
 
     @Autowired
     private TransactionTemplate tx;
@@ -196,6 +205,10 @@ class IdentityApiTest {
 
     private ResultActions claim(Session session, String code) throws Exception {
         return mvc.perform(json(auth(post("/api/v1/profiles/claim"), session), Map.of("claimCode", code)));
+    }
+
+    private ResultActions preview(Session session, String code) throws Exception {
+        return mvc.perform(auth(get("/api/v1/invites/" + code), session));
     }
 
     private JsonNode read(ResultActions action) throws Exception {
@@ -950,11 +963,175 @@ class IdentityApiTest {
 
         assertThat(me.get("nextStep").asString()).isEqualTo("HOME");
         assertThat(me.get("profiles").size()).isEqualTo(1);
+        assertThat(me.get("selfProfileId").asString())
+                .isEqualTo(me.get("profiles").get(0).get("profileId").asString());
         for (JsonNode session : List.of(login, refreshed)) {
             assertThat(session.get("userId")).isEqualTo(me.get("userId"));
             assertThat(session.get("nextStep")).isEqualTo(me.get("nextStep"));
             assertThat(session.get("profiles")).isEqualTo(me.get("profiles"));
+            assertThat(session.get("selfProfileId")).isEqualTo(me.get("selfProfileId"));
         }
+    }
+
+    @Test
+    @DisplayName("selfProfileId 는 이 계정의 프로필이고, 가족이 없으면 null 이다")
+    void selfProfileId_는_이_계정의_프로필이고_가족이_없으면_null_이다() throws Exception {
+        Session fresh = devLogin();
+        assertThat(fresh.body().has("selfProfileId")).isTrue();
+        assertThat(fresh.body().get("selfProfileId").isNull()).isTrue();
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), fresh)))
+                        .get("selfProfileId")
+                        .isNull())
+                .isTrue();
+
+        JsonNode family = createFamily(fresh);
+        String ownerId = family.get("ownerProfile").get("profileId").asString();
+        addMember(fresh, family.get("familyId").asString(), "첫째", today.minusYears(10), "CHILD", new boolean[] {
+                    true, true
+                })
+                .andExpect(status().isCreated());
+
+        JsonNode me = read(mvc.perform(auth(get("/api/v1/me"), fresh)).andExpect(status().isOk()));
+        assertThat(me.get("selfProfileId").asString()).isEqualTo(ownerId);
+    }
+
+    @Test
+    @DisplayName("초대코드 미리 보기 — 로그인 필요 · 자리와 보낸 보호자 · 없음 404 · 이미 사용 409")
+    void 초대코드_미리_보기() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent, "서준이네").get("familyId").asString();
+        String childId = read(addMember(
+                        parent, familyId, "서준", today.minusYears(10), "CHILD", new boolean[] {true, true}))
+                .get("profileId")
+                .asString();
+        JsonNode invitation = read(invite(parent, childId).andExpect(status().isCreated()));
+        String code = invitation.get("claimCode").asString();
+
+        // 살아 있는 코드가 있으면 다시 눌러도 같은 코드 · 같은 만료다
+        JsonNode again = read(invite(parent, childId).andExpect(status().isCreated()));
+        assertThat(again.get("claimCode").asString()).isEqualTo(code);
+        // DB 는 마이크로초까지 두므로 처음 응답(메모리 값)과는 1ms 안에서 같다
+        assertThat(Instant.parse(again.get("expiresAt").asString()))
+                .isCloseTo(Instant.parse(invitation.get("expiresAt").asString()), within(1, ChronoUnit.MILLIS));
+
+        mvc.perform(get("/api/v1/invites/" + code))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+
+        Session newcomer = devLoginWithCode(code);
+        JsonNode seat = read(preview(newcomer, code.toLowerCase()).andExpect(status().isOk()));
+        assertThat(seat.get("familyName").asString()).isEqualTo("서준이네");
+        assertThat(seat.get("profileName").asString()).isEqualTo("서준");
+        assertThat(seat.get("role").asString()).isEqualTo("CHILD");
+        assertThat(seat.get("ageGroup").asString()).isEqualTo("유소년");
+        assertThat(seat.get("invitedByName").asString()).isEqualTo("엄마");
+        assertThat(Instant.parse(seat.get("expiresAt").asString()))
+                .isCloseTo(Instant.parse(invitation.get("expiresAt").asString()), within(1, ChronoUnit.MILLIS));
+        assertThat(seat.has("profileId")).isFalse();
+        assertThat(seat.has("familyId")).isFalse();
+
+        preview(newcomer, "ZZZZZZ")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CODE_NOT_FOUND"));
+        preview(newcomer, "not-a-code")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CODE_NOT_FOUND"));
+
+        claim(newcomer, code).andExpect(status().isOk());
+        preview(devLogin(), code)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+    }
+
+    @Test
+    @DisplayName("없는 코드를 10번 넣은 계정은 미리 보기 · 수락 모두 429 TOO_MANY — 맞는 코드여도")
+    void 없는_코드를_10번_넣은_계정은_429_TOO_MANY() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        String dadId = read(addMember(parent, familyId, "아빠", today.minusYears(40), "PARENT"))
+                .get("profileId")
+                .asString();
+        String code = read(invite(parent, dadId)).get("claimCode").asString();
+        Session guesser = devLogin();
+
+        for (int i = 0; i < 5; i++) {
+            preview(guesser, "ZZZZZZ").andExpect(status().isNotFound());
+            claim(guesser, "ZZZZZ2").andExpect(status().isNotFound());
+        }
+
+        preview(guesser, code)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("TOO_MANY"));
+        claim(guesser, code)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("TOO_MANY"));
+        // 다른 계정은 그대로 넣을 수 있다
+        assertThat(read(claim(devLogin(), code).andExpect(status().isOk()))
+                        .get("profileId")
+                        .asString())
+                .isEqualTo(dadId);
+    }
+
+    @Test
+    @DisplayName("한 계정 한 가족 — 다른 가족이 있는 계정의 초대 수락은 409 ALREADY_IN_FAMILY 이고 자리는 그대로 남는다")
+    void 다른_가족이_있는_계정의_초대_수락은_409_ALREADY_IN_FAMILY() throws Exception {
+        Session mom = devLogin();
+        String familyId = createFamily(mom, "서준이네").get("familyId").asString();
+        String dadSeat = read(addMember(mom, familyId, "아빠", today.minusYears(40), "PARENT"))
+                .get("profileId")
+                .asString();
+        String code = read(invite(mom, dadSeat)).get("claimCode").asString();
+
+        Session dad = devLogin();
+        createFamily(dad, "아빠네");
+
+        // 미리 보기는 구성원 검사를 하지 않는다
+        preview(dad, code).andExpect(status().isOk());
+        claim(dad, code)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_IN_FAMILY"));
+        claim(mom, code)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_MEMBER"));
+
+        JsonNode seats = read(mvc.perform(auth(get("/api/v1/families/" + familyId + "/profiles"), mom)))
+                .get("profiles");
+        JsonNode seat = StreamSupport.stream(seats.spliterator(), false)
+                .filter(it -> it.get("profileId").asString().equals(dadSeat))
+                .findFirst()
+                .orElseThrow();
+        assertThat(seat.get("hasAccount").asBoolean()).isFalse();
+        assertThat(seat.get("inviteStatus").asString()).isEqualTo("ISSUED");
+        JsonNode dadMe = read(mvc.perform(auth(get("/api/v1/me"), dad)));
+        assertThat(dadMe.get("profiles").size()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("사전 검사를 함께 지나친 가족 만들기 · 초대 수락은 profiles.user_id 유니크 인덱스가 막고 ALREADY_IN_FAMILY 로 바뀐다")
+    void 사전_검사를_함께_지나친_가족_만들기와_초대_수락은_유니크_인덱스가_막는다() throws Exception {
+        Session mom = devLogin();
+        String familyId = createFamily(mom).get("familyId").asString();
+        UUID dadSeat = UUID.fromString(read(addMember(mom, familyId, "아빠", today.minusYears(40), "PARENT"))
+                .get("profileId")
+                .asString());
+        Session dad = devLogin();
+        createFamily(dad, "아빠네");
+
+        // 서비스의 profilesOfUser 검사를 건너뛰고 저장소에 바로 넣는다(두 요청이 검사를 함께 지나친 경우)
+        assertThatThrownBy(() -> tx.executeWithoutResult(status -> familyRepository.save(
+                        Family.createWithParent(dad.userId(), "또", "아빠", LocalDate.of(1986, 1, 1), Sex.M))))
+                .isInstanceOf(AlreadyInFamilyException.class);
+        assertThatThrownBy(() -> tx.executeWithoutResult(
+                        status -> familyRepository.attachUserIfUnclaimed(dadSeat, dad.userId(), Instant.now())))
+                .isInstanceOf(AlreadyInFamilyException.class);
+
+        // 계정 없는 프로필(user_id null)은 여럿이어도 된다
+        addMember(mom, familyId, "첫째", today.minusYears(10), "CHILD", new boolean[] {true, true})
+                .andExpect(status().isCreated());
+        addMember(mom, familyId, "둘째", today.minusYears(8), "CHILD", new boolean[] {true, true})
+                .andExpect(status().isCreated());
+        JsonNode dadMe = read(mvc.perform(auth(get("/api/v1/me"), dad)));
+        assertThat(dadMe.get("profiles").size()).isEqualTo(1);
     }
 
     @Test

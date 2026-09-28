@@ -292,7 +292,7 @@ class FamilyTest {
 
         assertThat(child.inviteStatus(now)).isEqualTo(InviteStatus.NONE);
 
-        family.issueInvite(parentUserId, child.getId(), code);
+        family.issueInvite(parentUserId, child.getId(), now, () -> code);
         assertThat(child.getClaimCode()).isEqualTo(code);
         assertThat(child.inviteStatus(now)).isEqualTo(InviteStatus.ISSUED);
         assertThat(child.inviteStatus(code.expiresAt())).isEqualTo(InviteStatus.EXPIRED);
@@ -304,46 +304,78 @@ class FamilyTest {
     }
 
     @Test
-    @DisplayName("초대 재발급은 이전 코드를 즉시 무효로 만들고 계정이 붙은 프로필에는 발급하지 않는다")
-    void 초대_재발급은_이전_코드를_즉시_무효로_만들고_계정이_붙은_프로필에는_발급하지_않는다() {
+    @DisplayName("살아 있는 코드가 있으면 다시 발급해도 같은 코드이고, 만료된 뒤에만 새 코드다. 보낸 보호자를 남긴다")
+    void 살아_있는_코드가_있으면_다시_발급해도_같은_코드이고_만료된_뒤에만_새_코드다() {
         Family family = newFamily();
         Profile child = addChild(family, "아이");
+        UUID ownerProfileId = family.memberOf(parentUserId).getId();
         ClaimCode first = new ClaimCode("ABC234", consentedAt.plus(Duration.ofDays(7)));
-        ClaimCode second = new ClaimCode("XYZ789", consentedAt.plus(Duration.ofDays(8)));
+        ClaimCode second = new ClaimCode("XYZ789", first.expiresAt().plus(Duration.ofDays(7)));
 
-        family.issueInvite(parentUserId, child.getId(), first);
-        family.issueInvite(parentUserId, child.getId(), second);
+        assertThat(family.issueInvite(parentUserId, child.getId(), consentedAt, () -> first))
+                .isEqualTo(first);
+        assertThat(child.getClaimCodeIssuedBy()).isEqualTo(ownerProfileId);
+        assertThat(family.issueInvite(
+                        parentUserId, child.getId(), first.expiresAt().minusSeconds(1), () -> second))
+                .isEqualTo(first);
+        assertThat(child.getClaimCode()).isEqualTo(first);
+
+        assertThat(family.issueInvite(parentUserId, child.getId(), first.expiresAt(), () -> second))
+                .isEqualTo(second);
         assertThat(child.getClaimCode()).isEqualTo(second);
 
-        UUID ownerProfileId = family.getProfiles().stream()
-                .filter(Profile::isOwner)
-                .findFirst()
-                .orElseThrow()
-                .getId();
-        assertThrows(AlreadyClaimedException.class, () -> family.issueInvite(parentUserId, ownerProfileId, first));
         assertThrows(
-                FamilyAccessDeniedException.class, () -> family.issueInvite(UUID.randomUUID(), child.getId(), first));
+                AlreadyClaimedException.class,
+                () -> family.issueInvite(parentUserId, ownerProfileId, consentedAt, () -> first));
+        assertThrows(
+                FamilyAccessDeniedException.class,
+                () -> family.issueInvite(UUID.randomUUID(), child.getId(), consentedAt, () -> first));
     }
 
     @Test
-    @DisplayName("초대 코드 사용 규칙 - 만료·이미 사용·이미 구성원")
-    void 초대_코드_사용_규칙_만료_이미_사용_이미_구성원() {
+    @DisplayName("초대 코드 사용 규칙 - 없음 → 이미 사용 → 만료 → 이미 구성원 → 다른 가족")
+    void 초대_코드_사용_규칙_없음_이미_사용_만료_이미_구성원_다른_가족() {
         Family family = newFamily();
         Profile child = addChild(family, "아이");
         Instant now = consentedAt;
         ClaimCode code = new ClaimCode("ABC234", now.plus(Duration.ofDays(7)));
         UUID newcomer = UUID.randomUUID();
 
-        assertThrows(ClaimCodeNotFoundException.class, () -> family.prepareClaim(child.getId(), newcomer, now));
+        assertThrows(ClaimCodeNotFoundException.class, () -> family.prepareClaim(child.getId(), newcomer, now, false));
 
-        family.issueInvite(parentUserId, child.getId(), code);
-        assertThat(family.prepareClaim(child.getId(), newcomer, now)).isSameAs(child);
+        family.issueInvite(parentUserId, child.getId(), now, () -> code);
+        assertThat(family.prepareClaim(child.getId(), newcomer, now, false)).isSameAs(child);
         assertThrows(
-                ClaimCodeExpiredException.class, () -> family.prepareClaim(child.getId(), newcomer, code.expiresAt()));
-        assertThrows(AlreadyMemberException.class, () -> family.prepareClaim(child.getId(), parentUserId, now));
+                ClaimCodeExpiredException.class,
+                () -> family.prepareClaim(child.getId(), newcomer, code.expiresAt(), false));
+        // 이 가족 구성원이면 다른 가족 검사보다 먼저 ALREADY_MEMBER 다
+        assertThrows(AlreadyMemberException.class, () -> family.prepareClaim(child.getId(), parentUserId, now, true));
+        assertThrows(AlreadyInFamilyException.class, () -> family.prepareClaim(child.getId(), newcomer, now, true));
+        // 만료가 다른 가족 검사보다 먼저다
+        assertThrows(
+                ClaimCodeExpiredException.class,
+                () -> family.prepareClaim(child.getId(), newcomer, code.expiresAt(), true));
 
         child.claim(newcomer, now);
-        assertThrows(AlreadyClaimedException.class, () -> family.prepareClaim(child.getId(), UUID.randomUUID(), now));
+        assertThrows(
+                AlreadyClaimedException.class,
+                () -> family.prepareClaim(child.getId(), UUID.randomUUID(), code.expiresAt(), true));
+    }
+
+    @Test
+    @DisplayName("미리 보기 판정은 없음 → 이미 사용 → 만료이고 구성원인지는 보지 않는다")
+    void 미리_보기_판정은_없음_이미_사용_만료이고_구성원인지는_보지_않는다() {
+        Family family = newFamily();
+        Profile child = addChild(family, "아이");
+        ClaimCode code = new ClaimCode("ABC234", consentedAt.plus(Duration.ofDays(7)));
+
+        assertThrows(ClaimCodeNotFoundException.class, () -> family.claimableSeat(child.getId(), consentedAt));
+        family.issueInvite(parentUserId, child.getId(), consentedAt, () -> code);
+        assertThat(family.claimableSeat(child.getId(), consentedAt)).isSameAs(child);
+        assertThrows(ClaimCodeExpiredException.class, () -> family.claimableSeat(child.getId(), code.expiresAt()));
+
+        child.claim(UUID.randomUUID(), consentedAt);
+        assertThrows(AlreadyClaimedException.class, () -> family.claimableSeat(child.getId(), code.expiresAt()));
     }
 
     @Test

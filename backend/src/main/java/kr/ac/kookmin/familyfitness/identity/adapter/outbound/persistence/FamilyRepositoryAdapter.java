@@ -4,11 +4,13 @@ import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.ConsentRecord;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
@@ -17,10 +19,14 @@ import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class FamilyRepositoryAdapter implements FamilyRepository {
+    /** V143 — 한 계정은 프로필 하나에만 붙는다. */
+    private static final String ONE_FAMILY_INDEX = "uq_profiles_user";
+
     private final FamilyJpaRepository familyJpa;
     private final ProfileJpaRepository profileJpa;
     private final EntityManager em;
@@ -89,12 +95,34 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                 applyChanges(entity, profile, now);
             }
         }
+        try {
+            profileJpa.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw translated(e);
+        }
         return family;
     }
 
     @Override
     public boolean attachUserIfUnclaimed(UUID profileId, UUID userId, Instant at) {
-        return profileJpa.attachUserIfUnclaimed(profileId, userId, at) == 1;
+        try {
+            return profileJpa.attachUserIfUnclaimed(profileId, userId, at) == 1;
+        } catch (DataIntegrityViolationException e) {
+            throw translated(e);
+        }
+    }
+
+    /**
+     * 곧바로 flush 해 유니크 위반을 여기서 받는다(flush · 수정 쿼리는 Spring Data 프록시를 거쳐 예외가 번역된다).
+     * uq_profiles_user 위반은 사전 검사(profilesOfUser)를 함께 지나친 동시 요청이 같은 계정을 두 프로필에 붙이려 한 것이라
+     * ALREADY_IN_FAMILY 로 바꾼다. 다른 제약 위반은 그대로 던진다. 위반 뒤 트랜잭션은 롤백 전용이 되므로 예외로 끝낸다.
+     */
+    private static RuntimeException translated(DataIntegrityViolationException e) {
+        String message = e.getMostSpecificCause().getMessage();
+        if (message != null && message.toLowerCase(Locale.ROOT).contains(ONE_FAMILY_INDEX)) {
+            return new AlreadyInFamilyException("다른 가족에 이미 프로필이 있습니다");
+        }
+        return e;
     }
 
     private Family toDomain(FamilyEntity entity) {
@@ -127,6 +155,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                 entity.getSupportMode() == null ? null : SupportMode.valueOf(entity.getSupportMode()),
                 claimCode,
                 entity.getClaimCodeClaimedAt(),
+                entity.getClaimCodeIssuedBy(),
                 new ConsentRecord(
                         entity.getConsentPersonalAt(),
                         entity.getConsentHealthAt(),
@@ -153,6 +182,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                 claimCode == null ? null : claimCode.code(),
                 claimCode == null ? null : claimCode.expiresAt(),
                 profile.getClaimCodeClaimedAt(),
+                profile.getClaimCodeIssuedBy(),
                 profile.getConsent().personalAt(),
                 profile.getConsent().healthAt(),
                 profile.getConsent().byUserId(),
@@ -171,6 +201,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
         entity.setClaimCode(claimCode == null ? null : claimCode.code());
         entity.setClaimCodeExpiresAt(claimCode == null ? null : claimCode.expiresAt());
         entity.setClaimCodeClaimedAt(profile.getClaimCodeClaimedAt());
+        entity.setClaimCodeIssuedBy(profile.getClaimCodeIssuedBy());
         entity.setConsentPersonalAt(profile.getConsent().personalAt());
         entity.setConsentHealthAt(profile.getConsent().healthAt());
         entity.setConsentByUserId(profile.getConsent().byUserId());

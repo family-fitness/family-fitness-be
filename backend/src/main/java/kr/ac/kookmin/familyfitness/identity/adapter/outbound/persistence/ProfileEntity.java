@@ -56,6 +56,9 @@ public class ProfileEntity {
     @Column(name = "claim_code_claimed_at")
     private @Nullable Instant claimCodeClaimedAt;
 
+    @Column(name = "claim_code_issued_by")
+    private @Nullable UUID claimCodeIssuedBy;
+
     @Column(name = "consent_personal_at")
     private @Nullable Instant consentPersonalAt;
 
@@ -91,6 +94,7 @@ public class ProfileEntity {
             @Nullable String claimCode,
             @Nullable Instant claimCodeExpiresAt,
             @Nullable Instant claimCodeClaimedAt,
+            @Nullable UUID claimCodeIssuedBy,
             @Nullable Instant consentPersonalAt,
             @Nullable Instant consentHealthAt,
             @Nullable UUID consentByUserId,
@@ -111,6 +115,7 @@ public class ProfileEntity {
         this.claimCode = claimCode;
         this.claimCodeExpiresAt = claimCodeExpiresAt;
         this.claimCodeClaimedAt = claimCodeClaimedAt;
+        this.claimCodeIssuedBy = claimCodeIssuedBy;
         this.consentPersonalAt = consentPersonalAt;
         this.consentHealthAt = consentHealthAt;
         this.consentByUserId = consentByUserId;
@@ -189,6 +194,14 @@ public class ProfileEntity {
 
     public void setClaimCodeClaimedAt(@Nullable Instant claimCodeClaimedAt) {
         this.claimCodeClaimedAt = claimCodeClaimedAt;
+    }
+
+    public @Nullable UUID getClaimCodeIssuedBy() {
+        return claimCodeIssuedBy;
+    }
+
+    public void setClaimCodeIssuedBy(@Nullable UUID claimCodeIssuedBy) {
+        this.claimCodeIssuedBy = claimCodeIssuedBy;
     }
 
     public @Nullable Instant getConsentPersonalAt() {

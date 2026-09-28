@@ -31,6 +31,7 @@ public class ProfileController {
         this.settings = settings;
     }
 
+    /** 살아 있는 코드(만료 전 · 안 씀)가 있으면 그 코드와 만료 시각을 그대로 준다. 없을 때만 새로 만든다. */
     @PostMapping("/{profileId}/invite")
     @ResponseStatus(HttpStatus.CREATED)
     public InviteResponse invite(CurrentUser user, @PathVariable UUID profileId) {
