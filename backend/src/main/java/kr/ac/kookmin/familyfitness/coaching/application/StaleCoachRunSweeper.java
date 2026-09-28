@@ -13,9 +13,10 @@ import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.stereotype.Component;
 
 /**
- * 멈춘 RUNNING 정리. 코치 실행은 메모리 안의 @Async 작업이라 서버가 도중에 죽으면 행이 RUNNING 으로 남아
+ * 멈춘 RUNNING 정리. 코치 실행은 메모리 안의 스레드 풀 작업이라 서버가 도중에 죽으면 행이 RUNNING 으로 남아
  * 그 (프로필, 날짜) 잠금(lock_key)을 계속 쥔다(되돌리는 코드가 없었다).
- * 기동 때 한 번, 그 뒤로는 {@link CoachRunTimeLimit} 간격으로 그 한도보다 오래된 RUNNING 을 조건부 UPDATE 로 FAILED 로 바꾸고 잠금을 푼다.
+ * 기동 때 한 번, 그 뒤로는 {@link CoachRunTimeLimit} 간격으로 그 한도보다 오래된 RUNNING 을 조건부 UPDATE 로
+ * FAILED(STALE)로 바꾸고 잠금을 푼다.
  * 주기가 설정에서 계산한 값이라 @Scheduled 의 상수 대신 {@link SchedulingConfigurer} 로 등록한다(스케줄러는 같다).
  */
 @Component

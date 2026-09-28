@@ -55,8 +55,9 @@ public class WeeklyReportService {
         LocalDate weekEnd = weekStart.plusDays(6);
         Instant now = time.now();
 
+        LocalDate today = time.today();
         List<Mission> weekMissions = missions.findOverlapping(familyId, weekStart, weekEnd).stream()
-                .map(it -> policy.refreshAll(it, now))
+                .map(it -> policy.refreshAll(it, today, now))
                 .toList();
         List<MemberReportView> members = profileQuery.summariesOfFamily(familyId).stream()
                 .map(member -> {

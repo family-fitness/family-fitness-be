@@ -13,6 +13,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunAlreadyDecidedException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunInProgressException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
@@ -46,8 +47,11 @@ import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 class CoachRunServiceTest {
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
     private final Family family = new Family();
     private final Family otherFamily = new Family();
     private final FakeIdentity identity = new FakeIdentity(family, otherFamily);
@@ -60,7 +64,8 @@ class CoachRunServiceTest {
     private final CoachRunService service = serviceAt(Fixed.time());
 
     private CoachRunService serviceAt(AppTime time) {
-        return new CoachRunService(runs, missions, videos, identity, identity, fitness, events::add, time, timeLimit);
+        return new CoachRunService(
+                runs, missions, videos, identity, identity, fitness, events::add, time, timeLimit, JSON);
     }
 
     private StartCoachRunCommand today(UUID profileId) {
@@ -201,7 +206,7 @@ class CoachRunServiceTest {
             }
         };
         CoachRunService racingService = new CoachRunService(
-                racing, missions, videos, identity, identity, fitness, events::add, Fixed.time(), timeLimit);
+                racing, missions, videos, identity, identity, fitness, events::add, Fixed.time(), timeLimit, JSON);
 
         assertThrows(
                 CoachRunInProgressException.class,
@@ -226,6 +231,59 @@ class CoachRunServiceTest {
         assertThat(accepted.status()).isEqualTo(CoachRunStatus.RUNNING);
         assertThat(runs.currentStatus(old.getId())).isEqualTo(CoachRunStatus.FAILED);
         assertThat(runs.findById(old.getId()).getFailureReason()).startsWith("stale: 223초");
+        assertThat(service.get(family.parentUser, old.getId()).failureCode()).isEqualTo(CoachRunFailureCode.STALE);
+    }
+
+    @Test
+    @DisplayName("조회는 FAILED 면 까닭 코드를 싣고 개발자용 원문은 싣지 않는다 — FAILED 가 아니면 null, 알림은 빈 목록")
+    void 조회는_FAILED_면_까닭_코드를_싣는다() {
+        CoachRun refused = runs.save(Runs.running(
+                family.familyId, family.child.profileId(), Fixed.TODAY, family.parent.profileId(), Fixed.NOW));
+        refused.fail(
+                CoachRunFailureCode.NO_CITATIONS,
+                "refused: no_relevant_source",
+                Fixed.NOW,
+                List.of(),
+                true,
+                "no_relevant_source");
+        CoachRun waiting = runs.save(awaitingOfWeek());
+
+        CoachRunView failedView = service.get(family.parentUser, refused.getId());
+        CoachRunView waitingView = service.get(family.parentUser, waiting.getId());
+
+        assertThat(failedView.status()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(failedView.failureCode()).isEqualTo(CoachRunFailureCode.NO_CITATIONS);
+        assertThat(failedView.notices()).isEmpty();
+        assertThat(failedView.toString()).doesNotContain("no_relevant_source");
+        assertThat(waitingView.failureCode()).isNull();
+        assertThat(waitingView.notices()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("조회는 제안 원문(proposal_json)의 AI 알림(notices)을 그대로 싣는다 — 원문을 읽지 못하면 빈 목록")
+    void 조회는_제안_원문의_AI_알림을_싣는다() {
+        CoachRun withNotices = Runs.running(
+                family.familyId, family.child.profileId(), Fixed.TODAY, family.parent.profileId(), Fixed.NOW);
+        withNotices.complete(
+                List.of(),
+                proposals(),
+                "{\"missions\":[],\"citations\":[],\"notices\":[\"또래 영상이 모자라 다른 연령대 영상도 골랐습니다\"]}",
+                "요약",
+                null,
+                Fixed.NOW);
+        runs.save(withNotices);
+        CoachRun broken = Runs.running(
+                family.familyId,
+                family.child.profileId(),
+                Fixed.TODAY.plusDays(1),
+                family.parent.profileId(),
+                Fixed.NOW);
+        broken.complete(List.of(), proposals(), "{not json", "요약", null, Fixed.NOW);
+        runs.save(broken);
+
+        assertThat(service.get(family.parentUser, withNotices.getId()).notices())
+                .containsExactly("또래 영상이 모자라 다른 연령대 영상도 골랐습니다");
+        assertThat(service.get(family.parentUser, broken.getId()).notices()).isEmpty();
     }
 
     @Test

@@ -1,5 +1,7 @@
 package kr.ac.kookmin.familyfitness.coaching.domain;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -9,6 +11,9 @@ import org.jspecify.annotations.Nullable;
  * 서버가 검증할 수 있는 지표는 목표 도달 즉시 완료, `STEPS` 는 보호자 확인({@link #confirm})이 있어야 완료다.
  */
 public class MissionParticipant {
+    /** 진행도 저장 정밀도. mission_participants.progress 가 numeric(4,3) 이고 소수 셋째 자리 아래는 버린다. */
+    public static final int PROGRESS_SCALE = 3;
+
     private final UUID profileId;
     private final @Nullable String coachRole;
     private double progress;
@@ -82,12 +87,17 @@ public class MissionParticipant {
         return isReachedTarget() && !isCompleted();
     }
 
-    /** 새 진행도를 반영한다. 완료된 참여자는 진행도를 되돌리지 않는다. 바뀐 것이 있으면 true. */
+    /**
+     * 새 진행도를 반영한다. 완료된 참여자는 진행도를 되돌리지 않는다. 바뀐 것이 있으면 true.
+     * 진행도는 저장 정밀도(소수 셋째 자리 버림)로 맞춰 비교 · 보관한다. 1/3 처럼 끝나지 않는 값을 그대로 비교하면
+     * DB 에서 읽은 0.333 과 계산한 0.3333… 이 늘 달라 읽을 때마다 같은 값을 다시 저장했다.
+     */
     boolean apply(MissionProgress computed, boolean serverVerifiable, Instant at) {
         if (isCompleted()) return false;
         boolean changed = false;
-        if (computed.progress() != progress) {
-            progress = computed.progress();
+        double next = atStoredScale(computed.progress());
+        if (next != progress) {
+            progress = next;
             changed = true;
         }
         if (serverVerifiable && isReachedTarget()) {
@@ -109,6 +119,15 @@ public class MissionParticipant {
         verifiedAt = at;
         confirmedBy = by;
         updatedAt = at;
+    }
+
+    /** 저장 정밀도로 맞춘 진행도(소수 셋째 자리 아래 버림). 저장소도 같은 규칙으로 쓴다. */
+    public static BigDecimal storedProgress(double value) {
+        return BigDecimal.valueOf(value).setScale(PROGRESS_SCALE, RoundingMode.DOWN);
+    }
+
+    private static double atStoredScale(double value) {
+        return storedProgress(value).doubleValue();
     }
 
     public static MissionParticipant pending(UUID profileId, @Nullable String coachRole, Instant at) {

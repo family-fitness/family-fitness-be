@@ -1,7 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -212,7 +211,8 @@ public class MissionPersistenceAdapter implements MissionRepository {
                 ss.stream().map(MissionPersistenceAdapter::toSession).toList());
     }
 
+    /** 도메인이 비교에 쓰는 정밀도와 같은 규칙으로 쓴다(MissionParticipant.storedProgress). */
     private static BigDecimal ratio(double value) {
-        return BigDecimal.valueOf(value).setScale(3, RoundingMode.DOWN);
+        return MissionParticipant.storedProgress(value);
     }
 }

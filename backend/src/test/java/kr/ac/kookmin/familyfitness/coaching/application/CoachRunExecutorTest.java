@@ -8,10 +8,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
@@ -32,6 +34,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.AiBadRequestException;
+import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted;
@@ -44,6 +47,8 @@ import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import tools.jackson.databind.json.JsonMapper;
 
 class CoachRunExecutorTest {
@@ -65,13 +70,23 @@ class CoachRunExecutorTest {
             new LabelBasedProposalPlanner(fitness, videos, clips),
             clips,
             videos);
-    private final CoachRunExecutor executor = new CoachRunExecutor(pipeline, gateway, 0, 3);
+    private final CoachRunExecutor executor = new CoachRunExecutor(pipeline, gateway, new SyncTaskExecutor(), 0, 3);
 
+    /** 측정은 있지만 요인 백분위(약점 · 강점)가 없다 — 대체 편성할 근거가 없는 기본 상태. */
     private FakeFitness newFitness() {
         FakeFitness fakeFitness = new FakeFitness();
         fakeFitness.measured(
                 family.child.profileId(), new FakeFitness.Item("012", 8.0), new FakeFitness.Item("028", 45.0));
         return fakeFitness;
+    }
+
+    /** 유연성이 약점(백분위 24)이라 대체 편성이 유연성 미션을 낼 수 있다. */
+    private void measuredWithWeakness() {
+        fitness.measured(
+                family.child.profileId(),
+                new FactorPoint(FitnessFactor.FLEXIBILITY, "012", 24),
+                new FactorPoint(FitnessFactor.CARDIO, "020", 80),
+                new FakeFitness.Item("012", 8.0));
     }
 
     private CoachRun runningRun() {
@@ -91,6 +106,19 @@ class CoachRunExecutorTest {
 
     private static List<UUID> participantIds(CoachProposalItem item) {
         return item.participants().stream().map(ProposalParticipant::profileId).toList();
+    }
+
+    /** 대체 편성으로 낸 제안이다 — 두 번째 단계가 「AI 서비스 장애(까닭) → 영상 라벨 기반 편성」 partial 이다. */
+    private static void assertFallback(CoachRun saved, String summary) {
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+        assertThat(saved.getSteps().stream().map(CoachStep::status).toList())
+                .containsExactly("ok", "partial", "ok", "ok");
+        assertThat(saved.getSteps().get(1).summary()).startsWith("AI 서비스 장애(" + summary + ")");
+        assertThat(saved.getProposals())
+                .singleElement()
+                .extracting(CoachProposalItem::title)
+                .isEqualTo("유연성 키우기 20분");
     }
 
     @Test
@@ -125,6 +153,7 @@ class CoachRunExecutorTest {
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
         assertThat(saved.getAiRunId()).startsWith("cr_");
         assertThat(saved.lockKey()).isNull();
         assertThat(saved.getSteps().stream().map(CoachStep::name).toList())
@@ -224,24 +253,26 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("refused 면 FAILED 이고 사유는 refused 접두어로 남는다")
-    void refused_면_FAILED_이고_사유는_refused_접두어로_남는다() {
+    @DisplayName("refused 면 대체 편성 근거가 있어도 FAILED(NO_CITATIONS)이고 원문은 refused 접두어로 남는다")
+    void refused_면_FAILED_NO_CITATIONS_이고_대체_편성하지_않는다() {
+        measuredWithWeakness();
         CoachRun run = runningRun();
         gateway.onPoll = id -> new CoachRunResult(
                 id,
                 "refused",
-                List.of(new CoachRunResult.Step(1, "assess", "refused", "연령 필터")),
+                List.of(new CoachRunResult.Step(1, "retrieve", "refused", "근거 0건")),
                 null,
                 true,
-                "age_filter_empty");
+                "no_relevant_source");
 
         executor.execute(run.getId());
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
-        assertThat(saved.getFailureReason()).isEqualTo("refused: age_filter_empty");
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.NO_CITATIONS);
+        assertThat(saved.getFailureReason()).isEqualTo("refused: no_relevant_source");
         assertThat(saved.isAiRefused()).isTrue();
-        assertThat(saved.getAiRefusalReason()).isEqualTo("age_filter_empty");
+        assertThat(saved.getAiRefusalReason()).isEqualTo("no_relevant_source");
         assertThat(saved.getSteps())
                 .singleElement()
                 .extracting(CoachStep::status)
@@ -251,8 +282,8 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("running 이 계속되면 최대 횟수까지 폴링하고 timeout 으로 FAILED")
-    void running_이_계속되면_최대_횟수까지_폴링하고_timeout_으로_FAILED() {
+    @DisplayName("running 이 계속되면 최대 횟수까지 폴링하고 대체 편성으로 넘기며, 근거도 없으면 FAILED(AI_FAILED)")
+    void 폴링이_만료되면_대체_편성으로_넘기고_근거가_없으면_AI_FAILED() {
         CoachRun run = runningRun();
         gateway.onPoll = id -> new CoachRunResult(id, "running", List.of(), null, false, null);
 
@@ -261,11 +292,115 @@ class CoachRunExecutorTest {
         assertThat(gateway.pollCount).isEqualTo(3);
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
-        assertThat(saved.getFailureReason()).startsWith("timeout");
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.AI_FAILED);
+        assertThat(saved.getFailureReason()).contains("timeout").contains("대체 편성 근거");
+        assertThat(saved.lockKey()).isNull();
     }
 
     @Test
-    @DisplayName("AI 장애인데 고른 힘도 측정 약점도 없으면 FAILED 로 끝나고 상태 전이는 한 번만 일어난다")
+    @DisplayName("폴링이 만료돼도 측정 약점이 있으면 대체 편성해 AWAITING_APPROVAL")
+    void 폴링이_만료돼도_근거가_있으면_대체_편성한다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> new CoachRunResult(id, "running", List.of(), null, false, null);
+
+        executor.execute(run.getId());
+
+        assertFallback(runs.findById(run.getId()), "시간 초과");
+    }
+
+    @Test
+    @DisplayName("AI 가 failed 를 주면 대체 편성으로 넘기고, 근거가 없으면 AI 의 단계를 남긴 채 FAILED(AI_FAILED)")
+    void AI_가_failed_를_주면_대체_편성으로_넘긴다() {
+        measuredWithWeakness();
+        CoachRun withBasis = runningRun();
+        gateway.onStart = request -> new CoachRunAccepted("cr_x", "running", 1000);
+        gateway.onPoll = id -> new CoachRunResult(
+                id, "failed", List.of(new CoachRunResult.Step(1, "assess", "failed", "임베딩 서버 없음")), null, false, null);
+
+        executor.execute(withBasis.getId());
+
+        CoachRun fallback = runs.findById(withBasis.getId());
+        assertFallback(fallback, "편성 실패");
+        assertThat(fallback.getAiRunId()).isEqualTo("cr_x");
+
+        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3)); // 측정도 고른 힘도 없다
+        CoachRun noBasis = runningRun(toddler.profileId(), false, null);
+        executor.execute(noBasis.getId());
+
+        CoachRun failed = runs.findById(noBasis.getId());
+        assertThat(failed.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(failed.getFailureCode()).isEqualTo(CoachRunFailureCode.AI_FAILED);
+        assertThat(failed.getFailureReason()).contains("failed: AI run status=failed");
+        assertThat(failed.getSteps())
+                .singleElement()
+                .extracting(CoachStep::summary)
+                .isEqualTo("임베딩 서버 없음");
+    }
+
+    @Test
+    @DisplayName("폴링이 404 RUN_NOT_FOUND(AI 재시작 · 다른 워커)면 대체 편성으로 넘긴다")
+    void 폴링이_404_면_대체_편성으로_넘긴다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> {
+            throw new AiRunNotFoundException(id);
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.pollCount).isEqualTo(1);
+        assertFallback(runs.findById(run.getId()), "실행 없음");
+    }
+
+    @Test
+    @DisplayName("succeeded 인데 제안이 없으면 AI 실행 실패로 보고 대체 편성으로 넘긴다")
+    void 제안_없는_succeeded_는_대체_편성으로_넘긴다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> new CoachRunResult(id, "succeeded", List.of(), null, false, null);
+
+        executor.execute(run.getId());
+
+        assertFallback(runs.findById(run.getId()), "편성 실패");
+    }
+
+    @Test
+    @DisplayName("폴링 한 번의 일시 오류(타임아웃 · 503)는 다음 폴링으로 넘기고, 그다음 AI 결과를 그대로 쓴다")
+    void 폴링_한_번의_일시_오류는_다음_폴링으로_넘긴다() {
+        CoachRun run = runningRun(); // 대체 편성 근거가 없으니 대체 편성으로 갔다면 FAILED 가 된다
+        StubResultOnSecondPoll poll = new StubResultOnSecondPoll();
+        gateway.onPoll = poll::next;
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.pollCount).isEqualTo(2);
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().stream().map(CoachStep::status).toList()).doesNotContain("partial");
+        assertThat(saved.getProposals())
+                .singleElement()
+                .extracting(CoachProposalItem::title)
+                .isEqualTo("오늘");
+    }
+
+    @Test
+    @DisplayName("폴링이 끝까지 일시 오류면 만료와 같게 대체 편성으로 넘긴다")
+    void 폴링이_끝까지_일시_오류면_대체_편성으로_넘긴다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> {
+            throw new AiUnavailableException("AI 연결 실패·타임아웃: GET coach/runs/" + id);
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.pollCount).isEqualTo(3);
+        assertFallback(runs.findById(run.getId()), "시간 초과");
+    }
+
+    @Test
+    @DisplayName("AI 에 닿지 못했는데 고른 힘도 측정 약점도 없으면 FAILED(AI_FAILED)로 끝나고 상태 전이는 한 번만 일어난다")
     void AI_장애인데_근거가_없으면_FAILED_로_끝난다() {
         CoachRun run = runningRun();
         gateway.onStart = request -> {
@@ -276,7 +411,8 @@ class CoachRunExecutorTest {
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
-        assertThat(saved.getFailureReason()).contains("AI 장애");
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.AI_FAILED);
+        assertThat(saved.getFailureReason()).contains("unavailable: 연결 실패");
 
         executor.execute(run.getId());
         assertThat(runs.findById(run.getId()).getStatus()).isEqualTo(CoachRunStatus.FAILED);
@@ -285,11 +421,7 @@ class CoachRunExecutorTest {
     @Test
     @DisplayName("AI 장애여도 측정 약점이 있으면 대상 아이의 그날 하루짜리로 대체 편성해 AWAITING_APPROVAL")
     void AI_장애여도_측정_약점이_있으면_하루짜리로_대체_편성한다() {
-        fitness.measured(
-                family.child.profileId(),
-                new FactorPoint(FitnessFactor.FLEXIBILITY, "012", 24),
-                new FactorPoint(FitnessFactor.CARDIO, "020", 80),
-                new FakeFitness.Item("012", 8.0));
+        measuredWithWeakness();
         CoachRun run = runningRun();
         gateway.onStart = request -> {
             throw new AiUnavailableException("연결 실패");
@@ -298,14 +430,9 @@ class CoachRunExecutorTest {
         executor.execute(run.getId());
 
         CoachRun saved = runs.findById(run.getId());
-        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertFallback(saved, "연결 실패");
         assertThat(saved.getAiRunId()).isNull();
-        assertThat(saved.getSteps().stream().map(CoachStep::status).toList())
-                .containsExactly("ok", "partial", "ok", "ok");
-        assertThat(saved.getSteps().get(1).summary()).contains("AI 서비스 장애");
-        assertThat(saved.getProposals()).hasSize(1);
         CoachProposalItem item = saved.getProposals().getFirst();
-        assertThat(item.title()).isEqualTo("유연성 키우기 20분");
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.startsOn()).isEqualTo(Fixed.TODAY);
         assertThat(item.endsOn()).isEqualTo(Fixed.TODAY);
@@ -340,7 +467,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("편성 대상의 보호자 동의가 그 사이 거둬지면 AI 에 요청하지 않고 FAILED")
+    @DisplayName("편성 대상의 보호자 동의가 그 사이 거둬지면 AI 에 요청하지 않고 FAILED(CONSENT_REQUIRED)")
     void 대상의_보호자_동의가_거둬지면_AI_에_요청하지_않는다() {
         CoachRun run = runningRun();
         family.withdrawConsent(family.child.profileId());
@@ -350,11 +477,12 @@ class CoachRunExecutorTest {
         assertThat(gateway.startRequests).isEmpty();
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.CONSENT_REQUIRED);
         assertThat(saved.getFailureReason()).contains("보호자 동의");
     }
 
     @Test
-    @DisplayName("대체 편성 중 예외가 나도 RUNNING 으로 남기지 않고 FAILED 로 끝낸다")
+    @DisplayName("대체 편성 중 예외가 나도 RUNNING 으로 남기지 않고 FAILED 로 끝낸다 — 동의가 거둬진 탓이면 CONSENT_REQUIRED")
     void 대체_편성_중_예외가_나도_FAILED_로_끝낸다() {
         CoachRun run = runningRun();
         gateway.onStart = request -> {
@@ -366,11 +494,12 @@ class CoachRunExecutorTest {
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
-        assertThat(saved.getFailureReason()).startsWith("AI 장애 뒤 대체 편성도 실패");
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.CONSENT_REQUIRED);
+        assertThat(saved.getFailureReason()).startsWith("AI 로 짜지 못한 뒤 대체 편성도 실패");
     }
 
     @Test
-    @DisplayName("AI 가 접수하는 사이 정리 작업이 FAILED 로 바꾼 실행은 폴링하지 않고, 정리 작업이 남긴 사유를 그대로 둔다")
+    @DisplayName("AI 가 접수하는 사이 정리 작업이 FAILED(STALE)로 바꾼 실행은 폴링하지 않고, 정리 작업이 남긴 사유를 그대로 둔다")
     void 접수_사이_정리된_실행은_폴링하지_않는다() {
         CoachRun run = runningRun();
         gateway.onStart = request -> {
@@ -383,27 +512,80 @@ class CoachRunExecutorTest {
         assertThat(gateway.pollCount).isZero();
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.STALE);
         assertThat(saved.getFailureReason()).isEqualTo("stale: 정리");
         assertThat(saved.getAiRunId()).isNull();
     }
 
     @Test
-    @DisplayName("AI 가 failed 를 돌려주면 FAILED, 400 도 FAILED")
-    void AI_가_failed_를_돌려주면_FAILED() {
+    @DisplayName("대기열에서 기다리는 사이 정리 작업이 끝낸 실행은 AI 를 부르지 않는다")
+    void 대기_중_정리된_실행은_AI_를_부르지_않는다() {
         CoachRun run = runningRun();
-        gateway.onStart = request -> new CoachRunAccepted("cr_x", "running", 1000);
-        gateway.onPoll = id -> new CoachRunResult(id, "failed", List.of(), null, false, null);
+        runs.failRunningCreatedBefore(Fixed.NOW.plusSeconds(1), "stale: 정리", Fixed.NOW);
 
         executor.execute(run.getId());
 
-        assertThat(runs.findById(run.getId()).getFailureReason()).isEqualTo("failed: AI run status=failed");
+        assertThat(gateway.startRequests).isEmpty();
+        assertThat(runs.findById(run.getId()).getFailureCode()).isEqualTo(CoachRunFailureCode.STALE);
+    }
 
-        CoachRun other = runningRun(family.child.profileId(), false, null);
+    @Test
+    @DisplayName("AI 400 은 이쪽 결함이라 대체 편성하지 않고 FAILED(ERROR)")
+    void AI_400_은_FAILED_ERROR() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
         gateway.onStart = request -> {
             throw new AiBadRequestException("profile_refs");
         };
-        executor.execute(other.getId());
-        assertThat(runs.findById(other.getId()).getStatus()).isEqualTo(CoachRunStatus.FAILED);
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.ERROR);
+        assertThat(saved.getProposals()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("편성 스레드와 대기열이 가득 차 받지 못하면 곧바로 FAILED(BUSY)이고 잠금을 푼다")
+    void 스레드와_대기열이_가득_차면_FAILED_BUSY() {
+        CoachRunExecutor full = new CoachRunExecutor(
+                pipeline,
+                gateway,
+                task -> {
+                    throw new TaskRejectedException("가득 참");
+                },
+                0,
+                3);
+        CoachRun run = runningRun();
+
+        full.on(new CoachRunRequested(run.getId()));
+
+        assertThat(gateway.startRequests).isEmpty();
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.BUSY);
+        assertThat(saved.lockKey()).isNull();
+    }
+
+    @Test
+    @DisplayName("커밋 뒤 이벤트는 편성 스레드 풀에 넘겨 실행한다")
+    void 커밋_뒤_이벤트는_편성_스레드_풀에서_실행한다() {
+        CoachRun run = runningRun();
+
+        executor.on(new CoachRunRequested(run.getId()));
+
+        assertThat(runs.findById(run.getId()).getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+    }
+
+    /** 첫 폴링은 일시 오류, 두 번째는 대상 아이 하루짜리 succeeded. */
+    private final class StubResultOnSecondPoll {
+        private final AtomicInteger calls = new AtomicInteger();
+
+        CoachRunResult next(String id) {
+            if (calls.incrementAndGet() == 1) throw new AiUnavailableException("AI 503 (GET coach/runs/" + id + ")");
+            return resultWithCheer(id);
+        }
     }
 
     private static ExerciseClip noisy(ExerciseClip quiet) {
@@ -448,7 +630,7 @@ class CoachRunExecutorTest {
         return new CoachRunResult(
                 id,
                 "succeeded",
-                List.of(),
+                List.of(new CoachRunResult.Step(1, "assess", "ok", "측정 있음")),
                 new CoachRunResult.Proposal(List.of(mission), List.of(new Citation(1, "처방", "p:1", null)), List.of()),
                 false,
                 null);

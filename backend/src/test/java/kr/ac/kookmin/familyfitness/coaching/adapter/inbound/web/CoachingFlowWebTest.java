@@ -23,7 +23,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,6 +33,7 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
 import kr.ac.kookmin.familyfitness.coaching.application.AppTime;
+import kr.ac.kookmin.familyfitness.coaching.application.CoachRunExecutorConfig;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunPipeline;
 import kr.ac.kookmin.familyfitness.coaching.application.StaleCoachRunSweeper;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
@@ -64,16 +64,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.scheduling.annotation.AsyncConfigurer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -84,20 +83,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * H2 + Flyway(시드) 위에서 코치 실행 → 승인 → 미션 → 활동 → 영상 → 대화 → 주간 요약의 전체 흐름.
  * identity·fitness·activity 는 이 워크트리에 구현이 없으므로 공개 포트를 {@link MockitoBean} 으로 대신하고,
- * 비동기 실행기는 동기 {@link SyncTaskExecutor} 로 바꿔 커밋 직후(AFTER_COMMIT) 결정적으로 끝나게 한다.
+ * 편성 전용 스레드 풀은 동기 {@link SyncTaskExecutor} 로 바꿔 커밋 직후(AFTER_COMMIT) 결정적으로 끝나게 한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(CoachingFlowWebTest.SyncAsync.class)
 @TestPropertySource(properties = {"app.coach.poll-interval-ms=0", "app.coach.max-polls=3"})
 class CoachingFlowWebTest {
-    @TestConfiguration(proxyBeanMethods = false)
-    static class SyncAsync implements AsyncConfigurer {
-        @Override
-        public Executor getAsyncExecutor() {
-            return new SyncTaskExecutor();
-        }
+    @TestBean(name = CoachRunExecutorConfig.EXECUTOR, methodName = "syncCoachRunExecutor")
+    TaskExecutor coachRunTaskExecutor;
+
+    static TaskExecutor syncCoachRunExecutor() {
+        return new SyncTaskExecutor();
     }
 
     @Autowired
@@ -261,6 +258,8 @@ class CoachingFlowWebTest {
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.failureCode").value(nullValue()))
+                .andExpect(jsonPath("$.notices", hasSize(0)))
                 .andExpect(jsonPath("$.canApprove").value(true))
                 .andExpect(jsonPath("$.missionCount").value(0))
                 .andExpect(jsonPath("$.weekStart").value(time.thisWeekStart().toString()))
@@ -592,6 +591,18 @@ class CoachingFlowWebTest {
                         .query(String.class)
                         .single())
                 .startsWith("stale: 15초");
+        assertThat(jdbc.sql("select failure_code from coach_runs where id in (?, ?)")
+                        .param(stuckToday.getId())
+                        .param(stuckTomorrow.getId())
+                        .query(String.class)
+                        .list())
+                .containsExactly("STALE", "STALE");
+        mockMvc.perform(get("/api/v1/coach/runs/" + stuckTomorrow.getId())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(family.parentUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("STALE"))
+                .andExpect(jsonPath("$.notices", hasSize(0)));
         assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ? and lock_key is not null")
                         .param(familyId())
                         .query(Integer.class)

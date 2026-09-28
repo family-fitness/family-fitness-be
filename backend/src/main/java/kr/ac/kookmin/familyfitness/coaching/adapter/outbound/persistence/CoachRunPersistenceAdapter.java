@@ -14,6 +14,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
@@ -87,6 +88,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                         stepsJson(run),
                         run.getProposalJson(),
                         run.getModelName(),
+                        codeName(run.getFailureCode()),
                         run.getFailureReason(),
                         run.isAiRefused(),
                         run.getAiRefusalReason(),
@@ -247,7 +249,22 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                         : conditions.focusFactor().name(),
                 conditions == null ? null : conditions.withParent());
         entity.setLockKey(run.lockKey());
+        entity.setFailureCode(codeName(run.getFailureCode()));
         return entity;
+    }
+
+    private static @Nullable String codeName(@Nullable CoachRunFailureCode code) {
+        return code == null ? null : code.name();
+    }
+
+    /** 모르는 값(다른 버전이 쓴 코드)은 응답이 깨지지 않게 ERROR 로 읽는다. */
+    private static @Nullable CoachRunFailureCode codeOf(@Nullable String name) {
+        if (name == null) return null;
+        try {
+            return CoachRunFailureCode.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return CoachRunFailureCode.ERROR;
+        }
     }
 
     private @Nullable String stepsJson(CoachRun run) {
@@ -337,6 +354,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getFailureReason(),
                 e.isAiRefused(),
                 e.getAiRefusalReason(),
+                codeOf(e.getFailureCode()),
                 e.getUpdatedAt());
     }
 
