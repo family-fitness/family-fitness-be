@@ -5,12 +5,17 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 public interface MissionParticipantJpaRepository extends JpaRepository<MissionParticipantEntity, MissionParticipantId> {
     List<MissionParticipantEntity> findByIdMissionId(UUID missionId);
 
     List<MissionParticipantEntity> findByIdMissionIdIn(Collection<UUID> missionIds);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("delete from MissionParticipantEntity p where p.id.missionId = :missionId")
+    int deleteByMission(UUID missionId);
 
     /** 이 프로필의 참여 행과 그 미션의 기간 · 지표. 칸 · 다른 참여자는 읽지 않는다. */
     @Query("""

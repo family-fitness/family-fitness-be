@@ -32,10 +32,11 @@ import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 미션 직접 만들기 · 목록 · 단건 · 보호자 확인. */
+/** 미션 직접 만들기(한 건 · 여러 날) · 목록 · 단건 · 보호자 확인. 지우기는 {@link MissionDeletionService}, 느낌은 {@link MissionFeedbackService}. */
 @Service
 public class MissionService {
     private final MissionRepository missions;
@@ -44,6 +45,7 @@ public class MissionService {
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
     private final MissionCompletionPolicy policy;
+    private final ApplicationEventPublisher events;
     private final AppTime time;
 
     public MissionService(
@@ -53,6 +55,7 @@ public class MissionService {
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
             MissionCompletionPolicy policy,
+            ApplicationEventPublisher events,
             AppTime time) {
         this.missions = missions;
         this.completions = completions;
@@ -60,39 +63,68 @@ public class MissionService {
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
         this.policy = policy;
+        this.events = events;
         this.time = time;
     }
 
-    /**
-     * 보호자가 직접 만든다. 참여자는 이 가족 구성원이어야 하고(422 `NOT_FAMILY_MEMBER`),
-     * 동의가 필요한데 없는 프로필이 끼면 422 `CONSENT_REQUIRED` 다.
-     * 칸의 영상 id 는 카탈로그로 확인하지 않는다 — 칸은 영상 구간의 사본을 든다.
-     */
+    /** 미션 한 건 직접 만들기. 규칙은 {@link #createAll}. */
     @Transactional
     public MissionCreatedView create(UUID userId, UUID familyId, CreateMissionCommand command) {
+        return createAll(userId, familyId, List.of(command));
+    }
+
+    /**
+     * 보호자가 직접 만든다(한 건 또는 여러 날 dates[] — 날마다 한 건). 판단 차례:
+     * <ol>
+     *   <li>보호자가 아니면 403 NOT_A_PARENT
+     *   <li>어느 한 건이라도 시작일이 오늘(KST)보다 앞이면 422 INVALID_DATE(결정 40)
+     *   <li>참여자가 이 가족이 아니면 422 NOT_FAMILY_MEMBER, 동의가 필요한데 없으면 422 CONSENT_REQUIRED
+     *   <li>미션 영상이 카탈로그에 없으면 404 VIDEO_NOT_FOUND(칸의 영상 id 는 보지 않는다 — 칸은 영상 구간의 사본을 든다)
+     *   <li>칸 규칙(목표 분 = 칸 분 합 등)은 {@link Mission#manual} 이 400 으로 막는다
+     * </ol>
+     * 전부 되거나 전부 안 된다 — 모든 건을 먼저 만들어 검사한 뒤에 저장하고, 한 트랜잭션이라 저장 중 실패해도 되돌려진다.
+     * 저장한 미션마다 {@link kr.ac.kookmin.familyfitness.coaching.api.MissionCreated} 를 낸다(결정 48).
+     */
+    @Transactional
+    public MissionCreatedView createAll(UUID userId, UUID familyId, List<CreateMissionCommand> commands) {
+        if (commands.isEmpty()) throw new IllegalArgumentException("만들 운동이 없습니다");
         ProfileSummary parent = familyAccess.requireParent(userId, familyId);
-        requireConsentedMembers(familyId, command.participantProfileIds());
-        MissionVideo video = null;
-        String videoId = command.videoId();
-        if (videoId != null) {
-            if (videos.findById(videoId) == null) throw new VideoNotFoundException(videoId);
-            video = new MissionVideo(videoId, null);
+        LocalDate today = time.today();
+        commands.forEach(it -> Mission.requireNotPast(it.startDate(), today));
+        Map<UUID, ProfileSummary> members = membersOf(familyId);
+        commands.forEach(it -> requireConsentedMembers(members, it.participantProfileIds()));
+        Instant now = time.now();
+        Map<String, MissionVideo> checkedVideos = new LinkedHashMap<>();
+        List<Mission> built = new ArrayList<>();
+        for (CreateMissionCommand command : commands) {
+            built.add(Mission.manual(
+                    UUID.randomUUID(),
+                    familyId,
+                    command.title(),
+                    command.targetMetric(),
+                    command.targetValue(),
+                    videoOf(command.videoId(), checkedVideos),
+                    command.startDate(),
+                    command.endDate(),
+                    command.participantProfileIds(),
+                    command.sessions(),
+                    parent.profileId(),
+                    now));
         }
-        Mission mission = missions.save(Mission.manual(
-                UUID.randomUUID(),
-                familyId,
-                command.title(),
-                command.targetMetric(),
-                command.targetValue(),
-                video,
-                command.startDate(),
-                command.endDate(),
-                command.participantProfileIds(),
-                command.sessions(),
-                parent.profileId(),
-                time.now()));
-        return new MissionCreatedView(
-                mission.getId(), mission.getOrigin(), mission.getCoachRunId(), mission.isServerVerifiable());
+        built.forEach(missions::save);
+        built.forEach(it -> events.publishEvent(MissionEvents.created(it)));
+        return MissionCreatedView.of(built);
+    }
+
+    /** 미션 영상. 카탈로그에 없으면 404. 여러 날 만들기는 같은 영상을 한 번만 확인한다. */
+    private @Nullable MissionVideo videoOf(@Nullable String videoId, Map<String, MissionVideo> checked) {
+        if (videoId == null) return null;
+        MissionVideo known = checked.get(videoId);
+        if (known != null) return known;
+        if (videos.findById(videoId) == null) throw new VideoNotFoundException(videoId);
+        MissionVideo video = new MissionVideo(videoId, null);
+        checked.put(videoId, video);
+        return video;
     }
 
     /**
@@ -157,10 +189,14 @@ public class MissionService {
                 participant.getVerifiedAt());
     }
 
-    /** 참여자가 모두 이 가족이고, 동의가 필요한 사람은 동의가 살아 있어야 한다. */
-    private void requireConsentedMembers(UUID familyId, List<UUID> participantProfileIds) {
+    private Map<UUID, ProfileSummary> membersOf(UUID familyId) {
         Map<UUID, ProfileSummary> members = new LinkedHashMap<>();
         profileQuery.summariesOfFamily(familyId).forEach(it -> members.put(it.profileId(), it));
+        return members;
+    }
+
+    /** 참여자가 모두 이 가족이고, 동의가 필요한 사람은 동의가 살아 있어야 한다. */
+    private static void requireConsentedMembers(Map<UUID, ProfileSummary> members, List<UUID> participantProfileIds) {
         for (UUID profileId : participantProfileIds) {
             if (!members.containsKey(profileId)) throw new NotFamilyMemberException(profileId);
         }

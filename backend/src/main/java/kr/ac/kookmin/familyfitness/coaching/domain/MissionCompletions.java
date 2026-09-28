@@ -35,6 +35,11 @@ public final class MissionCompletions {
         return NONE;
     }
 
+    /** 아무도 칸을 끝내지 않았다. */
+    public boolean isEmpty() {
+        return positionsByProfile.isEmpty();
+    }
+
     /** 이 사람이 끝낸 칸 번호, 오름차순. 없으면 빈 목록. */
     public List<Integer> positionsOf(UUID profileId) {
         SortedSet<Integer> positions = positionsByProfile.get(profileId);
