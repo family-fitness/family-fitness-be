@@ -192,7 +192,7 @@ class MissionServiceTest {
                                         steps,
                                         new RecordStepsCommand(family.parent.profileId(), Fixed.TODAY, 100)))
                         .getCode())
-                .isEqualTo("NOT_PARTICIPANT");
+                .isEqualTo("NOT_A_PARTICIPANT");
         assertThat(assertThrows(
                                 InvalidMetricException.class,
                                 () -> activityService.recordSteps(

@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.DisplayName;
@@ -106,13 +107,14 @@ class MissionTest {
     }
 
     @Test
-    @DisplayName("참여자가 아니면 NOT_PARTICIPANT, 지표가 다르면 INVALID_METRIC")
-    void 참여자가_아니면_NOT_PARTICIPANT_지표가_다르면_INVALID_METRIC() {
+    @DisplayName("참여자가 아니면 권한 없음(403) NOT_A_PARTICIPANT, 지표가 다르면 INVALID_METRIC")
+    void 참여자가_아니면_NOT_A_PARTICIPANT_지표가_다르면_INVALID_METRIC() {
         Mission m = mission(TargetMetric.TIMER_MINUTES);
 
-        assertThat(assertThrows(NotParticipantException.class, () -> m.participantOf(parentId))
-                        .getCode())
-                .isEqualTo("NOT_PARTICIPANT");
+        NotParticipantException notParticipant =
+                assertThrows(NotParticipantException.class, () -> m.participantOf(parentId));
+        assertThat(notParticipant.getCode()).isEqualTo("NOT_A_PARTICIPANT");
+        assertThat(notParticipant.getKind()).isEqualTo(ErrorKind.FORBIDDEN);
         assertThat(assertThrows(InvalidMetricException.class, () -> m.requireMetric(TargetMetric.STEPS))
                         .getCode())
                 .isEqualTo("INVALID_METRIC");

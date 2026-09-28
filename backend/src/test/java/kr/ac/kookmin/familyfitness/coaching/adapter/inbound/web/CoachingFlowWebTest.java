@@ -393,6 +393,10 @@ class CoachingFlowWebTest {
                         .header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.error.code").value("TARGET_NOT_REACHED"));
+        mockMvc.perform(post("/api/v1/missions/" + missionId + "/participants/" + parentId() + "/confirm")
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARTICIPANT"));
 
         childTotals = new ActivityTotals(3500, 0, 0);
         mockMvc.perform(post("/api/v1/missions/" + missionId + "/activity/steps")
