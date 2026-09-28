@@ -24,13 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
  * </ol>
  * 잠금을 맨 앞에 두는 까닭: 잠그기 전에 읽은 참여자 · 칸 끝 상태는 영속성 컨텍스트에 남아 잠근 뒤 다시 읽어도 바뀌지 않는다.
  *
- * <p>같은 미션에 다른 요청이 겹칠 때(PostgreSQL READ COMMITTED):
+ * <p>같은 미션에 다른 요청이 겹칠 때(READ COMMITTED). 칸 끝 · 느낌도 미션 행을 같은 방식으로 맨 먼저 잠그므로 차례로 돈다:
  * <ul>
- *   <li>칸 끝이 먼저 칸 끝 행을 넣었으면: 그 INSERT 의 외래 키 잠금(FOR KEY SHARE)이 풀릴 때까지 여기 잠금이 기다렸다가, 커밋된
- *       칸 끝 행을 보고 409 MISSION_ALREADY_STARTED.
- *   <li>여기가 먼저 잠갔으면: 칸 끝의 INSERT 가 기다렸다가 지워진 미션 행을 보고 외래 키에 걸린다 — 칸 끝은 404
- *       ({@code SessionCompletionPersistenceAdapter}).
- *   <li>느낌은 같은 행을 같은 방식으로 잠그므로 차례로 돈다. 지운 뒤에 온 느낌은 404.
+ *   <li>칸 끝이 먼저 잠갔으면: 여기 잠금이 그 트랜잭션이 끝나길 기다렸다가, 커밋된 칸 끝 행을 보고 409 MISSION_ALREADY_STARTED.
+ *   <li>여기가 먼저 잠갔으면: 칸 끝 · 느낌이 미션을 읽다가 기다렸다가 지워진 미션을 보고 404.
  * </ul>
  * 지우는 것: 느낌 → 참여자 → 칸 → 미션 행. 칸 끝 · 활동 · 경험치 기록은 위 검사로 없는 것이 확인된 상태다.
  * 응원(cheers.mission_id) · 경험치 원장(progress_xp_events.mission_id)은 외래 키가 없어 그대로 둔다 — 다른 모듈의 표이고, 응원은 받은

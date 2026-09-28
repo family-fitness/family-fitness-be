@@ -40,8 +40,8 @@ public class SessionCompletionPersistenceAdapter implements SessionCompletionRep
      * 행을 덮어쓸 수 있다. 내보내기는 Spring Data 프록시의 flush 를 거쳐 DataIntegrityViolationException 으로 번역된다.
      * <ul>
      *   <li>같은 칸 요청 둘이 동시에 오면 늦은 쪽이 기본 키에 걸린다(커밋 때가 아니라 여기서). 그대로 던진다 — 컨트롤러가 한 번 더 부른다.
-     *   <li>미션 외래 키에 걸리면 부르는 쪽이 미션을 읽은 뒤 보호자가 그 미션을 지워 커밋한 것이다(지우기는 미션 행을 FOR UPDATE 로
-     *       잠그고, 이 INSERT 의 외래 키 검사는 그 잠금을 기다렸다가 지워진 행을 본다). 서버 버그가 아니라 없는 미션이라 404 로 바꾼다.
+     *   <li>미션 외래 키에 걸리면 부르는 쪽이 미션을 읽은 뒤 그 미션이 지워진 것이다. 칸 끝은 미션 행을 먼저 잠그고 넣으므로(지우기와
+     *       같은 잠금) 보통은 생기지 않지만, 생기면 서버 버그가 아니라 없는 미션이라 404 로 바꾼다.
      * </ul>
      * 위반 뒤 트랜잭션은 롤백 전용이 되므로 예외로 끝낸다.
      */

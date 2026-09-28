@@ -9,6 +9,7 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.StartCoachRunCommand;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
 
@@ -32,10 +33,10 @@ public record StartCoachRunRequest(
         @Nullable FitnessFactor focusFactor,
         @Nullable Boolean withParent) {
 
-    /** minutes 도 minutesPerSession 도 없으면 400(IllegalArgumentException). 기본 분을 서버가 고르지 않는다. */
+    /** minutes 도 minutesPerSession 도 없으면 400(입력 오류라 {@link InvalidInputException}). 기본 분을 서버가 고르지 않는다. */
     StartCoachRunCommand toCommand() {
         Integer chosen = minutes != null ? minutes : minutesPerSession;
-        if (chosen == null) throw new IllegalArgumentException("minutes: 운동할 분(5~60)이 필요합니다");
+        if (chosen == null) throw new InvalidInputException("minutes: 운동할 분(5~60)이 필요합니다");
         return new StartCoachRunCommand(
                 Objects.requireNonNull(profileId),
                 Objects.requireNonNull(date),

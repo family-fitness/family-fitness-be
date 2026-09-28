@@ -48,6 +48,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Runs;
 import kr.ac.kookmin.familyfitness.coaching.support.Summaries;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
@@ -180,6 +181,9 @@ class CoachingFlowWebTest {
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(childId()))).willReturn(childSummary);
         given(familyAccess.requireSameFamilyAsProfile(any(), eq(parentId()))).willReturn(parentSummary);
         given(familyAccess.requireActingAs(family.childUser, childId())).willReturn(childSummary);
+        given(familyAccess.requireActingAs(family.parentUser, parentId())).willReturn(parentSummary);
+        // 아이는 계정이 있다 — 보호자 계정이 아이 이름으로 하지 못한다
+        given(familyAccess.requireActingAs(family.parentUser, childId())).willThrow(new CannotActAsProfileException());
         given(profileQuery.findSummary(childId())).willReturn(childSummary);
         given(profileQuery.findSummary(parentId())).willReturn(parentSummary);
         given(profileQuery.findDetails(childId())).willReturn(family.child);
@@ -442,8 +446,16 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.citations[0].excerpt").value("국민체력100 운동처방 · 유소년 11세"))
                 .andReturn();
         String conversationId = extract("\"conversationId\":\"([^\"]+)\"", chatResult);
+        // 계정 있는 아이 이름으로는 그 아이 계정만 묻는다 — 보호자 계정은 403
         mockMvc.perform(post("/api/v1/coach/chat")
                         .header(HttpHeaders.AUTHORIZATION, parent)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"profileId\":\"" + childId() + "\",\"conversationId\":\"" + conversationId
+                                + "\",\"question\":\"무릎 통증이 있어요\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        mockMvc.perform(post("/api/v1/coach/chat")
+                        .header(HttpHeaders.AUTHORIZATION, child)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"profileId\":\"" + childId() + "\",\"conversationId\":\"" + conversationId
                                 + "\",\"question\":\"무릎 통증이 있어요\"}"))
@@ -820,6 +832,39 @@ class CoachingFlowWebTest {
     }
 
     @Test
+    @DisplayName("승인한 코치 미션을 모두 지운 회차(APPROVED · 미션 0)는 latest 에서 건너뛴다 — 그 회차 단건 조회는 그대로다")
+    void 승인한_미션을_모두_지운_회차는_latest_에서_건너뛴다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        String runId =
+                extract("\"coachRunId\":\"([^\"]+)\"", startPlan(parent, planBody(childId(), time.today(), false)));
+        MvcResult approved = mockMvc.perform(
+                        post("/api/v1/coach/runs/" + runId + "/approve").header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andReturn();
+        String missionId = extract("\"missionId\":\"([^\"]+)\"", approved);
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest?profileId=" + childId())
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.coachRunId").value(runId))
+                .andExpect(jsonPath("$.missionCount").value(1));
+
+        mockMvc.perform(delete("/api/v1/missions/" + missionId).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest?profileId=" + childId())
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COACH_RUN_NOT_FOUND"));
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/coach/runs/latest")
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.missionCount").value(0));
+    }
+
+    @Test
     @DisplayName("(프로필, 날짜) 잠금은 DB 유니크 인덱스다 — 같은 키의 두 번째 RUNNING 은 들어가지 않고, 요청은 409 RUN_IN_PROGRESS")
     void 프로필_날짜_잠금은_DB_유니크_인덱스다() throws Exception {
         LocalDate tomorrow = time.today().plusDays(1);
@@ -1038,7 +1083,10 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.components.schemas.CreateMissionRequest.properties.title.maxLength")
                         .value(50))
                 .andExpect(jsonPath("$.components.schemas.CreateMissionRequest.properties.dates.maxItems")
-                        .value(28));
+                        .value(28))
+                // 칸 없는 분 목표 상한(360분, SA-11)도 설명에 실린다
+                .andExpect(jsonPath("$.components.schemas.CreateMissionRequest.properties.targetValue.description")
+                        .value(containsString("360")));
 
         // 지난 날짜 422 INVALID_DATE, 제목 51자 400 — 아무것도 저장하지 않는다
         postMission(parent, missionBody(today.minusDays(1), "TIMER_MINUTES", 1, oneSession))

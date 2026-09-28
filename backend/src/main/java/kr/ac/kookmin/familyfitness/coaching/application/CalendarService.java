@@ -54,6 +54,14 @@ public class CalendarService {
     /** 한 번에 받는 날 수 상한(양끝 포함). FE 요청서 3장 · ASKS 0-2. */
     public static final int MAX_DAYS = 42;
 
+    /**
+     * 받는 날짜의 범위(양끝 포함). LocalDate 형식만 맞으면 +999999999년도 들어와, 받은 스티커를 셀 때 끝날에 하루를 더하다 연도가
+     * 넘쳐 500 이 났다(SA-16). 사람 · 운동 기록이 있을 수 없는 날이라 400 으로 막는다.
+     */
+    static final LocalDate EARLIEST = LocalDate.of(1900, 1, 1);
+
+    static final LocalDate LATEST = LocalDate.of(2100, 12, 31);
+
     private static final Comparator<Mission> MISSION_ORDER = Comparator.comparing(Mission::getStartsOn)
             .thenComparing(Mission::getCreatedAt)
             .thenComparing(Mission::getId);
@@ -114,9 +122,14 @@ public class CalendarService {
     }
 
     private static void requireRange(LocalDate from, LocalDate to) {
+        if (outOfBounds(from) || outOfBounds(to)) throw new CalendarRangeException(from, to, EARLIEST, LATEST);
         if (to.isBefore(from) || ChronoUnit.DAYS.between(from, to) + 1 > MAX_DAYS) {
             throw new CalendarRangeException(from, to, MAX_DAYS);
         }
+    }
+
+    private static boolean outOfBounds(LocalDate date) {
+        return date.isBefore(EARLIEST) || date.isAfter(LATEST);
     }
 
     /**

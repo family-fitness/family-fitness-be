@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.Objects;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import org.jspecify.annotations.Nullable;
 
@@ -22,7 +23,11 @@ public record SessionClipRequest(
         @NotNull @Nullable Integer endSec,
         @Size(max = 120) @Nullable String title) {
 
+    /** 끝이 시작보다 뒤가 아니면 400(입력 오류라 {@link InvalidInputException}). */
     SessionClip toDomain() {
+        if (endSec != null && startSec != null && endSec <= startSec) {
+            throw new InvalidInputException("clip.endSec 는 clip.startSec 보다 뒤여야 합니다");
+        }
         return new SessionClip(
                 Objects.requireNonNull(videoId),
                 Objects.requireNonNull(startSec),

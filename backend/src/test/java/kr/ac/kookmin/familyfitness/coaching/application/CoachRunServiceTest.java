@@ -59,8 +59,8 @@ class CoachRunServiceTest {
     private final Family otherFamily = new Family();
     private final FakeIdentity identity = new FakeIdentity(family, otherFamily);
     private final FakeFitness fitness = new FakeFitness();
-    private final InMemoryCoachRunRepository runs = new InMemoryCoachRunRepository();
     private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+    private final InMemoryCoachRunRepository runs = new InMemoryCoachRunRepository(missions);
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
     private final List<Object> events = new ArrayList<>();
     private final CoachRunTimeLimit timeLimit = new CoachRunTimeLimit(1500, 40);
@@ -338,6 +338,30 @@ class CoachRunServiceTest {
     }
 
     @Test
+    @DisplayName("latest 는 승인한 미션을 모두 지운 실행(APPROVED · 미션 0)을 건너뛰고 그 앞 실행을 준다 — 그 실행의 단건 조회는 그대로")
+    void latest_는_미션을_모두_지운_승인_실행을_건너뛴다() {
+        UUID child = family.child.profileId();
+        UUID parent = family.parent.profileId();
+        CoachRun older = runs.save(Runs.awaiting(
+                family.familyId, child, Fixed.TODAY.plusDays(1), parent, Fixed.NOW.minusSeconds(120), proposals()));
+        CoachRun approved = runs.save(
+                Runs.awaiting(family.familyId, child, Fixed.TODAY, parent, Fixed.NOW.minusSeconds(60), proposals()));
+        ApproveCoachRunView view = service.approve(family.parentUser, approved.getId());
+        assertThat(service.latest(family.parentUser, family.familyId, child).coachRunId())
+                .isEqualTo(approved.getId());
+
+        missions.missions.remove(view.createdMissions().getFirst().missionId());
+
+        assertThat(service.latest(family.parentUser, family.familyId, child).coachRunId())
+                .isEqualTo(older.getId());
+        assertThat(service.latest(family.parentUser, family.familyId, null).coachRunId())
+                .isEqualTo(older.getId());
+        CoachRunView single = service.get(family.parentUser, approved.getId());
+        assertThat(single.status()).isEqualTo(CoachRunStatus.APPROVED);
+        assertThat(single.missionCount()).isZero();
+    }
+
+    @Test
     @DisplayName("latest 는 실행이 없으면 404 COACH_RUN_NOT_FOUND, 다른 가족 계정이면 403")
     void latest_는_없으면_404_다른_가족이면_403() {
         assertThat(assertThrows(
@@ -361,6 +385,27 @@ class CoachRunServiceTest {
         assertThat(e.getCode()).isEqualTo("CONSENT_REQUIRED");
         assertThat(runs.currentStatus(run.getId())).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
         assertThat(missions.missions).isEmpty();
+    }
+
+    @Test
+    @DisplayName("참여자 중 보호자 동의를 거둔 사람이 있으면 승인 대기여도 canApprove 는 false 다 — 눌러도 422 라 단추를 열지 않는다")
+    void 참여자_중_동의를_거둔_사람이_있으면_canApprove_는_false() {
+        CoachRun run = runs.save(Runs.awaiting(
+                family.familyId,
+                family.child.profileId(),
+                Fixed.TODAY,
+                family.parent.profileId(),
+                Fixed.NOW.minusSeconds(60),
+                proposals()));
+        assertThat(service.get(family.parentUser, run.getId()).canApprove()).isTrue();
+
+        family.withdrawConsent(family.child.profileId());
+
+        assertThat(service.get(family.parentUser, run.getId()).canApprove()).isFalse();
+        assertThat(service.latest(family.parentUser, family.familyId, family.child.profileId())
+                        .canApprove())
+                .isFalse();
+        assertThat(service.get(family.parentUser, run.getId()).status()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
     }
 
     @Test
