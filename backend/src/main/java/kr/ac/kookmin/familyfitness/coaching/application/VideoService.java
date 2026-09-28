@@ -15,6 +15,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.VideoInteractionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CursorPage;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.VerifiedBy;
@@ -61,10 +62,10 @@ public class VideoService {
     @Transactional(readOnly = true)
     public VideoListView list(UUID userId, VideoListQuery query) {
         if (query.size() < 1 || query.size() > MAX_PAGE_SIZE) {
-            throw new IllegalArgumentException("size 는 1~" + MAX_PAGE_SIZE + " 이어야 합니다");
+            throw new InvalidInputException("size 는 1~" + MAX_PAGE_SIZE + " 이어야 합니다");
         }
         if (query.list() != VideoListType.ALL && query.profileId() == null) {
-            throw new IllegalArgumentException(query.list() + " 목록에는 profileId 가 필요합니다");
+            throw new InvalidInputException(query.list() + " 목록에는 profileId 가 필요합니다");
         }
         if (query.profileId() != null) familyAccess.requireSameFamilyAsProfile(userId, query.profileId());
         Map<String, VideoInteraction> mine = new LinkedHashMap<>();
@@ -152,13 +153,14 @@ public class VideoService {
     /**
      * 진행률 보고. 최대값만 남기고, 최초로 0.9 이상이 되면 `activity_daily`(VIDEO) 에 영상 길이(분, 올림)를 1회 적립한다.
      * missionId 가 있으면 그 미션의 참여자 진행도도 갱신한다.
+     * 이 계정이 그 프로필 이름으로 할 수 있어야 한다(자기 프로필이거나, 보호자가 계정 없는 아이를 대신할 때 — 아니면 403, KP-04).
      * 보호자 동의가 없거나 거둔 프로필은 기록하지 않는다(422 CONSENT_REQUIRED).
      */
     @Transactional
     public VideoProgressView progress(UUID userId, String videoId, VideoProgressCommand command) {
         ExerciseVideo video = videos.findById(videoId);
         if (video == null) throw new VideoNotFoundException(videoId);
-        ParticipantConsent.require(familyAccess.requireSameFamilyAsProfile(userId, command.profileId()));
+        ParticipantConsent.require(familyAccess.requireActingAs(userId, command.profileId()));
         Instant now = time.now();
         VideoInteraction interaction = interactions.find(command.profileId(), videoId);
         if (interaction == null) {

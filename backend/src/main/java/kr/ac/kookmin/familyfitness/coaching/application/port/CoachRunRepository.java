@@ -63,13 +63,16 @@ public interface CoachRunRepository {
     @Nullable
     CoachRun findLatestOfWeek(UUID familyId, LocalDate weekStart);
 
-    /** 가족의 가장 최근 실행(상태와 상관없이). */
+    /**
+     * 가족의 가장 최근 실행(상태와 상관없이). 다만 APPROVED 인데 그 실행으로 만든 미션이 하나도 남지 않은 실행(보호자가 모두 지움)은
+     * 건너뛴다 — latest 에 보일 실행이다.
+     */
     @Nullable
-    CoachRun findLatestOfFamily(UUID familyId);
+    CoachRun findLatestShownOfFamily(UUID familyId);
 
-    /** 그 가족에서 이 프로필을 대상으로 짠 가장 최근 실행(상태와 상관없이). */
+    /** 그 가족에서 이 프로필을 대상으로 짠 가장 최근 실행. 건너뛰는 실행은 {@link #findLatestShownOfFamily} 와 같다. */
     @Nullable
-    CoachRun findLatestOfSubject(UUID familyId, UUID subjectProfileId);
+    CoachRun findLatestShownOfSubject(UUID familyId, UUID subjectProfileId);
 
     /**
      * 승인 결과를 조건부 UPDATE(`where status = 'AWAITING_APPROVAL'`) 한 문장으로 반영한다.

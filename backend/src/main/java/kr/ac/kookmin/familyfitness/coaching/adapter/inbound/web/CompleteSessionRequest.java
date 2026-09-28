@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import java.time.Instant;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionCompletion;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -14,6 +15,9 @@ import org.jspecify.annotations.Nullable;
  */
 public record CompleteSessionRequest(
         @NotNull @Nullable UUID profileId,
-        @NotNull @PositiveOrZero @Max(10_800) @Nullable Integer activeSeconds,
+
+        @NotNull @PositiveOrZero @Max(SessionCompletion.MAX_ACTIVE_SECONDS) @Nullable
+        Integer activeSeconds,
+
         @NotNull @Nullable Instant startedAt,
         @NotNull @Nullable Instant endedAt) {}

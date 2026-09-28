@@ -21,6 +21,9 @@ public record SessionCompletion(
         LocalDate completedOn,
         int activeSeconds,
         VerifiedBy verifiedBy) {
+    /** 칸 끝 한 번에 받는 재생 초 상한(180분). 옛 타이머 기록의 분 상한(180)과 같다. */
+    public static final int MAX_ACTIVE_SECONDS = 10_800;
+
     public SessionCompletion {
         if (position < 1) throw new IllegalArgumentException("칸 번호(position)는 1부터다");
         if (activeSeconds < 0) throw new IllegalArgumentException("인정한 초는 0 이상이어야 한다");

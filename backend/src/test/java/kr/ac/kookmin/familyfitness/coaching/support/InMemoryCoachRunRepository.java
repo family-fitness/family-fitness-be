@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
@@ -15,10 +16,20 @@ import org.jspecify.annotations.Nullable;
 /**
  * 애플리케이션 테스트용 인메모리 포트 구현. 도메인 객체를 그대로 보관한다(같은 인스턴스).
  * 조건부 UPDATE 는 저장된 상태 스냅샷으로 흉내 내고, (프로필, 날짜) 잠금은 저장된 RUNNING 의 대상 · 날짜로 흉내 낸다.
+ * latest 가 건너뛰는 실행(APPROVED 인데 미션이 없음)은 넘겨받은 미션 저장소로 판정한다 — 없으면 빈 미션 저장소를 본다.
  */
 public class InMemoryCoachRunRepository implements CoachRunRepository {
     public final ConcurrentHashMap<UUID, CoachRun> runs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, CoachRunStatus> persistedStatus = new ConcurrentHashMap<>();
+    private final MissionRepository missions;
+
+    public InMemoryCoachRunRepository() {
+        this(new InMemoryMissionRepository());
+    }
+
+    public InMemoryCoachRunRepository(MissionRepository missions) {
+        this.missions = missions;
+    }
 
     @Override
     public CoachRun save(CoachRun run) {
@@ -102,13 +113,20 @@ public class InMemoryCoachRunRepository implements CoachRunRepository {
     }
 
     @Override
-    public @Nullable CoachRun findLatestOfFamily(UUID familyId) {
-        return latest(it -> it.getFamilyId().equals(familyId));
+    public @Nullable CoachRun findLatestShownOfFamily(UUID familyId) {
+        return latest(shown().and(it -> it.getFamilyId().equals(familyId)));
     }
 
     @Override
-    public @Nullable CoachRun findLatestOfSubject(UUID familyId, UUID subjectProfileId) {
-        return latest(it -> it.getFamilyId().equals(familyId) && subjectProfileId.equals(it.getSubjectProfileId()));
+    public @Nullable CoachRun findLatestShownOfSubject(UUID familyId, UUID subjectProfileId) {
+        return latest(shown().and(
+                        it -> it.getFamilyId().equals(familyId) && subjectProfileId.equals(it.getSubjectProfileId())));
+    }
+
+    /** DB 쿼리처럼 APPROVED 인데 그 실행을 가리키는 미션이 없는 실행은 뺀다. */
+    private Predicate<CoachRun> shown() {
+        return it ->
+                persistedStatus.get(it.getId()) != CoachRunStatus.APPROVED || missions.countByCoachRun(it.getId()) > 0;
     }
 
     @Override

@@ -1,7 +1,9 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import static kr.ac.kookmin.familyfitness.coaching.application.RaceSteps.failureOf;
+import static kr.ac.kookmin.familyfitness.coaching.application.RaceSteps.race;
+import static kr.ac.kookmin.familyfitness.coaching.application.RaceSteps.resultOf;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -11,19 +13,15 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder;
+import kr.ac.kookmin.familyfitness.coaching.application.RaceSteps.Pause;
+import kr.ac.kookmin.familyfitness.coaching.application.RaceSteps.Race;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionFeedbackRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.SessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionAlreadyStartedException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionFeedback;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionFeel;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
@@ -50,20 +48,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 보호자의 미션 지우기가 같은 미션의 칸 끝 · 느낌과 겹칠 때 — 실제 DB 에 커밋하며 본다. H2 판과 PostgreSQL 판이 이 클래스를 잇는다.
+ * 같은 미션 행 잠금(SELECT … FOR UPDATE)을 두고 보호자의 미션 지우기 · 느낌 · 칸 끝이 겹칠 때 — 실제 DB 에 커밋하며 본다.
+ * H2 판과 PostgreSQL 판이 이 클래스를 잇는다. 세 요청 모두 미션 행을 맨 먼저 잠그므로 차례로 돌고, 서로를 기다리다 멈추지 않는다.
  *
- * <p>서비스는 실제 저장소 · 활동 · 경험치 빈으로 손으로 조립하고 identity 만 목으로 바꾼다. 저장소 하나를 감싸 정한 자리에서 다른
- * 요청을 끼우거나({@link #otherRequest}) 한 요청을 멈춰 세운다({@link Pause}). 멈춘 동안 그 요청의 트랜잭션 · 잠금은 그대로다.
- * 모든 행을 커밋하므로 끝나면 이 가족의 행을 지운다.
+ * <p>서비스는 실제 저장소 · 활동 · 경험치 빈으로 손으로 조립하고 identity 만 목으로 바꾼다. 저장소 하나를 감싸 정한 자리에서 한 요청을
+ * 멈춰 세운다({@link Pause}). 멈춘 동안 그 요청의 트랜잭션 · 잠금은 그대로다. 모든 행을 커밋하므로 끝나면 이 가족의 행을 지운다.
  */
 abstract class MissionDeletionRaceTestBase {
-    /** 멈춘 요청 뒤에 보낸 요청이 잠금 앞까지 가도록 잠깐 둔다. H2 잠금 대기 기본값(2초)보다 짧아야 한다. */
-    private static final long SETTLE_MILLIS = 300;
-
     @Autowired
     MissionRepository missions;
 
@@ -166,17 +160,42 @@ abstract class MissionDeletionRaceTestBase {
     }
 
     @Test
-    @DisplayName("칸 끝 행을 넣기 직전에 보호자의 지우기가 커밋되면 칸 끝은 404 MISSION_NOT_FOUND — 칸 끝 · 활동 기록이 남지 않는다")
-    void 칸_끝을_넣기_직전에_지우기가_커밋되면_404() {
-        SessionCompletionService completing = completion(new HookedCompletions(
-                completions, () -> otherRequest(() -> deletion(feedbacks).delete(momUser, missionId)), () -> {}));
+    @DisplayName("지우기가 미션 행을 잡고 있는 동안 온 칸 끝은 미션을 읽다가 기다렸다가 404 — 지우기는 끝까지 가고 칸 끝 · 활동 기록이 남지 않는다")
+    void 지우기가_잡고_있는_동안_온_칸_끝은_기다렸다가_404() throws InterruptedException {
+        Pause pause = new Pause();
+        MissionDeletionService deleting = deletion(new PausedFeedbacks(feedbacks, pause));
+        SessionCompletionService completing = completion(completions);
 
-        assertThatThrownBy(() -> tx().execute(status -> completing.complete(momUser, missionId, 1, oneMinute())))
-                .isInstanceOf(MissionNotFoundException.class);
+        Race<Void, SessionCompletedView> race = race(
+                pause,
+                run(() -> deleting.delete(momUser, missionId)),
+                call(() -> completing.complete(momUser, missionId, 1, oneMinute())));
 
+        resultOf(race.first());
+        assertThat(failureOf(race.second())).isInstanceOf(MissionNotFoundException.class);
         assertThat(rowsOf("missions", "id")).isZero();
         assertThat(rowsOf("mission_session_completions", "mission_id")).isZero();
         assertThat(activeSecondsOfKid()).isZero();
+    }
+
+    @Test
+    @DisplayName("칸 끝이 먼저 미션 행을 잡았으면, 지우기는 그 트랜잭션이 끝나길 기다렸다가 409 MISSION_ALREADY_STARTED")
+    void 칸_끝이_먼저_잡았으면_지우기는_기다렸다가_409() throws InterruptedException {
+        Pause pause = new Pause();
+        SessionCompletionService completing = completion(new HookedCompletions(completions, pause::hold));
+        MissionDeletionService deleting = deletion(feedbacks);
+
+        Race<SessionCompletedView, Void> race = race(
+                pause,
+                call(() -> completing.complete(momUser, missionId, 1, oneMinute())),
+                run(() -> deleting.delete(momUser, missionId)));
+
+        SessionCompletedView done = resultOf(race.first());
+        assertThat(done).isNotNull();
+        assertThat(done.missionCompleted()).isTrue();
+        assertThat(failureOf(race.second())).isInstanceOf(MissionAlreadyStartedException.class);
+        assertThat(rowsOf("missions", "id")).isOne();
+        assertThat(rowsOf("mission_session_completions", "mission_id")).isOne();
     }
 
     @Test
@@ -198,6 +217,47 @@ abstract class MissionDeletionRaceTestBase {
         assertThat(rowsOf("mission_feedback", "mission_id")).isZero();
     }
 
+    @Test
+    @DisplayName("칸 끝이 미션 행을 잡고 있는 동안 온 느낌은 기다렸다가 저장된다 — 서로를 기다리다 멈추지 않는다")
+    void 칸_끝이_잡고_있는_동안_온_느낌은_기다렸다가_저장된다() throws InterruptedException {
+        Pause pause = new Pause();
+        SessionCompletionService completing = completion(new HookedCompletions(completions, pause::hold));
+        MissionFeedbackService sending = new MissionFeedbackService(missions, feedbacks, familyAccess, time);
+
+        Race<SessionCompletedView, Void> race = race(
+                pause,
+                call(() -> completing.complete(momUser, missionId, 1, oneMinute())),
+                run(() -> sending.send(momUser, missionId, new MissionFeedbackCommand(kidId, MissionFeel.GOOD))));
+
+        SessionCompletedView done = resultOf(race.first());
+        assertThat(done).isNotNull();
+        assertThat(done.missionCompleted()).isTrue();
+        resultOf(race.second());
+        assertThat(rowsOf("mission_session_completions", "mission_id")).isOne();
+        assertThat(rowsOf("mission_feedback", "mission_id")).isOne();
+    }
+
+    @Test
+    @DisplayName("느낌이 미션 행을 잡고 있는 동안 온 칸 끝은 기다렸다가 끝난다 — 서로를 기다리다 멈추지 않는다")
+    void 느낌이_잡고_있는_동안_온_칸_끝은_기다렸다가_끝난다() throws InterruptedException {
+        Pause pause = new Pause();
+        MissionFeedbackService sending =
+                new MissionFeedbackService(missions, new PausedFeedbacks(feedbacks, pause), familyAccess, time);
+        SessionCompletionService completing = completion(completions);
+
+        Race<Void, SessionCompletedView> race = race(
+                pause,
+                run(() -> sending.send(momUser, missionId, new MissionFeedbackCommand(kidId, MissionFeel.HARD))),
+                call(() -> completing.complete(momUser, missionId, 1, oneMinute())));
+
+        resultOf(race.first());
+        SessionCompletedView done = resultOf(race.second());
+        assertThat(done).isNotNull();
+        assertThat(done.missionCompleted()).isTrue();
+        assertThat(rowsOf("mission_feedback", "mission_id")).isOne();
+        assertThat(rowsOf("mission_session_completions", "mission_id")).isOne();
+    }
+
     SessionCompletionService completion(SessionCompletionRepository completionRepository) {
         return new SessionCompletionService(
                 missions, completionRepository, familyAccess, profiles, activity, progress, policy, events, time);
@@ -215,13 +275,6 @@ abstract class MissionDeletionRaceTestBase {
 
     TransactionTemplate tx() {
         return new TransactionTemplate(transactionManager);
-    }
-
-    /** 다른 요청 — 지금 트랜잭션을 잠시 내려놓고 새 트랜잭션에서 커밋한다. */
-    void otherRequest(Runnable work) {
-        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
-        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        requiresNew.executeWithoutResult(status -> work.run());
     }
 
     /** 한 트랜잭션에서 돌리고 커밋한다. */
@@ -250,69 +303,8 @@ abstract class MissionDeletionRaceTestBase {
         return seconds == null ? 0 : seconds;
     }
 
-    record Race<A, B>(Future<A> first, Future<B> second) {}
-
-    /**
-     * {@code first} 를 돌려 {@code pause} 에서 멈추게 한 뒤 {@code second} 를 돌린다. {@code second} 가 잠금 앞까지 가도록 잠깐 두고
-     * {@code first} 를 풀어 준다. 둘 다 끝난 뒤 돌려준다. 잠깐 두는 시간은 결과를 가르지 않는다 — {@code second} 가 늦게 닿으면
-     * {@code first} 가 먼저 커밋한 뒤라 잠금을 기다린 때와 결과가 같다.
-     */
-    static <A, B> Race<A, B> race(Pause pause, Callable<A> first, Callable<B> second) throws InterruptedException {
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<A> firstDone = pool.submit(first);
-            pause.awaitReached();
-            Future<B> secondDone = pool.submit(second);
-            try {
-                secondDone.get(SETTLE_MILLIS, TimeUnit.MILLISECONDS);
-            } catch (ExecutionException | TimeoutException e) {
-                // 잠금을 기다리는 중이거나 이미 끝났다. 어느 쪽이든 결과는 아래 호출한 쪽이 Future 로 본다.
-            } finally {
-                pause.release();
-            }
-            return new Race<>(firstDone, secondDone);
-        }
-    }
-
-    static <T> @Nullable T resultOf(Future<T> future) {
-        if (future.state() == Future.State.FAILED) throw new AssertionError("성공해야 했다", future.exceptionNow());
-        return future.resultNow();
-    }
-
-    static Throwable failureOf(Future<?> future) {
-        if (future.state() != Future.State.FAILED) throw new AssertionError("실패해야 했다: " + future.state());
-        return future.exceptionNow();
-    }
-
-    /** 한 요청을 정한 자리에서 멈춰 세운다. 멈춘 동안 그 요청의 트랜잭션 · 잠금은 그대로다. */
-    static final class Pause {
-        private final CountDownLatch reached = new CountDownLatch(1);
-        private final CountDownLatch released = new CountDownLatch(1);
-
-        void hold() {
-            reached.countDown();
-            await(released, "풀어 주지 않았습니다");
-        }
-
-        void awaitReached() {
-            await(reached, "멈출 자리까지 오지 않았습니다");
-        }
-
-        void release() {
-            released.countDown();
-        }
-
-        private static void await(CountDownLatch latch, String timeoutMessage) {
-            try {
-                if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException(timeoutMessage);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(e);
-            }
-        }
-    }
-
-    /** 칸 끝 저장소를 감싸 넣기 바로 앞 · 뒤에 할 일을 끼운다. */
-    record HookedCompletions(SessionCompletionRepository delegate, Runnable beforeInsert, Runnable afterInsert)
+    /** 칸 끝 저장소를 감싸 칸 끝 행을 넣은 바로 뒤에 할 일을 끼운다. 이때 칸 끝은 미션 행을 잠근 채다. */
+    record HookedCompletions(SessionCompletionRepository delegate, Runnable afterInsert)
             implements SessionCompletionRepository {
         @Override
         public @Nullable SessionCompletion find(UUID missionId, int position, UUID profileId) {
@@ -321,7 +313,6 @@ abstract class MissionDeletionRaceTestBase {
 
         @Override
         public void insert(SessionCompletion completion) {
-            beforeInsert.run();
             delegate.insert(completion);
             afterInsert.run();
         }
@@ -338,13 +329,14 @@ abstract class MissionDeletionRaceTestBase {
     }
 
     /**
-     * 느낌 저장소를 감싸, 지우기가 느낌을 지운 뒤 · 참여자를 지우기 전에 멈춘다. 이때 지우기는 미션 행을 잠근 채다. 느낌이 잠그지 않던
-     * 때는 이 틈에 느낌이 들어가 커밋되고, 풀린 지우기가 참여자 행에서 외래 키에 걸렸다.
+     * 느낌 저장소를 감싸 미션 행을 잠근 채 멈춘다 — 지우기는 느낌을 지운 뒤 · 참여자를 지우기 전에, 느낌 보내기는 느낌을 넣은 뒤에.
+     * 느낌이 잠그지 않던 때는 지우기의 이 틈에 느낌이 들어가 커밋되고, 풀린 지우기가 참여자 행에서 외래 키에 걸렸다.
      */
     record PausedFeedbacks(MissionFeedbackRepository delegate, Pause pause) implements MissionFeedbackRepository {
         @Override
         public void upsert(MissionFeedback feedback) {
             delegate.upsert(feedback);
+            pause.hold();
         }
 
         @Override

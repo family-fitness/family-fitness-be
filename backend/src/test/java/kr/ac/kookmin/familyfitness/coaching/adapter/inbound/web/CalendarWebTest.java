@@ -264,6 +264,10 @@ class CalendarWebTest {
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
         calendar(momUser, kidId, today, today.minusDays(1)).andExpect(status().isBadRequest());
         calendar(momUser, kidId, today.minusDays(41), today).andExpect(status().isOk());
+        // 날을 더하면 연도가 넘치는 값(+999999999년) — 500 이 아니라 400
+        calendar(momUser, kidId, LocalDate.of(999_999_999, 12, 1), LocalDate.MAX)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
         mvc.perform(get("/api/v1/families/" + familyId + "/calendar")
                         .param("from", today.toString())
                         .param("to", today.toString())
