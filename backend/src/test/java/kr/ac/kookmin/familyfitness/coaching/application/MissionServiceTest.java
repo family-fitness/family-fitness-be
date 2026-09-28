@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
+import kr.ac.kookmin.familyfitness.coaching.api.MissionCreated;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidMetricException;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidMissionDateException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
@@ -53,8 +57,9 @@ class MissionServiceTest {
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
     private final MissionCompletionPolicy policy =
             new MissionCompletionPolicy(activity, interactions, missions, completions);
+    private final List<Object> events = new ArrayList<>();
     private final MissionService service =
-            new MissionService(missions, completions, videos, identity, identity, policy, Fixed.time());
+            new MissionService(missions, completions, videos, identity, identity, policy, events::add, Fixed.time());
     private final MissionActivityService activityService =
             new MissionActivityService(missions, identity, activity, activity, policy, Fixed.time());
 
@@ -72,13 +77,7 @@ class MissionServiceTest {
                 family.parentUser,
                 family.familyId,
                 new CreateMissionCommand(
-                        "함께 운동",
-                        Fixed.WEEK_START,
-                        Fixed.WEEK_START.plusDays(6),
-                        metric,
-                        target,
-                        videoId,
-                        participants));
+                        "함께 운동", Fixed.TODAY, Fixed.WEEK_START.plusDays(6), metric, target, videoId, participants));
     }
 
     @Test
@@ -279,18 +278,7 @@ class MissionServiceTest {
         UUID familyWide = create(
                         TargetMetric.STEPS, 100, List.of(family.child.profileId(), family.parent.profileId()), null)
                 .missionId();
-        UUID expired = service.create(
-                        family.parentUser,
-                        family.familyId,
-                        new CreateMissionCommand(
-                                "지난 미션",
-                                Fixed.WEEK_START.minusDays(7),
-                                Fixed.WEEK_START.minusDays(1),
-                                TargetMetric.STEPS,
-                                100,
-                                null,
-                                List.of(family.child.profileId())))
-                .missionId();
+        UUID expired = pastMission(TargetMetric.STEPS, 100, family.child.profileId());
         activity.addActiveMinutes(family.child.profileId(), Fixed.TODAY, ActivitySource.VIDEO, 30);
 
         MissionListView all = service.list(family.childUser, family.familyId, MissionScope.ALL, null);
@@ -392,8 +380,8 @@ class MissionServiceTest {
                         .toList();
             }
         };
-        MissionService guarded =
-                new MissionService(missions, completions, videos, withdrawn, withdrawn, policy, Fixed.time());
+        MissionService guarded = new MissionService(
+                missions, completions, videos, withdrawn, withdrawn, policy, events::add, Fixed.time());
         CreateMissionCommand withChild = new CreateMissionCommand(
                 "함께 운동",
                 Fixed.TODAY,
@@ -445,18 +433,7 @@ class MissionServiceTest {
     void 목록은_끝난_미션과_완료된_참여자를_다시_세지_않는다() {
         UUID child = family.child.profileId();
         UUID parent = family.parent.profileId();
-        UUID ended = service.create(
-                        family.parentUser,
-                        family.familyId,
-                        new CreateMissionCommand(
-                                "지난 미션",
-                                Fixed.WEEK_START.minusDays(7),
-                                Fixed.WEEK_START.minusDays(1),
-                                TargetMetric.TIMER_MINUTES,
-                                30,
-                                null,
-                                List.of(child)))
-                .missionId();
+        UUID ended = pastMission(TargetMetric.TIMER_MINUTES, 30, child);
         UUID current = create(TargetMetric.TIMER_MINUTES, 30, List.of(child, parent), null)
                 .missionId();
         activity.addActiveMinutes(child, Fixed.WEEK_START.minusDays(3), ActivitySource.VIDEO, 30); // 지난 미션을 채울 만큼
@@ -519,6 +496,119 @@ class MissionServiceTest {
                         .participantOf(family.child.profileId())
                         .isCompleted())
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("시작일이 오늘(KST)보다 앞이면 422 INVALID_DATE 이고 미션도 이벤트도 생기지 않는다 — 오늘은 받는다")
+    void 지난_날짜로_만들면_INVALID_DATE() {
+        InvalidMissionDateException e = assertThrows(
+                InvalidMissionDateException.class,
+                () -> service.create(family.parentUser, family.familyId, on(Fixed.TODAY.minusDays(1))));
+
+        assertThat(e.getCode()).isEqualTo("INVALID_DATE");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.RULE_VIOLATION);
+        assertThat(missions.missions).isEmpty();
+        assertThat(events).isEmpty();
+
+        MissionCreatedView created = service.create(family.parentUser, family.familyId, on(Fixed.TODAY));
+        assertThat(missions.findById(created.missionId()).getStartsOn()).isEqualTo(Fixed.TODAY);
+    }
+
+    @Test
+    @DisplayName("만들면 미션마다 MissionCreated 를 낸다 — 참여자 전원 · 기간 · 만든 시각")
+    void 만들면_MissionCreated_를_낸다() {
+        MissionCreatedView created = create(
+                TargetMetric.TIMER_MINUTES, 30, List.of(family.child.profileId(), family.parent.profileId()), null);
+
+        assertThat(events)
+                .containsExactly(new MissionCreated(
+                        created.missionId(),
+                        family.familyId,
+                        "함께 운동",
+                        Fixed.TODAY,
+                        Fixed.WEEK_START.plusDays(6),
+                        List.of(family.child.profileId(), family.parent.profileId()),
+                        Fixed.NOW));
+        assertThat(created.missions())
+                .containsExactly(new MissionPeriodView(created.missionId(), Fixed.TODAY, Fixed.WEEK_START.plusDays(6)));
+    }
+
+    @Test
+    @DisplayName("여러 날 만들기는 날마다 한 건씩 만들고 이벤트도 한 건씩 낸다 — 맨 위 missionId 는 첫 날 것이다")
+    void 여러_날_만들기는_날마다_한_건씩_만든다() {
+        MissionCreatedView created = service.createAll(
+                family.parentUser, family.familyId, List.of(on(Fixed.TODAY), on(Fixed.TODAY.plusDays(2))));
+
+        assertThat(created.missions())
+                .extracting(MissionPeriodView::startDate)
+                .containsExactly(Fixed.TODAY, Fixed.TODAY.plusDays(2));
+        assertThat(created.missions()).allMatch(it -> it.startDate().equals(it.endDate()));
+        assertThat(created.missionId()).isEqualTo(created.missions().getFirst().missionId());
+        assertThat(missions.missions).hasSize(2);
+        assertThat(events).hasSize(2).allMatch(MissionCreated.class::isInstance);
+    }
+
+    @Test
+    @DisplayName("여러 날 중 하나라도 틀리면(지난 날 · 없는 영상 · 칸 합 불일치) 아무것도 만들지 않고 이벤트도 없다")
+    void 여러_날_중_하나라도_틀리면_아무것도_만들지_않는다() {
+        assertThat(assertThrows(
+                                InvalidMissionDateException.class,
+                                () -> service.createAll(
+                                        family.parentUser,
+                                        family.familyId,
+                                        List.of(on(Fixed.TODAY.plusDays(1)), on(Fixed.TODAY.minusDays(1)))))
+                        .getCode())
+                .isEqualTo("INVALID_DATE");
+        CreateMissionCommand badSessions = new CreateMissionCommand(
+                "함께 운동",
+                Fixed.TODAY.plusDays(3),
+                Fixed.TODAY.plusDays(3),
+                TargetMetric.TIMER_MINUTES,
+                99,
+                null,
+                List.of(family.child.profileId()),
+                List.of(new MissionSession(1, SessionPhase.MAIN, "제자리 걷기", null, 3, null)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.createAll(family.parentUser, family.familyId, List.of(on(Fixed.TODAY), badSessions)));
+        CreateMissionCommand unknownVideo = new CreateMissionCommand(
+                "함께 운동",
+                Fixed.TODAY.plusDays(4),
+                Fixed.TODAY.plusDays(4),
+                TargetMetric.TIMER_MINUTES,
+                10,
+                "nope",
+                List.of(family.child.profileId()));
+        assertThrows(
+                VideoNotFoundException.class,
+                () -> service.createAll(family.parentUser, family.familyId, List.of(on(Fixed.TODAY), unknownVideo)));
+
+        assertThat(missions.missions).isEmpty();
+        assertThat(events).isEmpty();
+    }
+
+    /** 그날 하루짜리 10분 타이머 미션(아이 한 명). */
+    private CreateMissionCommand on(LocalDate day) {
+        return new CreateMissionCommand(
+                "함께 운동", day, day, TargetMetric.TIMER_MINUTES, 10, null, List.of(family.child.profileId()));
+    }
+
+    /** 지난주 미션. 직접 만들기는 지난 날짜를 막으므로(422 INVALID_DATE) 저장소에 바로 넣는다. */
+    private UUID pastMission(TargetMetric metric, int target, UUID participant) {
+        return missions.save(Mission.manual(
+                        UUID.randomUUID(),
+                        family.familyId,
+                        "지난 미션",
+                        metric,
+                        target,
+                        null,
+                        Fixed.WEEK_START.minusDays(7),
+                        Fixed.WEEK_START.minusDays(1),
+                        List.of(participant),
+                        List.of(),
+                        family.parent.profileId(),
+                        Fixed.NOW.minusSeconds(8 * 24 * 3600)))
+                .getId();
     }
 
     private static MissionParticipantView participant(MissionListView view, UUID missionId, UUID profileId) {

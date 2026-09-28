@@ -462,4 +462,41 @@ class MissionTest {
         assertThat(mission(TargetMetric.TIMER_MINUTES, 10, List.of(childId)).companionsOf(parents))
                 .isEmpty();
     }
+
+    @Test
+    @DisplayName("지난 날짜 검사: 오늘(KST)보다 앞선 시작일만 422 INVALID_DATE — 오늘 · 앞날은 받는다")
+    void 지난_날짜만_INVALID_DATE() {
+        LocalDate today = LocalDate.of(2026, 9, 9);
+
+        InvalidMissionDateException e = assertThrows(
+                InvalidMissionDateException.class, () -> Mission.requireNotPast(today.minusDays(1), today));
+
+        assertThat(e.getCode()).isEqualTo("INVALID_DATE");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.RULE_VIOLATION);
+        Mission.requireNotPast(today, today);
+        Mission.requireNotPast(today.plusDays(27), today);
+    }
+
+    @Test
+    @DisplayName("지울 수 있는가: 끝난 미션은 MISSION_ENDED 가 먼저, 칸 끝 기록이나 완료 참여자가 있으면 MISSION_ALREADY_STARTED")
+    void 지울_수_있는가() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30); // 9/7 ~ 9/13
+        MissionCompletions done = MissionCompletions.of(List.of(
+                new SessionCompletion(m.getId(), 1, childId, at, monday.plusDays(2), 60, VerifiedBy.VIDEO_PROGRESS)));
+
+        m.requireCancellableOn(monday.plusDays(6), MissionCompletions.none());
+        assertThat(assertThrows(MissionEndedException.class, () -> m.requireCancellableOn(monday.plusDays(7), done))
+                        .getCode())
+                .isEqualTo("MISSION_ENDED");
+        assertThat(assertThrows(
+                                MissionAlreadyStartedException.class,
+                                () -> m.requireCancellableOn(monday.plusDays(2), done))
+                        .getCode())
+                .isEqualTo("MISSION_ALREADY_STARTED");
+
+        m.recordProgress(childId, MissionProgress.of(30, 30, VerifiedBy.TIMER), at);
+        assertThrows(
+                MissionAlreadyStartedException.class,
+                () -> m.requireCancellableOn(monday.plusDays(2), MissionCompletions.none()));
+    }
 }

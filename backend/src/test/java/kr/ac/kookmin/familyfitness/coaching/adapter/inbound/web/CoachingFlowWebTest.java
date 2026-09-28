@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -1020,6 +1021,128 @@ class CoachingFlowWebTest {
                         .content(missionBody(today, "TIMER_MINUTES", 5, sessions)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.error.code").value("CONSENT_REQUIRED"));
+    }
+
+    @Test
+    @DisplayName(
+            "미션 날짜 규칙과 지우기 · 느낌 — 지난 날짜 422 · 제목 51자 400 · dates[] 한 트랜잭션 · DELETE 204/403/409 · feedback 204 덮어쓰기")
+    void 미션_날짜_규칙과_지우기_느낌() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        String child = auth.bearer(family.childUser);
+        LocalDate today = time.today();
+        String oneSession = "[" + sessionJson(1, 1, "IdpXx2gm90o", 0, 10) + "]";
+
+        // 제목 상한 · 여러 날 상한이 Swagger(OpenAPI) 문서에 실린다(MS-15)
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.schemas.CreateMissionRequest.properties.title.maxLength")
+                        .value(50))
+                .andExpect(jsonPath("$.components.schemas.CreateMissionRequest.properties.dates.maxItems")
+                        .value(28));
+
+        // 지난 날짜 422 INVALID_DATE, 제목 51자 400 — 아무것도 저장하지 않는다
+        postMission(parent, missionBody(today.minusDays(1), "TIMER_MINUTES", 1, oneSession))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("INVALID_DATE"));
+        postMission(parent, missionBody(today, "TIMER_MINUTES", 1, oneSession).replace("거북이 스트레칭", "가".repeat(51)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+
+        // dates[]: 같은 날은 한 번, 날짜 차례로 하루짜리 한 건씩. 맨 위 missionId 는 첫 날 것
+        MvcResult multi = postMission(parent, datesBody("", today.plusDays(2), today, today))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.missions", hasSize(2)))
+                .andExpect(jsonPath("$.missions[0].startDate").value(today.toString()))
+                .andExpect(jsonPath("$.missions[0].endDate").value(today.toString()))
+                .andExpect(jsonPath("$.missions[1].startDate")
+                        .value(today.plusDays(2).toString()))
+                .andExpect(jsonPath("$.missions[1].endDate")
+                        .value(today.plusDays(2).toString()))
+                .andReturn();
+        String first = extract("\"missions\":\\[\\{\"missionId\":\"([^\"]+)\"", multi);
+        assertThat(extract("^\\{\"missionId\":\"([^\"]+)\"", multi)).isEqualTo(first);
+        assertThat(missionCount()).isEqualTo(2);
+
+        // 하나라도 지난 날이면 422 이고 앞날도 만들지 않는다. 날짜 칸을 섞거나 29일이면 400
+        postMission(parent, datesBody("", today.plusDays(1), today.minusDays(1)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("INVALID_DATE"));
+        postMission(parent, datesBody("\"startDate\":\"" + today + "\",", today))
+                .andExpect(status().isBadRequest());
+        postMission(
+                        parent,
+                        datesBody(
+                                "",
+                                IntStream.range(0, 29).mapToObj(today::plusDays).toArray(LocalDate[]::new)))
+                .andExpect(status().isBadRequest());
+        assertThat(missionCount()).isEqualTo(2);
+
+        // 느낌: 참여자(아이)가 보내면 204, 다시 보내면 덮어쓴다. 모르는 느낌은 400
+        postFeedback(child, first, "HARD").andExpect(status().isNoContent());
+        postFeedback(child, first, "GOOD").andExpect(status().isNoContent());
+        postFeedback(child, first, "SO_SO").andExpect(status().isBadRequest());
+        assertThat(jdbc.sql("select feel from mission_feedback where mission_id = ?")
+                        .param(UUID.fromString(first))
+                        .query(String.class)
+                        .list())
+                .containsExactly("GOOD");
+
+        // 지우기: 자녀 계정 403, 보호자 204 — 참여자 · 칸 · 느낌 행도 같이 지워지고 단건은 404
+        mockMvc.perform(delete("/api/v1/missions/" + first).header(HttpHeaders.AUTHORIZATION, child))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARENT"));
+        mockMvc.perform(delete("/api/v1/missions/" + first).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/missions/" + first).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isNotFound());
+        for (String table : List.of("mission_participants", "mission_sessions", "mission_feedback")) {
+            assertThat(jdbc.sql("select count(*) from " + table + " where mission_id = ?")
+                            .param(UUID.fromString(first))
+                            .query(Integer.class)
+                            .single())
+                    .isZero();
+        }
+
+        // 아이가 칸을 끝낸 오늘 미션은 409 MISSION_ALREADY_STARTED
+        String started = extract(
+                "\"missionId\":\"([^\"]+)\"",
+                postMission(parent, missionBody(today, "TIMER_MINUTES", 1, oneSession))
+                        .andExpect(status().isCreated())
+                        .andReturn());
+        completeSession(child, started, 1, 60).andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/missions/" + started).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("MISSION_ALREADY_STARTED"));
+    }
+
+    private ResultActions postMission(String bearer, String body) throws Exception {
+        return mockMvc.perform(post("/api/v1/families/" + familyId() + "/missions")
+                .header(HttpHeaders.AUTHORIZATION, bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
+    private ResultActions postFeedback(String bearer, String missionId, String feel) throws Exception {
+        return mockMvc.perform(post("/api/v1/missions/" + missionId + "/feedback")
+                .header(HttpHeaders.AUTHORIZATION, bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"profileId\":\"" + childId() + "\",\"feel\":\"" + feel + "\"}"));
+    }
+
+    /** dates[] 로 보내는 1분 한 칸 미션. {@code extra} 는 그대로 끼워 넣는 칸(예: startDate). */
+    private String datesBody(String extra, LocalDate... days) {
+        String dates =
+                java.util.Arrays.stream(days).map(it -> "\"" + it + "\"").collect(Collectors.joining(",", "[", "]"));
+        return "{\"title\":\"거북이 스트레칭\"," + extra + "\"dates\":" + dates
+                + ",\"targetMetric\":\"TIMER_MINUTES\",\"targetValue\":1,\"participantProfileIds\":[\"" + childId()
+                + "\"],\"sessions\":[" + sessionJson(1, 1, "IdpXx2gm90o", 0, 10) + "]}";
+    }
+
+    private int missionCount() {
+        return jdbc.sql("select count(*) from missions where family_id = ?")
+                .param(familyId())
+                .query(Integer.class)
+                .single();
     }
 
     private String missionBody(LocalDate day, String metric, int targetValue, String sessionsJson) {

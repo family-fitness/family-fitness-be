@@ -132,6 +132,11 @@ public class Mission {
         return participants;
     }
 
+    /** 참여자 프로필 id, 저장된 차례. */
+    public List<UUID> participantProfileIds() {
+        return participants.stream().map(MissionParticipant::getProfileId).toList();
+    }
+
     /** position 차례의 칸. 칸 없는 미션은 빈 목록이다. */
     public List<MissionSession> getSessions() {
         return sessions;
@@ -228,6 +233,28 @@ public class Mission {
     }
 
     /**
+     * 직접 만들기 · 여러 날 만들기의 날짜 검사(결정 40 · 46). 시작일이 오늘(KST)보다 앞이면 422 INVALID_DATE.
+     * 오늘은 받는다. endDate ≥ startDate 는 생성자가 따로 본다.
+     */
+    public static void requireNotPast(LocalDate startsOn, LocalDate today) {
+        if (startsOn.isBefore(today)) throw new InvalidMissionDateException(startsOn, today);
+    }
+
+    /**
+     * 지울 수 있는 미션인가(결정 40). 차례:
+     * <ol>
+     *   <li>기간이 끝났으면(endDate &lt; 오늘 KST) 409 MISSION_ENDED — 지난 미션은 리그 · 달력 기록이다
+     *   <li>누군가 칸을 끝냈거나(칸 끝 행) 참여자가 완료됐으면(옛 타이머 · 걸음수 · 영상 경로) 409 MISSION_ALREADY_STARTED
+     * </ol>
+     * 진행도가 0 보다 크기만 한 참여자는 막지 않는다 — 칸 없는 옛 타이머 미션의 진행도는 그 기간의 다른 활동 합이라 이 미션을 했다는 뜻이 아니다.
+     */
+    public void requireCancellableOn(LocalDate today, MissionCompletions done) {
+        if (today.isAfter(endsOn)) throw new MissionEndedException(id, endsOn, today);
+        boolean anyCompleted = participants.stream().anyMatch(MissionParticipant::isCompleted);
+        if (!done.isEmpty() || anyCompleted) throw new MissionAlreadyStartedException(id);
+    }
+
+    /**
      * 부모가 직접 만든 미션. 칸이 있으면 목표는 분(TIMER_MINUTES)이고 {@code targetValue} 가 칸 시간의 합과 같아야 한다 —
      * 다르면 고쳐 넣지 않고 거부한다. 칸은 보낸 position 차례 그대로 두고 단계로 다시 세우지 않는다.
      */
@@ -312,8 +339,8 @@ public class Mission {
                 item.targetValue(),
                 video == null ? null : new MissionVideo(video.videoId(), video.startSec()),
                 item.rationale(),
-                item.startsOn() == null ? run.getWeekStart() : item.startsOn(),
-                item.endsOn() == null ? run.getWeekEnd() : item.endsOn(),
+                run.startsOnOf(item),
+                run.endsOnOf(item),
                 createdBy,
                 at,
                 participants,

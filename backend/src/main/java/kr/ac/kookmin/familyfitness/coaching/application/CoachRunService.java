@@ -27,6 +27,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.NoMeasuredMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
+import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
@@ -131,7 +132,7 @@ public class CoachRunService {
         CoachRun run = runs.findById(runId);
         if (run == null) throw new CoachRunNotFoundException(runId);
         ProfileSummary caller = familyAccess.requireMember(userId, run.getFamilyId());
-        return toView(run, run.isAwaitingApproval() && caller.isParent());
+        return toView(run, canApprove(run, caller));
     }
 
     /**
@@ -144,13 +145,15 @@ public class CoachRunService {
         CoachRun run =
                 profileId == null ? runs.findLatestOfFamily(familyId) : runs.findLatestOfSubject(familyId, profileId);
         if (run == null) throw CoachRunNotFoundException.latestOf(familyId, profileId);
-        return toView(run, run.isAwaitingApproval() && caller.isParent());
+        return toView(run, canApprove(run, caller));
     }
 
     /**
-     * 한 트랜잭션: 도메인 승인 → 동의 확인 → 조건부 UPDATE(0행이면 409) → 제안 복사로 미션·참여자 INSERT.
+     * 한 트랜잭션: 도메인 승인 → 동의 확인 → 기간 확인 → 조건부 UPDATE(0행이면 409) → 제안 복사로 미션·참여자 INSERT.
      * 승인자는 요청 값이 아니라 {@link FamilyAccess#requireParent} 가 돌려준 부모 프로필이다.
      * 복사할 참여자 중 보호자 동의가 없거나 거둔 사람이 있으면 422 CONSENT_REQUIRED 이고 아무것도 바뀌지 않는다.
+     * 기간이 이미 지난 항목(끝날 &lt; 오늘 KST)은 건너뛰고 나머지만 미션으로 만든다. 만들 항목이 전부 지났으면 409 PROPOSAL_EXPIRED 이고
+     * 실행은 승인 대기 그대로다(결정 40 · 46). 만든 미션마다 {@link kr.ac.kookmin.familyfitness.coaching.api.MissionCreated} 를 낸다.
      */
     @Transactional
     public ApproveCoachRunView approve(UUID userId, UUID runId) {
@@ -158,8 +161,10 @@ public class CoachRunService {
         if (run == null) throw new CoachRunNotFoundException(runId);
         ProfileSummary parent = familyAccess.requireParent(userId, run.getFamilyId());
         var now = time.now();
+        LocalDate today = time.today();
         run.approve(new CoachApprover(parent.profileId(), parent.familyId(), parent.isParent()), now);
         requireParticipantConsent(run);
+        if (run.isExpiredOn(today)) throw new ProposalExpiredException(runId, today);
         if (!runs.approveIfAwaiting(run)) {
             CoachRunStatus current = runs.currentStatus(runId);
             throw new CoachRunAlreadyDecidedException(current == null ? run.getStatus() : current);
@@ -171,8 +176,13 @@ public class CoachRunService {
                 log.warn("참여자 없는 제안 항목은 미션으로 만들지 않는다: run={} position={}", run.getId(), item.position());
                 continue;
             }
+            if (run.isPastOn(item, today)) {
+                log.info("기간이 지난 제안 항목은 미션으로 만들지 않는다: run={} position={}", run.getId(), item.position());
+                continue;
+            }
             Mission mission =
                     missions.save(Mission.fromProposal(UUID.randomUUID(), run, item, parent.profileId(), now));
+            events.publishEvent(MissionEvents.created(mission));
             created.add(new CreatedMissionView(mission.getId(), mission.getTitle(), mission.getOrigin()));
         }
         return new ApproveCoachRunView(
@@ -181,6 +191,11 @@ public class CoachRunService {
                 Objects.requireNonNull(run.getApprovedBy()),
                 Objects.requireNonNull(run.getApprovedAt()),
                 List.copyOf(created));
+    }
+
+    /** 승인 단추를 보일지 — 승인 대기이고, 부르는 계정이 보호자이고, 만들 항목이 모두 지난 것은 아니다(지났으면 승인이 409). */
+    private boolean canApprove(CoachRun run, ProfileSummary caller) {
+        return run.isAwaitingApproval() && caller.isParent() && !run.isExpiredOn(time.today());
     }
 
     /** 미션으로 복사될 참여자의 동의만 본다. 가족에서 빠진 프로필은 판정하지 않는다. */

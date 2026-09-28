@@ -53,6 +53,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>기록: 끝낸 사람에게 칸 끝 한 행. 끝낸 사람이 아이면 같이 하기로 한 보호자에게도 한 행씩 번진다(결정 34,
  * {@link Mission#companionsOf}) — 형제에게는 번지지 않고, 보호자가 끝낸 칸은 그 보호자 것뿐이다. 새로 적은 사람마다 같은 인정 초를
  * 활동(VIDEO)에 쌓고, 진행도를 다시 셈한 뒤 경험치를 적립한다(활동을 먼저 쌓아야 누적 분 업적이 이번 칸까지 센다).
+ *
+ * <p>미션 행은 잠그지 않는다. 미션을 읽은 뒤 보호자가 그 미션을 지워 커밋하면 칸 끝 행을 넣는 순간 미션 외래 키에 걸리고, 저장소가
+ * 이것을 404 MISSION_NOT_FOUND 로 바꾼다({@link SessionCompletionRepository#insert}). 칸 끝 행이 첫 쓰기라 그 앞에 남는 기록은 없다.
  */
 @Service
 public class SessionCompletionService {
