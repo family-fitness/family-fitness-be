@@ -113,6 +113,11 @@ public class MissionPersistenceAdapter implements MissionRepository {
     }
 
     @Override
+    public List<UUID> familiesWithMissionsOn(LocalDate day) {
+        return missions.findFamilyIdsOn(day);
+    }
+
+    @Override
     public int countByCoachRun(UUID coachRunId) {
         return (int) missions.countByCoachRunId(coachRunId);
     }

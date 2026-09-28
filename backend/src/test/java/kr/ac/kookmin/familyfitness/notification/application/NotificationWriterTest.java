@@ -68,6 +68,11 @@ class NotificationWriterTest {
                     .findFirst()
                     .orElse(null);
         }
+
+        @Override
+        public List<UUID> familiesWithMissionsOn(LocalDate day) {
+            return standingOn(familyId, day).isEmpty() ? List.of() : List.of(familyId);
+        }
     };
 
     private final NotificationWriter writer = new NotificationWriter(
@@ -323,6 +328,46 @@ class NotificationWriterTest {
                     .containsExactlyInAnyOrder(
                             "remeasure-" + kid + "-" + today.minusDays(30),
                             "remeasure-" + kid + "-" + today.plusDays(1));
+        }
+
+        @Test
+        @DisplayName("다시 재면 그 아이의 지난 회차 알림이 부모 모두에게서 빠진다 — 형제 것은 남는다")
+        void 다시_재면_빠진다() {
+            lastTested.put(kid, today.minusDays(40));
+            lastTested.put(sibling, today.minusDays(35));
+            writer.remeasureForFamily(familyId, today, at);
+            assertThat(repository.rows).hasSize(4);
+
+            lastTested.put(kid, today);
+            assertThat(writer.remeasured(kid)).isEqualTo(2);
+
+            assertThat(repository.rows)
+                    .extracting(Notification::profileId, Notification::aboutProfileId)
+                    .containsExactlyInAnyOrder(tuple(mom, sibling), tuple(dad, sibling));
+        }
+
+        @Test
+        @DisplayName("지난 날짜를 나중에 적어 마지막 측정일이 그대로면 그 회차의 알림은 남는다(목도 그대로 보인다)")
+        void 마지막_측정일이_그대로면_남는다() {
+            lastTested.put(kid, today.minusDays(40));
+            writer.remeasureForFamily(familyId, today, at);
+
+            assertThat(writer.remeasured(kid)).isZero();
+            assertThat(repository.of(mom)).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("부모 · 모르는 프로필의 측정이면 지우기 쿼리를 돌리지 않는다 — REMEASURE 는 아이에 관해서만 생긴다")
+        void 아이가_아니면_지우지_않는다() {
+            lastTested.put(kid, today.minusDays(40));
+            writer.remeasureForFamily(familyId, today, at);
+            lastTested.put(mom, today);
+
+            assertThat(writer.remeasured(mom)).isZero();
+            assertThat(writer.remeasured(UUID.randomUUID())).isZero();
+
+            assertThat(repository.remeasureDeletes).isZero();
+            assertThat(repository.rows).hasSize(2);
         }
     }
 }

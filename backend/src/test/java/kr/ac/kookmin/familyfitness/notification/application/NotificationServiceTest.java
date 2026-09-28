@@ -9,14 +9,23 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
+import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.notification.domain.Notification;
+import kr.ac.kookmin.familyfitness.notification.domain.NotificationKind;
+import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
+import kr.ac.kookmin.familyfitness.shared.domain.Sex;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** 알림함 읽기 · 읽음 — 권한은 requireActingAs, 안 읽은 수는 돌려준 것 가운데서, 읽음은 upTo 까지. */
+/** 알림함 읽기 · 읽음 — 권한은 requireActingAs, 안 읽은 수는 돌려준 것 가운데서, 읽음은 upTo 까지, 쉬는 날에는 오늘 미션 알림을 뺀다. */
 class NotificationServiceTest {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -25,10 +34,42 @@ class NotificationServiceTest {
     private final UUID user = UUID.randomUUID();
     private final UUID mom = UUID.randomUUID();
     private final UUID kid = UUID.randomUUID();
+    private final UUID familyId = UUID.randomUUID();
     private final InMemoryNotificationRepository repository = new InMemoryNotificationRepository();
     private final FamilyAccess familyAccess = mock(FamilyAccess.class);
-    private final NotificationService service =
-            new NotificationService(repository, familyAccess, Clock.fixed(now, KST), KST);
+    private final Set<LocalDate> restDays = new HashSet<>();
+    private final NotificationService service = new NotificationService(
+            repository,
+            familyAccess,
+            (family, from, to) -> restDays.stream()
+                    .filter(it -> family.equals(familyId) && !it.isBefore(from) && !it.isAfter(to))
+                    .sorted()
+                    .toList(),
+            Clock.fixed(now, KST),
+            KST);
+
+    @BeforeEach
+    void setUp() {
+        when(familyAccess.requireActingAs(user, mom)).thenReturn(summary(mom, ProfileRole.PARENT));
+        when(familyAccess.requireActingAs(user, kid)).thenReturn(summary(kid, ProfileRole.CHILD));
+    }
+
+    private ProfileSummary summary(UUID profileId, ProfileRole role) {
+        boolean child = role == ProfileRole.CHILD;
+        return new ProfileSummary(
+                profileId,
+                familyId,
+                child ? "서준" : "은영",
+                role,
+                child ? AgeGroup.YOUTH : AgeGroup.ADULT,
+                child ? Sex.M : Sex.F,
+                !child,
+                InviteStatus.NONE,
+                null,
+                true,
+                child,
+                true);
+    }
 
     private Notification done(int minutesAgo) {
         Notification n = Notification.kidDone(
@@ -64,6 +105,22 @@ class NotificationServiceTest {
 
         service.markRead(user, mom, null);
         assertThat(service.list(user, mom).unread()).isZero();
+    }
+
+    @Test
+    @DisplayName("오늘이 그 가족의 쉬는 날이면 오늘 서는 미션 알림을 싣지 않는다 — 안 읽은 수에도 들지 않고, 다른 알림은 그대로")
+    void 쉬는_날에는_오늘_미션_알림을_뺀다() {
+        repository.insertIfAbsent(
+                Notification.missionReady(kid, UUID.randomUUID(), "스쿼트", today, now.minusSeconds(60)));
+        repository.insertIfAbsent(Notification.praise(
+                kid, mom, "엄마", UUID.randomUUID(), "star", null, null, today, now.minusSeconds(30)));
+        assertThat(service.list(user, kid).items()).hasSize(2);
+
+        restDays.add(today);
+
+        NotificationListView list = service.list(user, kid);
+        assertThat(list.items()).extracting(NotificationView::kind).containsExactly(NotificationKind.PRAISE);
+        assertThat(list.unread()).isEqualTo(1);
     }
 
     @Test

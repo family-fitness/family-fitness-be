@@ -71,6 +71,15 @@ public class InMemoryMissionRepository implements MissionRepository {
     }
 
     @Override
+    public List<UUID> familiesWithMissionsOn(LocalDate day) {
+        return missions.values().stream()
+                .filter(it -> it.overlaps(day, day))
+                .map(Mission::getFamilyId)
+                .distinct()
+                .toList();
+    }
+
+    @Override
     public int countByCoachRun(UUID coachRunId) {
         return (int) missions.values().stream()
                 .filter(it -> coachRunId.equals(it.getCoachRunId()))

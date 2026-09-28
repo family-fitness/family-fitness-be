@@ -91,6 +91,35 @@ class StandingMissionServiceTest {
     }
 
     @Test
+    @DisplayName("그날 기간이 걸친 미션이 있는 가족만 한 번에 — 다른 날에만 미션이 있는 가족은 빠지고, 한 가족은 한 번만")
+    void 그날_미션이_있는_가족() {
+        mission(today, today, TargetMetric.TIMER_MINUTES, pending(kid));
+        mission(today.minusDays(2), today.plusDays(2), TargetMetric.VIDEO_DONE, pending(sibling));
+        UUID otherFamily = UUID.randomUUID();
+        missions.save(Mission.reconstitute(
+                UUID.randomUUID(),
+                otherFamily,
+                null,
+                "줄넘기",
+                null,
+                MissionOrigin.MANUAL,
+                TargetMetric.TIMER_MINUTES,
+                10,
+                null,
+                null,
+                today.plusDays(1),
+                today.plusDays(1),
+                null,
+                createdAt,
+                List.of(pending(UUID.randomUUID())),
+                List.of()));
+
+        assertThat(service.familiesWithMissionsOn(today)).containsExactly(familyId);
+        assertThat(service.familiesWithMissionsOn(today.plusDays(1))).containsExactlyInAnyOrder(familyId, otherFamily);
+        assertThat(service.familiesWithMissionsOn(today.plusDays(3))).isEmpty();
+    }
+
+    @Test
     @DisplayName("미션 하나 묻기 — 없는 미션 · 기간 밖 · 걸음수는 null")
     void 미션_하나() {
         Mission steps = mission(today, today, TargetMetric.STEPS, pending(kid));

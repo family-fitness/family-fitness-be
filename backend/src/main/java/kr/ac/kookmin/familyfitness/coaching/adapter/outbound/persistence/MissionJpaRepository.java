@@ -14,6 +14,10 @@ public interface MissionJpaRepository extends JpaRepository<MissionEntity, UUID>
     List<MissionEntity> findByFamilyIdAndStartsOnLessThanEqualAndEndsOnGreaterThanEqual(
             UUID familyId, LocalDate to, LocalDate from);
 
+    /** 이 날이 기간 안에 드는 미션이 있는 가족. */
+    @Query("select distinct m.familyId from MissionEntity m where m.startsOn <= :day and m.endsOn >= :day")
+    List<UUID> findFamilyIdsOn(LocalDate day);
+
     long countByCoachRunId(UUID coachRunId);
 
     /**
