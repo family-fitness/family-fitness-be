@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.closeTo;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -255,7 +256,8 @@ class CoachingFlowWebTest {
                 .andReturn();
         String runId = extract("\"coachRunId\":\"([^\"]+)\"", startResult);
 
-        // 조회: 부모는 승인 가능, 그 아이의 그날 하루짜리 제안 하나, 참여자는 아이 + 요청한 보호자(동반자), 영상 제목은 V132 값
+        // 조회: 부모는 승인 가능, 그 아이의 그날 하루짜리 제안 하나, 참여자는 아이 + 요청한 보호자(동반자), 영상 제목은 V132 값.
+        // 칸은 스텁의 20분 = 준비 2 · 본 4 · 정리 1 클립, 분은 1 · 1 · 5 · 4 · 4 · 4 · 1, 구간 제목은 V132 클립 표 값
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
@@ -272,10 +274,9 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.proposals[0].endDate").value(today.toString()))
                 .andExpect(jsonPath("$.proposals[0].targetMetric").value("TIMER_MINUTES"))
                 .andExpect(jsonPath("$.proposals[0].targetValue").value(20))
-                .andExpect(jsonPath("$.proposals[0].video.videoId").value("IdpXx2gm90o"))
-                .andExpect(jsonPath("$.proposals[0].video.title")
-                        .value("초등학생의 기초체력향상과 운동능력발달을 위한 운동! 같이해봐요! #국민체력100 #유소년 #어린이운동"))
-                .andExpect(jsonPath("$.proposals[0].video.startSec").value(96))
+                .andExpect(jsonPath("$.proposals[0].video.videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].video.title").value("[👦🏻유소년] 성장기 학생들을 위한 근력 운동 프로그램 (30min)"))
+                .andExpect(jsonPath("$.proposals[0].video.startSec").value(144))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].participants[0].profileId")
                         .value(childId().toString()))
@@ -283,7 +284,25 @@ class CoachingFlowWebTest {
                         .value(parentId().toString()))
                 .andExpect(jsonPath("$.proposals[0].participants[1].coachRole").value("동반자"))
                 .andExpect(jsonPath("$.proposals[0].citations", hasSize(2)))
-                .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:IdpXx2gm90o"));
+                .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].sessions", hasSize(7)))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].position").value(contains(1, 2, 3, 4, 5, 6, 7)))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].phase")
+                        .value(contains("WARMUP", "WARMUP", "MAIN", "MAIN", "MAIN", "MAIN", "COOLDOWN")))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].minutes").value(contains(1, 1, 5, 4, 4, 4, 1)))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].factor").value("유연성"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.startSec").value(144))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.endSec").value(182))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].completed").doesNotExist());
+        assertThat(jdbc.sql(
+                                "select count(*) from coach_run_proposal_sessions where coach_run_id = ? and item_position = 0")
+                        .param(UUID.fromString(runId))
+                        .query(Integer.class)
+                        .single())
+                .isEqualTo(7);
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.canApprove").value(false));
@@ -315,7 +334,12 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].serverVerifiable").value(true))
                 // AI 자료에 영상 길이가 없어 V132 는 길이를 비워 둔다
                 .andExpect(jsonPath("$.missions[0].video.durationSec", nullValue()))
-                .andExpect(jsonPath("$.missions[0].sessions", hasSize(0)))
+                // 승인은 제안 칸을 차례 그대로 복사한다
+                .andExpect(jsonPath("$.missions[0].targetValue").value(20))
+                .andExpect(jsonPath("$.missions[0].sessions", hasSize(7)))
+                .andExpect(jsonPath("$.missions[0].sessions[*].minutes").value(contains(1, 1, 5, 4, 4, 4, 1)))
+                .andExpect(jsonPath("$.missions[0].sessions[0].clip.title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.missions[0].sessions[6].phase").value("COOLDOWN"))
                 .andExpect(jsonPath("$.missions[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.missions[0].participants[?(@.profileId=='" + childId() + "')].name")
                         .value("민준"))

@@ -222,7 +222,8 @@ public class CoachRunService {
                         toVideoView(item.video(), videoById),
                         item.citations().stream()
                                 .map(it -> new ProposalCitationView(it.index(), it.label(), it.chunkId(), it.url()))
-                                .toList()))
+                                .toList(),
+                        item.sessions().stream().map(MissionSessionView::of).toList()))
                 .toList();
         return new CoachRunView(
                 run.getId(),

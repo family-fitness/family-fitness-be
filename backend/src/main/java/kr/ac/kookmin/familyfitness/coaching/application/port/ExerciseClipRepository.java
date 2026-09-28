@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.application.port;
 
+import java.util.Collection;
 import java.util.List;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
 import org.jspecify.annotations.Nullable;
@@ -15,4 +16,7 @@ public interface ExerciseClipRepository {
     /** 새 판에서 빠진 클립(active=false)도 돌려준다. 찜처럼 예전에 저장한 clipId 를 풀 때 쓴다. */
     @Nullable
     ExerciseClip findById(String clipId);
+
+    /** {@link #findById} 의 여러 건 판(한 번에 조회). 없는 id 는 건너뛴다. 차례는 정하지 않는다. */
+    List<ExerciseClip> findAllByIds(Collection<String> clipIds);
 }

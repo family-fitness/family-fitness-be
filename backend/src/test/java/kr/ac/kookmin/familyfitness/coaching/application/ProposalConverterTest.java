@@ -1,5 +1,8 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.COOLDOWN;
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.MAIN;
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.WARMUP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
@@ -7,15 +10,18 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.AiProfile;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
@@ -63,11 +69,25 @@ class ProposalConverterTest {
                 List.of());
     }
 
-    @Test
-    @DisplayName("AI 명세의 편성 결과 예시는 목표 15분 · 근거 문장 · 카탈로그에 없는 클립 영상 그대로 제안이 된다")
-    void AI_명세의_편성_결과_예시는_목표_15분_근거_문장_클립_영상_그대로_제안이_된다() {
-        // ai:docs/인터페이스-명세.md 4장 응답 200 예시. ref 만 이 가족 아이로 바꿨다.
-        CoachRunResult.Mission example = new CoachRunResult.Mission(
+    private static CoachRunResult.Session clipSession(
+            String phase, int order, String name, String factor, String videoId, int startSec, int endSec) {
+        return new CoachRunResult.Session(
+                0,
+                phase,
+                order,
+                name,
+                factor,
+                endSec - startSec,
+                new CoachRunResult.Video(videoId, startSec, endSec),
+                List.of(1));
+    }
+
+    /**
+     * ai:docs/인터페이스-명세.md 4장 응답 200 예시. 명세는 첫 칸만 적었으므로 나머지는 같은 영상의 실제 클립(V132)으로 채워
+     * AI 가짓수 규칙의 15분 = 준비 2 · 본 4 · 정리 1 로 만들었다. ref 만 이 가족 아이로 바꿨다.
+     */
+    private CoachRunResult.Mission specExample() {
+        return new CoachRunResult.Mission(
                 "일간",
                 "월요일 늘이기",
                 "2026-09-07",
@@ -75,20 +95,24 @@ class ProposalConverterTest {
                 List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
                 15,
                 418,
-                List.of(new CoachRunResult.Session(
-                        0,
-                        "준비운동",
-                        1,
-                        "넙다리 안쪽 늘리기 (나비자세)",
-                        "유연성",
-                        38,
-                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182),
-                        List.of(1, 2))),
+                List.of(
+                        clipSession("준비운동", 1, "넙다리 안쪽 늘리기 (나비자세)", "유연성", "Eg3GpTv7z8s", 144, 182),
+                        clipSession("준비운동", 2, "척추 들어올리기 (고양이자세)", "유연성", "Eg3GpTv7z8s", 188, 226),
+                        clipSession("본운동", 3, "앉아서 상체숙여 양팔 등 뒤로 펴기", "유연성", "Eg3GpTv7z8s", 500, 534),
+                        clipSession("본운동", 4, "손 뒤에서 깍지 끼고 가슴펴기", "유연성", "Eg3GpTv7z8s", 536, 588),
+                        clipSession("본운동", 5, "팔꿈치 등 뒤에서 굽히고 펴기", "근력", "Eg3GpTv7z8s", 614, 648),
+                        clipSession("본운동", 6, "손목 잡고 팔 스트레칭", "유연성", "Eg3GpTv7z8s", 650, 724),
+                        clipSession("정리운동", 7, "다리 뒤 늘리기", "유연성", "Eg3GpTv7z8s", 1426, 1466)),
                 "이번 주는 몸을 길게 늘이는 동작, 엄마랑 같이 해볼까요",
                 "유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다",
                 "또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
+    }
+
+    @Test
+    @DisplayName("AI 명세의 편성 결과 예시는 목표 15분 · 근거 문장 · 카탈로그에 없는 클립 영상 그대로 제안이 된다")
+    void AI_명세의_편성_결과_예시는_목표_15분_근거_문장_클립_영상_그대로_제안이_된다() {
         CoachRunResult.Proposal proposal = new CoachRunResult.Proposal(
-                List.of(example),
+                List.of(specExample()),
                 List.of(new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null)),
                 List.of());
 
@@ -99,7 +123,7 @@ class ProposalConverterTest {
         assertThat(item.targetMetric()).isEqualTo("TIMER_MINUTES");
         assertThat(item.targetValue()).isEqualTo(15);
         assertThat(item.rationale()).isEqualTo("또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
-        assertThat(item.description()).isEqualTo("준비운동 넙다리 안쪽 늘리기 (나비자세)");
+        assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세) · 준비운동 척추 들어올리기 (고양이자세)");
         assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
@@ -109,6 +133,139 @@ class ProposalConverterTest {
                 .containsExactly(1);
         assertThat(item.copyChild()).isEqualTo("이번 주는 몸을 길게 늘이는 동작, 엄마랑 같이 해볼까요");
         assertThat(item.copyParent()).isEqualTo("유연성은 지금 키우기 좋은 영역입니다. 주 3회 15분이면 충분합니다");
+    }
+
+    @Test
+    @DisplayName(
+            "세션은 칸이 된다 — 차례대로 position 1..n, 한글 단계는 WARMUP · MAIN · COOLDOWN, 분은 준비 · 정리 1분에 남는 분을 본운동이 나눠 합이 목표 분이다")
+    void 세션은_칸이_되고_분은_준비_정리_1분_남는_분을_본운동이_나눈다() {
+        ProposalConverter titled = new ProposalConverter(
+                family.child.profileId(),
+                ProfileRole.CHILD,
+                null,
+                ClipTitles.of(Map.of("Eg3GpTv7z8s-144", "넙다리 안쪽 늘리기 (나비자세)"), Map.of()));
+
+        CoachProposalItem item =
+                titled.convert(proposal(List.of(specExample()))).getFirst();
+
+        assertThat(item.sessions().stream().map(MissionSession::position).toList())
+                .containsExactly(1, 2, 3, 4, 5, 6, 7);
+        assertThat(item.sessions().stream().map(MissionSession::phase).toList())
+                .containsExactly(WARMUP, WARMUP, MAIN, MAIN, MAIN, MAIN, COOLDOWN);
+        assertThat(item.sessions().stream().map(MissionSession::minutes).toList())
+                .containsExactly(1, 1, 3, 3, 3, 3, 1);
+        assertThat(item.targetValue()).isEqualTo(MissionSession.totalMinutes(item.sessions()));
+        assertThat(item.sessions().get(4).factor()).isEqualTo(FitnessFactor.STRENGTH);
+        assertThat(item.sessions().getFirst())
+                .isEqualTo(new MissionSession(
+                        1,
+                        WARMUP,
+                        "넙다리 안쪽 늘리기 (나비자세)",
+                        FitnessFactor.FLEXIBILITY,
+                        1,
+                        new SessionClip("Eg3GpTv7z8s", 144, 182, "넙다리 안쪽 늘리기 (나비자세)")));
+        // 제목 조회에 없는 구간은 제목 없이 사본만
+        assertThat(item.sessions().getLast().clip()).isEqualTo(new SessionClip("Eg3GpTv7z8s", 1426, 1466, null));
+    }
+
+    @Test
+    @DisplayName("칸 차례는 (day_offset, order) 다 — AI order 는 날마다 1부터 다시 세므로 position 을 새로 매긴다. order 가 없으면 그날 맨 뒤")
+    void 칸_차례는_day_offset_다음_order_이고_position_을_새로_매긴다() {
+        CoachRunResult.Mission mission = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                List.of(
+                        new CoachRunResult.Session(1, "본운동", 1, "둘째 날 첫째", "", 40, null, List.of()),
+                        new CoachRunResult.Session(0, "본운동", null, "첫째 날 차례 없음", "", 40, null, List.of()),
+                        new CoachRunResult.Session(0, "본운동", 2, "첫째 날 둘째", "", 40, null, List.of()),
+                        new CoachRunResult.Session(null, "본운동", 1, "첫째 날 첫째", "", 40, null, List.of())),
+                "부모 문구",
+                "");
+
+        CoachProposalItem item = converter.convert(proposal(List.of(mission))).getFirst();
+
+        assertThat(item.sessions().stream().map(MissionSession::title).toList())
+                .containsExactly("첫째 날 첫째", "첫째 날 둘째", "첫째 날 차례 없음", "둘째 날 첫째");
+        assertThat(item.sessions().stream().map(MissionSession::position).toList())
+                .containsExactly(1, 2, 3, 4);
+        assertThat(item.sessions().stream().map(MissionSession::minutes).toList())
+                .containsExactly(5, 5, 5, 5);
+    }
+
+    @Test
+    @DisplayName("요인이 비었거나 모르는 이름이면 null, 이름이 비면 구간 제목 → 단계 이름, 구간 끝이 시작보다 앞이면 끝을 버리고, 영상 id 가 칸 표에 안 맞으면 영상을 붙이지 않는다")
+    void 칸의_빈_값과_맞지_않는_값을_지어내지_않고_거른다() {
+        ProposalConverter titled = new ProposalConverter(
+                family.child.profileId(),
+                ProfileRole.CHILD,
+                null,
+                ClipTitles.of(Map.of(), Map.of("IdpXx2gm90o", "초등학생 기초체력")));
+        CoachRunResult.Mission mission = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                10,
+                List.of(
+                        new CoachRunResult.Session(
+                                0,
+                                "준비운동",
+                                1,
+                                " ",
+                                "",
+                                40,
+                                new CoachRunResult.Video("IdpXx2gm90o", null, 30),
+                                List.of()),
+                        new CoachRunResult.Session(
+                                0, "본운동", 2, "", "모르는 힘", 40, new CoachRunResult.Video("a/b", 0, 30), List.of()),
+                        new CoachRunResult.Session(
+                                0, "", 3, "스쿼트", "근력", 40, new CoachRunResult.Video("IdpXx2gm90o", 90, 90), List.of())),
+                "부모 문구",
+                "");
+
+        List<MissionSession> sessions =
+                titled.convert(proposal(List.of(mission))).getFirst().sessions();
+
+        assertThat(sessions.getFirst())
+                .isEqualTo(new MissionSession(
+                        1, WARMUP, "초등학생 기초체력", null, 1, new SessionClip("IdpXx2gm90o", 0, 30, "초등학생 기초체력")));
+        assertThat(sessions.get(1)).isEqualTo(new MissionSession(2, MAIN, "본운동", null, 5, null));
+        assertThat(sessions.getLast())
+                .isEqualTo(new MissionSession(
+                        3,
+                        MAIN,
+                        "스쿼트",
+                        FitnessFactor.STRENGTH,
+                        4,
+                        new SessionClip("IdpXx2gm90o", 90, null, "초등학생 기초체력")));
+    }
+
+    @Test
+    @DisplayName("본운동 칸이 없으면 목 규칙대로 준비 · 정리 1분씩이고 목표 분은 그 합이다 — 요청 분과 달라진다")
+    void 본운동_칸이_없으면_준비_정리_1분씩이고_목표_분은_그_합이다() {
+        CoachRunResult.Mission mission = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                15,
+                List.of(
+                        clipSession("준비운동", 1, "넙다리 안쪽 늘리기 (나비자세)", "유연성", "Eg3GpTv7z8s", 144, 182),
+                        clipSession("정리운동", 2, "다리 뒤 늘리기", "유연성", "Eg3GpTv7z8s", 1426, 1466)),
+                "부모 문구",
+                "");
+
+        CoachProposalItem item = converter.convert(proposal(List.of(mission))).getFirst();
+
+        assertThat(item.sessions().stream().map(MissionSession::minutes).toList())
+                .containsExactly(1, 1);
+        assertThat(item.targetValue()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("구간 제목은 클립 표(clipId = videoId-startSec)가 먼저, 없으면 영상 표의 영상 제목, 둘 다 없으면 null")
+    void 구간_제목은_클립_표가_먼저_없으면_영상_제목() {
+        ClipTitles titles = ClipTitles.of(Map.of("v1-10", "스쿼트"), Map.of("v1", "영상 한 편", "v2", "다른 영상"));
+
+        assertThat(titles.titleOf("v1", 10)).isEqualTo("스쿼트");
+        assertThat(titles.titleOf("v1", 11)).isEqualTo("영상 한 편");
+        assertThat(titles.titleOf("v2", 10)).isEqualTo("다른 영상");
+        assertThat(titles.titleOf("v3", 10)).isNull();
+        assertThat(ClipTitles.none().titleOf("v1", 10)).isNull();
     }
 
     @Test
