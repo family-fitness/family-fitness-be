@@ -12,10 +12,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 측정 회차 등록·최신 조회 — 로그인(같은 가족). actor 는 토큰의 계정, 대상은 경로의 profileId. */
+/** 측정 회차 등록·이력·최신 조회 — 로그인(같은 가족). actor 는 토큰의 계정, 대상은 경로의 profileId. */
 @RestController
 @RequestMapping("/api/v1/profiles/{profileId}/fitness-tests")
 public class FitnessTestController {
@@ -36,6 +37,13 @@ public class FitnessTestController {
                 request.weightKg(),
                 request.measurements());
         return FitnessTestResponse.of(service.register(user.userId(), profileId, command));
+    }
+
+    /** 측정 이력. 최근 회차가 먼저. size 기본 20 · 1~100(영상 목록과 같다), 밖이면 400 BAD_REQUEST. */
+    @GetMapping
+    public FitnessTestHistoryResponse history(
+            CurrentUser user, @PathVariable UUID profileId, @RequestParam(defaultValue = "20") int size) {
+        return FitnessTestHistoryResponse.of(service.history(user.userId(), profileId, size));
     }
 
     @GetMapping("/latest")

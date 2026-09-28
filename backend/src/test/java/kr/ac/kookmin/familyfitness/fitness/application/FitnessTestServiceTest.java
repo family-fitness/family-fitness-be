@@ -220,4 +220,43 @@ class FitnessTestServiceTest {
                 service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)));
         assertThat(service.latest(actorId, profileId).getId()).isEqualTo(newer.getId());
     }
+
+    @Test
+    @DisplayName("측정 이력은 testedOn 이 늦은 회차부터 size 개이고 없으면 빈 목록")
+    void 측정_이력은_testedOn_이_늦은_회차부터_size_개이고_없으면_빈_목록() {
+        childProfile();
+        assertThat(service.history(actorId, profileId, 20)).isEmpty();
+
+        FitnessTest august =
+                service.register(actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)));
+        FitnessTest september =
+                service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)));
+        FitnessTest july =
+                service.register(actorId, profileId, command(LocalDate.of(2026, 7, 1), new ItemPair("028", 36)));
+
+        assertThat(service.history(actorId, profileId, 20))
+                .extracting(FitnessTest::getId)
+                .containsExactly(september.getId(), august.getId(), july.getId());
+        assertThat(service.history(actorId, profileId, 2))
+                .extracting(FitnessTest::getId)
+                .containsExactly(september.getId(), august.getId());
+    }
+
+    @Test
+    @DisplayName("측정 이력 size 는 1~100 이고 밖이면 400(IllegalArgumentException)")
+    void 측정_이력_size_는_1_100_이고_밖이면_400() {
+        childProfile();
+        assertThatThrownBy(() -> service.history(actorId, profileId, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.history(actorId, profileId, FitnessTestService.HISTORY_MAX_SIZE + 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(service.history(actorId, profileId, FitnessTestService.HISTORY_MAX_SIZE))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("측정 이력도 같은 가족이 아니면 identity 의 예외가 그대로 올라간다")
+    void 측정_이력도_같은_가족이_아니면_identity_의_예외가_그대로_올라간다() {
+        when(familyAccess.requireSameFamilyAsProfile(actorId, profileId)).thenThrow(new NotSameFamilyException());
+        assertThatThrownBy(() -> service.history(actorId, profileId, 20)).isInstanceOf(NotSameFamilyException.class);
+    }
 }

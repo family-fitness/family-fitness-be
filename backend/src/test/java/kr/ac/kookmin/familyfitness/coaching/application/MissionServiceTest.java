@@ -9,11 +9,16 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidMetricException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotParticipantException;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetNotReachedException;
 import kr.ac.kookmin.familyfitness.coaching.domain.VerifiedBy;
@@ -28,6 +33,9 @@ import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepo
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.assertj.core.data.Offset;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -233,6 +241,34 @@ class MissionServiceTest {
     }
 
     @Test
+    @DisplayName("보호자 동의를 거둔 아이의 타이머 · 걸음수 기록은 422 CONSENT_REQUIRED 이고 활동이 쌓이지 않는다")
+    void 보호자_동의를_거둔_아이의_타이머_걸음수_기록은_CONSENT_REQUIRED() {
+        UUID timer = create(TargetMetric.TIMER_MINUTES, 30).missionId();
+        UUID steps = create(TargetMetric.STEPS, 5000).missionId();
+        family.withdrawConsent(family.child.profileId());
+        Instant startedAt = Instant.parse("2026-09-08T23:30:00Z");
+
+        assertThat(assertThrows(
+                                ParticipantConsentRequiredException.class,
+                                () -> activityService.recordTimer(
+                                        family.childUser,
+                                        timer,
+                                        new RecordTimerCommand(
+                                                family.child.profileId(), startedAt, startedAt.plusSeconds(1200), 20)))
+                        .getCode())
+                .isEqualTo("CONSENT_REQUIRED");
+        assertThat(assertThrows(
+                                ParticipantConsentRequiredException.class,
+                                () -> activityService.recordSteps(
+                                        family.parentUser,
+                                        steps,
+                                        new RecordStepsCommand(family.child.profileId(), Fixed.TODAY, 3000)))
+                        .getCode())
+                .isEqualTo("CONSENT_REQUIRED");
+        assertThat(activity.rows).isEmpty();
+    }
+
+    @Test
     @DisplayName("목록은 scope·status 로 거르고 읽을 때 진행도를 다시 계산한다")
     void 목록은_scope_status_로_거르고_읽을_때_진행도를_다시_계산한다() {
         UUID mine = create(TargetMetric.TIMER_MINUTES, 30, List.of(family.child.profileId()), null)
@@ -283,6 +319,136 @@ class MissionServiceTest {
         assertThrows(
                 NotSameFamilyException.class,
                 () -> service.list(other.parentUser, family.familyId, MissionScope.ALL, null));
+    }
+
+    @Test
+    @DisplayName("칸을 담아 만들면 보낸 차례 그대로 저장하고 목표 분은 칸 시간의 합이며 목록과 단건이 같은 칸을 준다")
+    void 칸을_담아_만들면_보낸_차례_그대로_저장하고_목표_분은_칸_시간의_합이다() {
+        // 정리운동을 1번, 준비운동을 2번에 담았다 — 단계로 다시 세우지 않는다.
+        // -EATykJOvBQ 는 카탈로그(Videos.seed)에 없는 영상이지만 칸은 사본이라 받는다.
+        UUID missionId = service.create(
+                        family.parentUser,
+                        family.familyId,
+                        new CreateMissionCommand(
+                                "거북이 스트레칭",
+                                Fixed.TODAY,
+                                Fixed.TODAY,
+                                TargetMetric.TIMER_MINUTES,
+                                5,
+                                null,
+                                List.of(family.child.profileId()),
+                                List.of(
+                                        new MissionSession(
+                                                1,
+                                                SessionPhase.COOLDOWN,
+                                                "거북이 스트레칭",
+                                                FitnessFactor.FLEXIBILITY,
+                                                2,
+                                                new SessionClip("-EATykJOvBQ", 6, 78, "거북이 스트레칭")),
+                                        new MissionSession(
+                                                2,
+                                                SessionPhase.WARMUP,
+                                                "제자리 걷기",
+                                                null,
+                                                3,
+                                                new SessionClip("IdpXx2gm90o", 96, 150, null)))))
+                .missionId();
+
+        MissionView one = service.get(family.childUser, missionId);
+        assertThat(one.targetMetric()).isEqualTo(TargetMetric.TIMER_MINUTES);
+        assertThat(one.targetValue()).isEqualTo(5);
+        assertThat(one.sessions())
+                .containsExactly(
+                        new MissionSessionView(
+                                1,
+                                SessionPhase.COOLDOWN,
+                                "거북이 스트레칭",
+                                FitnessFactor.FLEXIBILITY,
+                                2,
+                                new SessionClipView("-EATykJOvBQ", 6, 78, "거북이 스트레칭")),
+                        new MissionSessionView(
+                                2,
+                                SessionPhase.WARMUP,
+                                "제자리 걷기",
+                                null,
+                                3,
+                                new SessionClipView("IdpXx2gm90o", 96, 150, null)));
+        assertThat(service.list(family.parentUser, family.familyId, MissionScope.ALL, null)
+                        .missions())
+                .containsExactly(one);
+    }
+
+    @Test
+    @DisplayName("동의가 필요한데 없는 참여자가 끼면 CONSENT_REQUIRED 로 막고 미션을 만들지 않는다")
+    void 동의가_필요한데_없는_참여자가_끼면_CONSENT_REQUIRED_로_막는다() {
+        FakeIdentity withdrawn = new FakeIdentity(family) {
+            @Override
+            public List<ProfileSummary> summariesOfFamily(UUID familyId) {
+                return super.summariesOfFamily(familyId).stream()
+                        .map(it -> it.profileId().equals(family.child.profileId()) ? consentWithdrawn(it) : it)
+                        .toList();
+            }
+        };
+        MissionService guarded = new MissionService(missions, videos, withdrawn, withdrawn, policy, Fixed.time());
+        CreateMissionCommand withChild = new CreateMissionCommand(
+                "함께 운동",
+                Fixed.TODAY,
+                Fixed.TODAY,
+                TargetMetric.TIMER_MINUTES,
+                10,
+                null,
+                List.of(family.parent.profileId(), family.child.profileId()));
+
+        ParticipantConsentRequiredException e = assertThrows(
+                ParticipantConsentRequiredException.class,
+                () -> guarded.create(family.parentUser, family.familyId, withChild));
+        assertThat(e.getCode()).isEqualTo("CONSENT_REQUIRED");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.RULE_VIOLATION);
+        assertThat(missions.missions).isEmpty();
+
+        UUID parentOnly = guarded.create(
+                        family.parentUser,
+                        family.familyId,
+                        new CreateMissionCommand(
+                                "함께 운동",
+                                Fixed.TODAY,
+                                Fixed.TODAY,
+                                TargetMetric.TIMER_MINUTES,
+                                10,
+                                null,
+                                List.of(family.parent.profileId())))
+                .missionId();
+        assertThat(missions.findById(parentOnly)).isNotNull();
+    }
+
+    @Test
+    @DisplayName("단건 조회는 목록과 같은 권한이고 칸 없는 미션의 sessions 는 빈 목록이다")
+    void 단건_조회는_목록과_같은_권한이고_칸_없는_미션의_sessions_는_빈_목록이다() {
+        UUID missionId = create().missionId();
+
+        MissionView view = service.get(family.parentUser, missionId);
+        assertThat(view.missionId()).isEqualTo(missionId);
+        assertThat(view.sessions()).isEmpty();
+        assertThat(view.targetValue()).isEqualTo(45);
+        assertThat(assertThrows(MissionNotFoundException.class, () -> service.get(family.parentUser, UUID.randomUUID()))
+                        .getCode())
+                .isEqualTo("MISSION_NOT_FOUND");
+        assertThrows(NotSameFamilyException.class, () -> service.get(other.parentUser, missionId));
+    }
+
+    private static ProfileSummary consentWithdrawn(ProfileSummary s) {
+        return new ProfileSummary(
+                s.profileId(),
+                s.familyId(),
+                s.name(),
+                s.role(),
+                s.ageGroup(),
+                s.hasAccount(),
+                s.inviteStatus(),
+                s.supportMode(),
+                false,
+                true,
+                false);
     }
 
     private static List<UUID> missionIds(MissionListView view) {

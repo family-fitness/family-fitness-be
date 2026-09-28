@@ -55,6 +55,7 @@ public class MissionActivityService {
         familyAccess.requireMember(userId, mission.getFamilyId());
         mission.participantOf(command.profileId());
         mission.requireMetric(TargetMetric.STEPS);
+        requireConsent(userId, command.profileId());
 
         recorder.overwriteSteps(command.profileId(), command.activityDate(), command.steps());
         MissionParticipant participant = policy.refreshParticipant(mission, command.profileId(), time.now())
@@ -79,6 +80,7 @@ public class MissionActivityService {
         familyAccess.requireMember(userId, mission.getFamilyId());
         mission.participantOf(command.profileId());
         mission.requireMetric(TargetMetric.TIMER_MINUTES);
+        requireConsent(userId, command.profileId());
 
         LocalDate activityDate = time.dateOf(command.startedAt());
         long elapsed = Duration.between(command.startedAt(), command.endedAt()).toMinutes();
@@ -93,5 +95,10 @@ public class MissionActivityService {
                 activityQuery.activeMinutesOn(command.profileId(), activityDate),
                 participant.getProgress(),
                 participant.isCompleted());
+    }
+
+    /** 보호자 동의가 없거나 거둔 프로필의 활동은 저장하지 않는다(422 CONSENT_REQUIRED). 지난 기록은 그대로 둔다. */
+    private void requireConsent(UUID userId, UUID profileId) {
+        ParticipantConsent.require(familyAccess.requireSameFamilyAsProfile(userId, profileId));
     }
 }

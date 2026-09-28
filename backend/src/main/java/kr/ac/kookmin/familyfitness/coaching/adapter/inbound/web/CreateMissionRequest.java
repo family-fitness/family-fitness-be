@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -11,6 +12,10 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * @param targetValue 칸({@code sessions})이 있으면 칸 {@code minutes} 의 합과 같아야 한다. 다르면 400 이다
+ * @param sessions 칸. 최대 10개(직접 짜기 화면의 상한). 없거나 비면 칸 없는 미션이다
+ */
 public record CreateMissionRequest(
         @NotBlank @Size(min = 1, max = 50) String title,
         @NotNull @Nullable LocalDate startDate,
@@ -18,4 +23,5 @@ public record CreateMissionRequest(
         @NotNull @Nullable TargetMetric targetMetric,
         @NotNull @Min(1) @Nullable Integer targetValue,
         @Nullable String videoId,
-        @NotEmpty @Size(min = 1, max = 5) List<UUID> participantProfileIds) {}
+        @NotEmpty @Size(min = 1, max = 5) List<UUID> participantProfileIds,
+        @Size(max = 10) @Nullable List<@NotNull @Valid MissionSessionRequest> sessions) {}

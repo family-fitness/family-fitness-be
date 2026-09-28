@@ -2,9 +2,9 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -16,32 +16,36 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
 
 /**
- * AI proposal → 제안 항목 변환(계약 §5).
- * missions[i] → position=i, title, rationale=copy.parent, targetMetric=TIMER_MINUTES, targetValue=Σduration_min,
- * video=첫 video≠null 세션(카탈로그에 있는 것만), participants=ref→profileId 역매핑, citations=evidence 가 가리키는 것(없으면 전체).
+ * AI proposal → 제안 항목 변환(AI 인터페이스-명세 4장).
+ * missions[i] → position=i, title, targetMetric=TIMER_MINUTES, targetValue=duration_min(최소 1),
+ * rationale=reason(비었으면 copy.parent), video=order 순으로 첫 영상 있는 세션,
+ * participants=편성 대상 한 명(+ withParent 면 요청한 보호자), citations=evidence 가 가리키는 것(없으면 전체).
+ * 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다.
  */
 public class ProposalConverter {
     public static final int MAX_TITLE = 120;
     public static final int MAX_COPY = 400;
 
-    private final Map<String, UUID> refIndex;
-    private final Map<UUID, ProfileRole> roles;
-    private final Map<UUID, String> coachRoles;
-    private final Set<String> knownVideoIds;
+    private static final Comparator<CoachRunResult.Session> BY_ORDER =
+            Comparator.comparing(CoachRunResult.Session::order, Comparator.nullsLast(Comparator.naturalOrder()));
 
-    public ProposalConverter(
-            Map<String, UUID> refIndex,
-            Map<UUID, ProfileRole> roles,
-            Map<UUID, String> coachRoles,
-            Set<String> knownVideoIds) {
-        this.refIndex = refIndex;
-        this.roles = roles;
-        this.coachRoles = coachRoles;
-        this.knownVideoIds = knownVideoIds;
+    private final UUID subjectProfileId;
+    private final ProfileRole subjectRole;
+    private final @Nullable UUID companionProfileId;
+
+    /**
+     * @param companionProfileId withParent 면 편성을 요청한 보호자(run.requestedBy), 아니면 null. AI 는 일간 미션에 동반자를 넣지 않으므로
+     *     (ai:coach/compose.py) BE 가 붙인다(결정 2).
+     */
+    public ProposalConverter(UUID subjectProfileId, ProfileRole subjectRole, @Nullable UUID companionProfileId) {
+        this.subjectProfileId = subjectProfileId;
+        this.subjectRole = subjectRole;
+        this.companionProfileId = companionProfileId;
     }
 
     public List<CoachProposalItem> convert(CoachRunResult.Proposal proposal) {
@@ -49,40 +53,25 @@ public class ProposalConverter {
         List<CoachRunResult.Mission> missions = proposal.missions();
         for (int index = 0; index < missions.size(); index++) {
             CoachRunResult.Mission mission = missions.get(index);
-            List<CoachRunResult.Session> sessions = mission.sessions();
+            List<CoachRunResult.Session> sessions =
+                    mission.sessions().stream().sorted(BY_ORDER).toList();
             Set<Integer> evidence = new LinkedHashSet<>();
             sessions.forEach(it -> evidence.addAll(it.evidence()));
             List<ProposalCitation> citations = proposal.citations().stream()
                     .filter(it -> evidence.isEmpty() || evidence.contains(it.index()))
                     .map(it -> new ProposalCitation(it.index(), it.label(), it.chunkId(), it.url()))
                     .toList();
-            ProposalVideo video = firstKnownVideo(sessions);
-            List<ProposalParticipant> participants = new ArrayList<>();
-            for (CoachRunResult.ParticipantRef p : mission.participants()) {
-                UUID profileId = refIndex.get(p.ref());
-                if (profileId == null) continue;
-                ProfileRole role = roles.getOrDefault(profileId, ProfileRole.CHILD);
-                String coachRole =
-                        p.role().isBlank() ? coachRoles.getOrDefault(profileId, CoachRoles.DRIVER) : p.role();
-                participants.add(new ProposalParticipant(profileId, role, coachRole));
-            }
-            int totalMinutes = sessions.stream()
-                    .mapToInt(CoachRunResult.Session::durationMin)
-                    .sum();
-            String description = sessions.stream()
-                    .map(it -> "D+" + it.dayOffset() + " " + it.exerciseName() + " " + it.durationMin() + "분")
-                    .collect(Collectors.joining(" · "));
             items.add(new CoachProposalItem(
                     index,
                     take(mission.title(), MAX_TITLE),
                     TargetMetric.TIMER_MINUTES.name(),
-                    Math.max(totalMinutes, 1),
-                    take(mission.copyParent(), MAX_COPY),
-                    take(description, MAX_COPY),
+                    targetMinutes(mission),
+                    take(rationale(mission), MAX_COPY),
+                    take(description(sessions), MAX_COPY),
                     LocalDate.parse(mission.startDate()),
                     LocalDate.parse(mission.endDate()),
-                    List.copyOf(participants),
-                    video,
+                    participants(mission),
+                    firstVideo(sessions),
                     citations,
                     take(mission.copyChild(), MAX_COPY),
                     take(mission.copyParent(), MAX_COPY)));
@@ -90,13 +79,47 @@ public class ProposalConverter {
         return List.copyOf(items);
     }
 
-    private @Nullable ProposalVideo firstKnownVideo(List<CoachRunResult.Session> sessions) {
+    /** 목표 분 = AI 가 준 그 회 운동 시간(요청한 분). 클립 길이의 합(video_sec)이 아니다. 없으면 1. */
+    static int targetMinutes(CoachRunResult.Mission mission) {
+        Integer minutes = mission.durationMin();
+        return Math.max(minutes == null ? 0 : minutes, 1);
+    }
+
+    /** 「왜 이렇게 짰는지」 는 reason([n] 인용이 박힌 문장). 옛 응답처럼 비었으면 부모용 문구로 물러선다. */
+    static String rationale(CoachRunResult.Mission mission) {
+        return mission.reason().isBlank() ? mission.copyParent() : mission.reason();
+    }
+
+    /**
+     * AI 가 준 참여자 중 편성 대상만 남긴다(응원 · 다른 구성원은 뺀다 — 응원 부모가 참여자가 되면 미션이 DONE 이 되지 않는다).
+     * 대상이 든 미션이면 withParent 보호자를 동반자로 덧붙인다. 대상이 없는 미션은 참여자가 비어 승인 때 미션이 되지 않는다.
+     */
+    private List<ProposalParticipant> participants(CoachRunResult.Mission mission) {
+        String subjectRef = ProfileRef.of(subjectProfileId);
+        CoachRunResult.ParticipantRef subject = mission.participants().stream()
+                .filter(it -> it.ref().equals(subjectRef))
+                .findFirst()
+                .orElse(null);
+        if (subject == null) return List.of();
+        List<ProposalParticipant> participants = new ArrayList<>();
+        participants.add(new ProposalParticipant(
+                subjectProfileId, subjectRole, subject.role().isBlank() ? CoachRoles.DRIVER : subject.role()));
+        if (companionProfileId != null && !companionProfileId.equals(subjectProfileId)) {
+            participants.add(new ProposalParticipant(companionProfileId, ProfileRole.PARENT, CoachRoles.COMPANION));
+        }
+        return List.copyOf(participants);
+    }
+
+    private static String description(List<CoachRunResult.Session> sessions) {
+        return sessions.stream()
+                .map(it -> it.phase().isBlank() ? it.exerciseName() : it.phase() + " " + it.exerciseName())
+                .collect(Collectors.joining(" · "));
+    }
+
+    private static @Nullable ProposalVideo firstVideo(List<CoachRunResult.Session> sessions) {
         for (CoachRunResult.Session session : sessions) {
             CoachRunResult.Video video = session.video();
-            if (video == null) continue;
-            return knownVideoIds.contains(video.videoId())
-                    ? new ProposalVideo(video.videoId(), video.startSec())
-                    : null;
+            if (video != null) return new ProposalVideo(video.videoId(), video.startSec());
         }
         return null;
     }

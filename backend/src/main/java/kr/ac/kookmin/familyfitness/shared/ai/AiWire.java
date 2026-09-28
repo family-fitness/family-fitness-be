@@ -270,9 +270,28 @@ final class AiWire {
 
         record Period(@JsonProperty("start_date") String startDate, int weeks) {}
 
+        /** focus_factor · with_companion 은 AI ConstraintsIn 에 아직 없다. AI 가 무시하므로 먼저 보낸다(CO-07). */
         record Constraints(
                 @JsonProperty("days_per_week") int daysPerWeek,
-                @JsonProperty("minutes_per_session") int minutesPerSession) {}
+                @JsonProperty("minutes_per_session") int minutesPerSession,
+                @JsonProperty("weekly_minutes") @Nullable Integer weeklyMinutes,
+                boolean quiet,
+                @JsonProperty("small_space") boolean smallSpace,
+                @JsonProperty("no_props") boolean noProps,
+                @JsonProperty("focus_factor") @Nullable String focusFactor,
+                @JsonProperty("with_companion") boolean withCompanion) {
+            static Constraints of(CoachRunRequest.Constraints c) {
+                return new Constraints(
+                        c.daysPerWeek(),
+                        c.minutesPerSession(),
+                        c.weeklyMinutes(),
+                        c.quiet(),
+                        c.smallSpace(),
+                        c.noProps(),
+                        c.focusFactor(),
+                        c.withCompanion());
+            }
+        }
 
         static CoachRunRequestBody of(CoachRunRequest r) {
             return new CoachRunRequestBody(
@@ -292,7 +311,7 @@ final class AiWire {
                             })
                             .toList(),
                     new Period(r.startDate(), r.weeks()),
-                    new Constraints(r.daysPerWeek(), r.minutesPerSession()));
+                    Constraints.of(r.constraints()));
         }
     }
 
@@ -330,24 +349,69 @@ final class AiWire {
             }
         }
 
+        /** notices 는 비었으면 AI 가 아예 싣지 않는다(compose.py 「if notices」) — 빈 목록으로 읽는다. */
         @JsonIgnoreProperties(ignoreUnknown = true)
-        record ProposalBody(List<MissionBody> missions, List<CitationBody> citations) {
+        record ProposalBody(List<MissionBody> missions, List<CitationBody> citations, List<String> notices) {
             ProposalBody {
                 missions = missions == null ? List.of() : missions;
                 citations = citations == null ? List.of() : citations;
+                notices = notices == null ? List.of() : notices;
+            }
+
+            CoachRunResult.Proposal toDomain() {
+                return new CoachRunResult.Proposal(
+                        missions.stream().map(MissionBody::toDomain).toList(),
+                        citations.stream().map(CitationBody::toDomain).toList(),
+                        List.copyOf(notices));
             }
         }
 
+        /**
+         * 숫자 칸(duration_min · video_sec)은 Integer 다. Jackson 3 는 FAIL_ON_NULL_FOR_PRIMITIVES 가 기본 true 라
+         * int 로 두면 칸 하나가 빠질 때 응답 전체를 읽지 못하고 실행이 FAILED 가 된다.
+         */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record MissionBody(
+                String kind,
                 String title,
                 PeriodBody period,
                 List<ParticipantBody> participants,
+                @JsonProperty("duration_min") @Nullable Integer durationMin,
+                @JsonProperty("video_sec") @Nullable Integer videoSec,
                 List<SessionBody> sessions,
-                @Nullable CopyBody copy) {
+                @Nullable CopyBody copy,
+                String reason) {
             MissionBody {
+                kind = kind == null ? "" : kind;
                 participants = participants == null ? List.of() : participants;
                 sessions = sessions == null ? List.of() : sessions;
+                reason = reason == null ? "" : reason;
+            }
+
+            CoachRunResult.Mission toDomain() {
+                return new CoachRunResult.Mission(
+                        kind,
+                        title,
+                        period.startDate(),
+                        period.endDate(),
+                        participants.stream()
+                                .map(it -> new CoachRunResult.ParticipantRef(it.ref(), it.role()))
+                                .toList(),
+                        durationMin != null ? durationMin : legacySessionMinutes(),
+                        videoSec,
+                        sessions.stream().map(SessionBody::toDomain).toList(),
+                        copy == null ? "" : copy.child(),
+                        copy == null ? "" : copy.parent(),
+                        reason);
+            }
+
+            /** 9/17 앞의 옛 모양은 미션에 duration_min 이 없고 세션마다 분이 있었다. 그때만 세션 분의 합을 쓴다. */
+            private @Nullable Integer legacySessionMinutes() {
+                if (sessions.stream().allMatch(it -> it.durationMin() == null)) return null;
+                return sessions.stream()
+                        .map(SessionBody::durationMin)
+                        .mapToInt(it -> it == null ? 0 : it)
+                        .sum();
             }
         }
 
@@ -363,25 +427,47 @@ final class AiWire {
             }
         }
 
+        /** duration_min 은 옛 모양 호환용이다. 지금 AI 는 세션에 duration_sec(초)만 싣는다. */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record SessionBody(
-                @JsonProperty("day_offset") int dayOffset,
+                @JsonProperty("day_offset") @Nullable Integer dayOffset,
+                String phase,
+                @Nullable Integer order,
                 @JsonProperty("exercise_name") String exerciseName,
                 @JsonProperty("fitness_factor") String fitnessFactor,
-                @JsonProperty("duration_min") int durationMin,
+                @JsonProperty("duration_sec") @Nullable Integer durationSec,
+                @JsonProperty("duration_min") @Nullable Integer durationMin,
                 @Nullable VideoBody video,
                 List<Integer> evidence) {
             SessionBody {
+                phase = phase == null ? "" : phase;
                 exerciseName = exerciseName == null ? "" : exerciseName;
                 fitnessFactor = fitnessFactor == null ? "" : fitnessFactor;
                 evidence = evidence == null ? List.of() : evidence;
+            }
+
+            CoachRunResult.Session toDomain() {
+                return new CoachRunResult.Session(
+                        dayOffset,
+                        phase,
+                        order,
+                        exerciseName,
+                        fitnessFactor,
+                        durationSec,
+                        video == null ? null : video.toDomain(),
+                        evidence);
             }
         }
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         record VideoBody(
                 @JsonProperty("video_id") String videoId,
-                @JsonProperty("start_sec") @Nullable Integer startSec) {}
+                @JsonProperty("start_sec") @Nullable Integer startSec,
+                @JsonProperty("end_sec") @Nullable Integer endSec) {
+            CoachRunResult.Video toDomain() {
+                return new CoachRunResult.Video(videoId, startSec, endSec);
+            }
+        }
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         record CopyBody(String child, String parent) {
@@ -398,43 +484,7 @@ final class AiWire {
                     steps.stream()
                             .map(it -> new CoachRunResult.Step(it.seq(), it.name(), it.status(), it.summary()))
                             .toList(),
-                    proposal == null
-                            ? null
-                            : new CoachRunResult.Proposal(
-                                    proposal.missions().stream()
-                                            .map(m -> new CoachRunResult.Mission(
-                                                    m.title(),
-                                                    m.period().startDate(),
-                                                    m.period().endDate(),
-                                                    m.participants().stream()
-                                                            .map(it -> new CoachRunResult.ParticipantRef(
-                                                                    it.ref(), it.role()))
-                                                            .toList(),
-                                                    m.sessions().stream()
-                                                            .map(s -> new CoachRunResult.Session(
-                                                                    s.dayOffset(),
-                                                                    s.exerciseName(),
-                                                                    s.fitnessFactor(),
-                                                                    s.durationMin(),
-                                                                    s.video() == null
-                                                                            ? null
-                                                                            : new CoachRunResult.Video(
-                                                                                    s.video()
-                                                                                            .videoId(),
-                                                                                    s.video()
-                                                                                            .startSec()),
-                                                                    s.evidence()))
-                                                            .toList(),
-                                                    m.copy() == null
-                                                            ? ""
-                                                            : m.copy().child(),
-                                                    m.copy() == null
-                                                            ? ""
-                                                            : m.copy().parent()))
-                                            .toList(),
-                                    proposal.citations().stream()
-                                            .map(CitationBody::toDomain)
-                                            .toList()),
+                    proposal == null ? null : proposal.toDomain(),
                     refused,
                     refusalReason);
         }

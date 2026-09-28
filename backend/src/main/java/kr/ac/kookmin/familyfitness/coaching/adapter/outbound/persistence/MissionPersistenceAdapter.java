@@ -12,27 +12,41 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantStatus;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.domain.VerifiedBy;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Repository;
 
-/** {@link MissionRepository} 의 JPA 구현. 미션 본문은 불변이고 참여자 행만 갱신된다. */
+/** {@link MissionRepository} 의 JPA 구현. 미션 본문과 칸은 처음 저장할 때만 쓰고(불변), 참여자 행만 갱신된다. */
 @Repository
 public class MissionPersistenceAdapter implements MissionRepository {
     private final MissionJpaRepository missions;
     private final MissionParticipantJpaRepository participants;
+    private final MissionSessionJpaRepository sessions;
 
-    public MissionPersistenceAdapter(MissionJpaRepository missions, MissionParticipantJpaRepository participants) {
+    public MissionPersistenceAdapter(
+            MissionJpaRepository missions,
+            MissionParticipantJpaRepository participants,
+            MissionSessionJpaRepository sessions) {
         this.missions = missions;
         this.participants = participants;
+        this.sessions = sessions;
     }
 
     @Override
     public Mission save(Mission mission) {
-        if (!missions.existsById(mission.getId())) missions.save(toEntity(mission));
+        if (!missions.existsById(mission.getId())) {
+            missions.save(toEntity(mission));
+            sessions.saveAll(mission.getSessions().stream()
+                    .map(it -> toEntity(it, mission.getId()))
+                    .toList());
+        }
         Map<UUID, MissionParticipantEntity> existing = new LinkedHashMap<>();
         participants
                 .findByIdMissionId(mission.getId())
@@ -54,7 +68,9 @@ public class MissionPersistenceAdapter implements MissionRepository {
     @Override
     public @Nullable Mission findById(UUID id) {
         MissionEntity entity = missions.findById(id).orElse(null);
-        return entity == null ? null : toDomain(entity, participants.findByIdMissionId(id));
+        return entity == null
+                ? null
+                : toDomain(entity, participants.findByIdMissionId(id), sessions.findByIdMissionId(id));
     }
 
     @Override
@@ -72,16 +88,23 @@ public class MissionPersistenceAdapter implements MissionRepository {
         return (int) missions.countByCoachRunId(coachRunId);
     }
 
+    /** 참여자 · 칸을 missionId IN 으로 한 번씩만 읽는다(미션마다 따로 읽지 않는다). */
     private List<Mission> assemble(List<MissionEntity> entities) {
         if (entities.isEmpty()) return List.of();
-        Map<UUID, List<MissionParticipantEntity>> byMission = new LinkedHashMap<>();
-        participants
-                .findByIdMissionIdIn(entities.stream().map(MissionEntity::getId).toList())
-                .forEach(it -> byMission
-                        .computeIfAbsent(it.getId().getMissionId(), k -> new ArrayList<>())
-                        .add(it));
+        List<UUID> ids = entities.stream().map(MissionEntity::getId).toList();
+        Map<UUID, List<MissionParticipantEntity>> participantsByMission = new LinkedHashMap<>();
+        participants.findByIdMissionIdIn(ids).forEach(it -> participantsByMission
+                .computeIfAbsent(it.getId().getMissionId(), k -> new ArrayList<>())
+                .add(it));
+        Map<UUID, List<MissionSessionEntity>> sessionsByMission = new LinkedHashMap<>();
+        sessions.findByIdMissionIdIn(ids).forEach(it -> sessionsByMission
+                .computeIfAbsent(it.getId().getMissionId(), k -> new ArrayList<>())
+                .add(it));
         return entities.stream()
-                .map(it -> toDomain(it, byMission.getOrDefault(it.getId(), List.of())))
+                .map(it -> toDomain(
+                        it,
+                        participantsByMission.getOrDefault(it.getId(), List.of()),
+                        sessionsByMission.getOrDefault(it.getId(), List.of())))
                 .toList();
     }
 
@@ -118,6 +141,36 @@ public class MissionPersistenceAdapter implements MissionRepository {
                 participant.getUpdatedAt());
     }
 
+    private static MissionSessionEntity toEntity(MissionSession session, UUID missionId) {
+        SessionClip clip = session.clip();
+        FitnessFactor factor = session.factor();
+        return new MissionSessionEntity(
+                new MissionSessionId(missionId, session.position()),
+                session.phase().name(),
+                session.title(),
+                factor == null ? null : factor.getLabel(),
+                session.minutes(),
+                clip == null ? null : clip.videoId(),
+                clip == null ? null : clip.startSec(),
+                clip == null ? null : clip.endSec(),
+                clip == null ? null : clip.title());
+    }
+
+    private static MissionSession toSession(MissionSessionEntity e) {
+        String videoId = e.getVideoId();
+        Integer startSec = e.getStartSec();
+        String factor = e.getFactor();
+        return new MissionSession(
+                e.getId().getPosition(),
+                SessionPhase.valueOf(e.getPhase()),
+                e.getTitle(),
+                factor == null ? null : FitnessFactor.fromLabel(factor),
+                e.getMinutes(),
+                videoId == null || startSec == null
+                        ? null
+                        : new SessionClip(videoId, startSec, e.getEndSec(), e.getClipTitle()));
+    }
+
     private static void applyFrom(MissionParticipantEntity entity, MissionParticipant p) {
         VerifiedBy verifiedBy = p.getVerifiedBy();
         entity.setStatus(p.getStatus().name());
@@ -128,7 +181,7 @@ public class MissionPersistenceAdapter implements MissionRepository {
         entity.setUpdatedAt(p.getUpdatedAt());
     }
 
-    private static Mission toDomain(MissionEntity e, List<MissionParticipantEntity> ps) {
+    private static Mission toDomain(MissionEntity e, List<MissionParticipantEntity> ps, List<MissionSessionEntity> ss) {
         String videoId = e.getVideoId();
         return Mission.reconstitute(
                 e.getId(),
@@ -155,7 +208,8 @@ public class MissionPersistenceAdapter implements MissionRepository {
                                 p.getVerifiedAt(),
                                 p.getConfirmedByProfileId(),
                                 p.getUpdatedAt()))
-                        .toList());
+                        .toList(),
+                ss.stream().map(MissionPersistenceAdapter::toSession).toList());
     }
 
     private static BigDecimal ratio(double value) {
