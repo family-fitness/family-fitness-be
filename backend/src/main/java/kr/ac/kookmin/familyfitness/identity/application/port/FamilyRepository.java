@@ -1,7 +1,9 @@
 package kr.ac.kookmin.familyfitness.identity.application.port;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
 import kr.ac.kookmin.familyfitness.identity.domain.Profile;
@@ -11,6 +13,14 @@ import org.jspecify.annotations.Nullable;
 public interface FamilyRepository {
     @Nullable
     Family findById(UUID familyId);
+
+    /**
+     * 여러 가족을 한 번에 읽는다. 없는 가족은 빠지고, 가족 차례는 정하지 않는다. 가족 안 프로필 차례는 {@link #findById} 와 같다.
+     * 기본 구현은 가족마다 {@link #findById} 를 부른다 — DB 구현은 가족 행 · 프로필 행을 한 번씩 읽는다.
+     */
+    default List<Family> findAllById(Collection<UUID> familyIds) {
+        return familyIds.stream().map(this::findById).filter(Objects::nonNull).toList();
+    }
 
     List<UUID> allIds();
 

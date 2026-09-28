@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,4 +21,11 @@ public interface RestCardJpaRepository extends JpaRepository<RestCardEntity, UUI
             order by r.restDate
             """)
     List<LocalDate> restDatesBetween(UUID familyId, LocalDate from, LocalDate to);
+
+    @Query("""
+            select r from RestCardEntity r
+            where r.familyId in :familyIds and r.restDate between :from and :to
+            order by r.restDate
+            """)
+    List<RestCardEntity> findByFamiliesBetween(Collection<UUID> familyIds, LocalDate from, LocalDate to);
 }

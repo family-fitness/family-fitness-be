@@ -1,6 +1,10 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -61,6 +65,26 @@ public class ProfileQueryService implements ProfileQuery {
     public @Nullable String familyName(UUID familyId) {
         Family family = families.findById(familyId);
         return family == null ? null : family.getName();
+    }
+
+    /** 가족 행 · 프로필 행을 한 번씩 읽는다({@link FamilyRepository#findAllById}). */
+    @Override
+    public Map<UUID, List<ProfileSummary>> summariesOfFamilies(Collection<UUID> familyIds) {
+        Map<UUID, List<ProfileSummary>> out = new LinkedHashMap<>();
+        familyIds.forEach(it -> out.put(it, List.of()));
+        for (Family family : families.findAllById(familyIds)) {
+            out.put(
+                    family.getId(),
+                    family.getProfiles().stream().map(summaries::summary).toList());
+        }
+        return Collections.unmodifiableMap(out);
+    }
+
+    @Override
+    public Map<UUID, String> familyNames(Collection<UUID> familyIds) {
+        Map<UUID, String> out = new LinkedHashMap<>();
+        for (Family family : families.findAllById(familyIds)) out.put(family.getId(), family.getName());
+        return Collections.unmodifiableMap(out);
     }
 
     @Override

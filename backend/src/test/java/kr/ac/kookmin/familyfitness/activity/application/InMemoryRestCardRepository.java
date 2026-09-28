@@ -4,8 +4,11 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.application.port.RestCardRepository;
@@ -63,5 +66,15 @@ class InMemoryRestCardRepository implements RestCardRepository {
                 .filter(date -> !date.isBefore(from) && !date.isAfter(to))
                 .sorted()
                 .toList();
+    }
+
+    @Override
+    public Map<UUID, List<LocalDate>> restDatesOf(Collection<UUID> familyIds, LocalDate from, LocalDate to) {
+        Map<UUID, List<LocalDate>> out = new HashMap<>();
+        for (UUID familyId : familyIds) {
+            List<LocalDate> dates = restDatesBetween(familyId, from, to);
+            if (!dates.isEmpty()) out.put(familyId, dates);
+        }
+        return out;
     }
 }

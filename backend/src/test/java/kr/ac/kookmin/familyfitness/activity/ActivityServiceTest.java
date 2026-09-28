@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
@@ -195,6 +197,30 @@ class ActivityServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> recorder.addActiveSeconds(profileId, monday, ActivitySource.MANUAL, 30))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("여러 프로필의 움직인 날을 한 번에 읽어도 한 사람씩 읽은 값과 같다 — 움직인 날이 없는 사람은 빈 목록")
+    void 여러_프로필의_움직인_날은_한_사람씩_읽은_값과_같다() {
+        UUID family = rows.family();
+        UUID sibling = rows.profile(family, LocalDate.of(2019, 3, 1), Sex.F);
+        UUID idle = rows.profile(family, LocalDate.of(2015, 3, 1), Sex.M);
+        recorder.addActiveSeconds(profileId, monday, ActivitySource.VIDEO, 40);
+        recorder.addActiveSeconds(profileId, monday.plusDays(2), ActivitySource.TIMER, 130);
+        recorder.addActiveSeconds(sibling, monday.plusDays(1), ActivitySource.VIDEO, 600);
+        recorder.overwriteSteps(idle, monday, 5000);
+
+        Map<UUID, List<DailyMinutes>> days =
+                query.verifiedDaysOf(List.of(profileId, sibling, idle), monday, monday.plusDays(6));
+
+        assertThat(days).containsOnlyKeys(profileId, sibling, idle);
+        em.flush();
+        assertThat(days.get(profileId)).isEqualTo(query.verifiedDays(profileId, monday, monday.plusDays(6)));
+        assertThat(days.get(profileId))
+                .containsExactly(new DailyMinutes(monday, 0), new DailyMinutes(monday.plusDays(2), 2));
+        assertThat(days.get(sibling)).containsExactly(new DailyMinutes(monday.plusDays(1), 10));
+        assertThat(days.get(idle)).isEmpty();
+        assertThat(query.verifiedDaysOf(List.of(), monday, monday)).isEmpty();
     }
 
     @Test

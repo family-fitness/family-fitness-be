@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.coaching.support;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -11,6 +12,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import org.jspecify.annotations.Nullable;
 
 /** 미션 메모리 저장소. 칸 끝 저장소를 넘기면 잡힌 날 셈(spansOf)이 칸을 끝낸 날을 읽는다. */
@@ -64,22 +66,34 @@ public class InMemoryMissionRepository implements MissionRepository {
     public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
         return missions.values().stream()
                 .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
-                .map(it -> {
-                    MissionParticipant me = it.participantOf(profileId);
-                    Set<LocalDate> doneOn = completions.findByMission(it.getId()).stream()
-                            .filter(c -> c.profileId().equals(profileId))
-                            .map(c -> c.completedOn())
-                            .collect(Collectors.toSet());
-                    if (doneOn.isEmpty() && me.isCompleted() && me.getVerifiedAt() != null) {
-                        doneOn = Set.of(LocalDate.ofInstant(me.getVerifiedAt(), ZoneId.of("Asia/Seoul")));
-                    }
-                    return new MissionSpan(
-                            it.getStartsOn(),
-                            it.getEndsOn(),
-                            it.getTargetMetric(),
-                            !doneOn.isEmpty() || me.isCompleted() || me.getProgress() > 0,
-                            doneOn);
-                })
+                .map(it -> spanOf(it, profileId))
                 .toList();
+    }
+
+    @Override
+    public List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        return profileIds.stream()
+                .distinct()
+                .flatMap(profileId -> missions.values().stream()
+                        .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
+                        .map(it -> new ParticipantSpan(profileId, spanOf(it, profileId), it.getCreatedAt())))
+                .toList();
+    }
+
+    private MissionSpan spanOf(Mission mission, UUID profileId) {
+        MissionParticipant me = mission.participantOf(profileId);
+        Set<LocalDate> doneOn = completions.findByMission(mission.getId()).stream()
+                .filter(c -> c.profileId().equals(profileId))
+                .map(c -> c.completedOn())
+                .collect(Collectors.toSet());
+        if (doneOn.isEmpty() && me.isCompleted() && me.getVerifiedAt() != null) {
+            doneOn = Set.of(LocalDate.ofInstant(me.getVerifiedAt(), ZoneId.of("Asia/Seoul")));
+        }
+        return new MissionSpan(
+                mission.getStartsOn(),
+                mission.getEndsOn(),
+                mission.getTargetMetric(),
+                !doneOn.isEmpty() || me.isCompleted() || me.getProgress() > 0,
+                doneOn);
     }
 }

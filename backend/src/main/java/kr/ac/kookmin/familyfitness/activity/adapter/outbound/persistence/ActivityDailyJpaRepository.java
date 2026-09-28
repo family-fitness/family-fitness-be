@@ -43,6 +43,19 @@ public interface ActivityDailyJpaRepository extends JpaRepository<ActivityDailyE
             """)
     List<DayMinutesRow> sumByDay(UUID profileId, LocalDate from, LocalDate to, Collection<String> sources);
 
+    /** {@link #sumByDay} 를 여러 프로필에 한 번에(리그 방의 아이들). */
+    @Query("""
+            select new kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence.ProfileDayMinutesRow(
+                a.profileId, a.activityDate, sum(a.activeSeconds))
+            from ActivityDailyEntity a
+            where a.profileId in :profileIds and a.activityDate between :from and :to and a.source in :sources
+            group by a.profileId, a.activityDate
+            having sum(a.activeSeconds) > 0
+            order by a.profileId, a.activityDate
+            """)
+    List<ProfileDayMinutesRow> sumByProfileAndDay(
+            Collection<UUID> profileIds, LocalDate from, LocalDate to, Collection<String> sources);
+
     @Query("""
             select count(distinct a.activityDate) from ActivityDailyEntity a
             where a.profileId = :profileId and a.source in :sources and a.activeSeconds > 0

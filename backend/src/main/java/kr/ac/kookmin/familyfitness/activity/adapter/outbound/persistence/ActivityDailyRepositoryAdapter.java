@@ -1,9 +1,13 @@
 package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -77,6 +81,18 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
         return jpa.sumByDay(profileId, from, to, verifiedSources).stream()
                 .map(it -> new DailyMinutes(it.date(), minutesOf(it.seconds())))
                 .toList();
+    }
+
+    @Override
+    public Map<UUID, List<DailyMinutes>> verifiedDaysOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (profileIds.isEmpty()) return Map.of();
+        Map<UUID, List<DailyMinutes>> out = new LinkedHashMap<>();
+        profileIds.forEach(it -> out.put(it, new ArrayList<>()));
+        jpa.sumByProfileAndDay(profileIds, from, to, verifiedSources)
+                .forEach(it -> out.get(it.profileId()).add(new DailyMinutes(it.date(), minutesOf(it.seconds()))));
+        Map<UUID, List<DailyMinutes>> frozen = new LinkedHashMap<>();
+        out.forEach((id, days) -> frozen.put(id, List.copyOf(days)));
+        return Collections.unmodifiableMap(frozen);
     }
 
     @Override

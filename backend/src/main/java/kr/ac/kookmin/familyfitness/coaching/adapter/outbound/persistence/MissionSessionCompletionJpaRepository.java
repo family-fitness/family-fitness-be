@@ -14,4 +14,8 @@ public interface MissionSessionCompletionJpaRepository
 
     /** 한 사람이 이 미션들에서 끝낸 칸 — 잡힌 날(여러 날짜리 미션이 서는 날) 셈에 쓴다. */
     List<MissionSessionCompletionEntity> findByIdProfileIdAndIdMissionIdIn(UUID profileId, Collection<UUID> missionIds);
+
+    /** 여러 사람을 한 번에 — 리그 달성률의 잡힌 날 셈에 쓴다. */
+    List<MissionSessionCompletionEntity> findByIdProfileIdInAndIdMissionIdIn(
+            Collection<UUID> profileIds, Collection<UUID> missionIds);
 }

@@ -18,10 +18,10 @@ class ModularityTests {
     private final ApplicationModules modules = ApplicationModules.of(FamilyfitnessApplication.class);
 
     @Test
-    @DisplayName("업무 모듈 다섯 개가 실제로 존재한다")
-    void 업무_모듈_다섯_개가_실제로_존재한다() {
+    @DisplayName("업무 모듈 여섯 개가 실제로 존재한다")
+    void 업무_모듈_여섯_개가_실제로_존재한다() {
         assertThat(modules.stream().map(it -> it.getIdentifier().toString()).toList())
-                .containsExactlyInAnyOrder("identity", "fitness", "activity", "progress", "coaching");
+                .containsExactlyInAnyOrder("identity", "fitness", "activity", "progress", "coaching", "league");
     }
 
     @Test
@@ -32,7 +32,7 @@ class ModularityTests {
 
     @Test
     @DisplayName(
-            "identity는 독립적이고, fitness·activity는 identity만, progress는 identity·activity·fitness, coaching은 progress까지 참조한다")
+            "identity는 독립적이고, fitness·activity는 identity만, progress는 identity·activity·fitness, coaching은 progress까지, league는 identity·activity·progress를 참조한다")
     void 모듈별_허용된_의존만_참조한다() {
         String basePackage = "kr.ac.kookmin.familyfitness";
         JavaClasses classes = new ClassFileImporter()
@@ -44,6 +44,7 @@ class ModularityTests {
         allowed.put("activity", Set.of("identity"));
         allowed.put("progress", Set.of("identity", "activity", "fitness"));
         allowed.put("coaching", Set.of("identity", "fitness", "activity", "progress"));
+        allowed.put("league", Set.of("identity", "activity", "progress"));
 
         allowed.forEach((source, targets) -> {
             Set<String> others = new LinkedHashSet<>(allowed.keySet());

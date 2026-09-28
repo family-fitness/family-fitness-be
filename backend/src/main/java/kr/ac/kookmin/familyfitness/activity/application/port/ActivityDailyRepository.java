@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.activity.application.port;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -27,6 +28,9 @@ public interface ActivityDailyRepository {
 
     /** {@code from}~{@code to} 양끝 포함, 서버가 잰 초(TIMER · VIDEO)가 0 보다 큰 날과 그날 분(내림). 날짜 오름차순. */
     List<DailyMinutes> verifiedDays(UUID profileId, LocalDate from, LocalDate to);
+
+    /** {@link #verifiedDays} 를 여러 프로필에 쿼리 한 번으로. 요청한 프로필마다 한 줄이고, 움직인 날이 없으면 빈 목록이다. */
+    Map<UUID, List<DailyMinutes>> verifiedDaysOf(Collection<UUID> profileIds, LocalDate from, LocalDate to);
 
     /** 기간 제한 없이 서버가 잰 초가 있는 날 수와 분 합(초 합 내림). */
     VerifiedSummary verifiedSummary(UUID profileId);

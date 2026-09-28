@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -19,6 +20,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
@@ -99,10 +101,7 @@ public class MissionPersistenceAdapter implements MissionRepository {
         return (int) missions.countByCoachRunId(coachRunId);
     }
 
-    /**
-     * 참여 행과 그 사람이 칸을 끝낸 날(completed_on)을 한 번씩 읽어 붙인다. 칸 끝 기록이 없는 옛 미션을 완료했으면
-     * 완료 시각(verifiedAt)의 KST 날짜 하나를 끝낸 날로 본다.
-     */
+    /** 참여 행과 그 사람이 칸을 끝낸 날(completed_on)을 한 번씩 읽어 붙인다. */
     @Override
     public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
         List<MissionSpanRow> rows = participants.findSpans(profileId, from, to);
@@ -115,21 +114,75 @@ public class MissionPersistenceAdapter implements MissionRepository {
                         .computeIfAbsent(it.getId().getMissionId(), k -> new HashSet<>())
                         .add(it.getCompletedOn()));
         return rows.stream()
-                .map(it -> {
-                    boolean completed = ParticipantStatus.valueOf(it.status()) == ParticipantStatus.COMPLETED;
-                    Set<LocalDate> doneOn = doneOnByMission.getOrDefault(it.missionId(), Set.of());
-                    Instant verifiedAt = it.verifiedAt();
-                    if (doneOn.isEmpty() && completed && verifiedAt != null) {
-                        doneOn = Set.of(LocalDate.ofInstant(verifiedAt, zone));
-                    }
-                    return new MissionSpan(
-                            it.startsOn(),
-                            it.endsOn(),
-                            TargetMetric.valueOf(it.targetMetric()),
-                            !doneOn.isEmpty() || completed || it.progress().signum() > 0,
-                            doneOn);
-                })
+                .map(it -> span(
+                        it.startsOn(),
+                        it.endsOn(),
+                        it.targetMetric(),
+                        it.status(),
+                        it.progress(),
+                        it.verifiedAt(),
+                        doneOnByMission.getOrDefault(it.missionId(), Set.of())))
                 .toList();
+    }
+
+    /** {@link #spansOf} 를 여러 프로필에 한 번에. 칸 끝낸 날도 (프로필 IN, 미션 IN) 한 번에 읽는다. */
+    @Override
+    public List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (profileIds.isEmpty()) return List.of();
+        List<ParticipantSpanRow> rows = participants.findParticipantSpans(profileIds, from, to);
+        if (rows.isEmpty()) return List.of();
+        Map<UUID, Map<UUID, Set<LocalDate>>> doneOnByProfile = new HashMap<>();
+        completions
+                .findByIdProfileIdInAndIdMissionIdIn(
+                        profileIds,
+                        rows.stream()
+                                .map(ParticipantSpanRow::missionId)
+                                .distinct()
+                                .toList())
+                .forEach(it -> doneOnByProfile
+                        .computeIfAbsent(it.getId().getProfileId(), k -> new HashMap<>())
+                        .computeIfAbsent(it.getId().getMissionId(), k -> new HashSet<>())
+                        .add(it.getCompletedOn()));
+        return rows.stream()
+                .map(it -> new ParticipantSpan(
+                        it.profileId(),
+                        span(
+                                it.startsOn(),
+                                it.endsOn(),
+                                it.targetMetric(),
+                                it.status(),
+                                it.progress(),
+                                it.verifiedAt(),
+                                doneOnByProfile
+                                        .getOrDefault(it.profileId(), Map.of())
+                                        .getOrDefault(it.missionId(), Set.of())),
+                        it.missionCreatedAt()))
+                .toList();
+    }
+
+    /**
+     * 참여 행 하나 + 그 사람이 칸을 끝낸 날 → 그 사람 입장의 미션 기간 · 진행. 칸 끝 기록이 없는 옛 미션을 완료했으면 완료
+     * 시각(verifiedAt)의 KST 날짜 하나를 끝낸 날로 본다.
+     */
+    private MissionSpan span(
+            LocalDate startsOn,
+            LocalDate endsOn,
+            String targetMetric,
+            String status,
+            BigDecimal progress,
+            @Nullable Instant verifiedAt,
+            Set<LocalDate> doneOn) {
+        boolean completed = ParticipantStatus.valueOf(status) == ParticipantStatus.COMPLETED;
+        Set<LocalDate> days = doneOn;
+        if (days.isEmpty() && completed && verifiedAt != null) {
+            days = Set.of(LocalDate.ofInstant(verifiedAt, zone));
+        }
+        return new MissionSpan(
+                startsOn,
+                endsOn,
+                TargetMetric.valueOf(targetMetric),
+                !days.isEmpty() || completed || progress.signum() > 0,
+                days);
     }
 
     /** 참여자 · 칸을 missionId IN 으로 한 번씩만 읽는다(미션마다 따로 읽지 않는다). */

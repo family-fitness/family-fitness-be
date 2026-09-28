@@ -3,7 +3,9 @@ package kr.ac.kookmin.familyfitness.activity.application;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder;
@@ -91,6 +93,16 @@ public class ActivityService implements ActivityRecorder, ActivityQuery {
             throw new IllegalArgumentException("기간의 끝이 시작보다 앞섭니다: " + from + " ~ " + to);
         }
         return repository.verifiedDays(profileId, from, to);
+    }
+
+    /** 기본 구현(프로필마다 한 번)을 쿼리 한 번으로 바꾼다. */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, List<DailyMinutes>> verifiedDaysOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("기간의 끝이 시작보다 앞섭니다: " + from + " ~ " + to);
+        }
+        return repository.verifiedDaysOf(profileIds, from, to);
     }
 
     @Override

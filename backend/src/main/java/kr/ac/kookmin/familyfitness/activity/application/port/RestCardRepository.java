@@ -2,7 +2,9 @@ package kr.ac.kookmin.familyfitness.activity.application.port;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.domain.RestCard;
 
@@ -21,4 +23,7 @@ public interface RestCardRepository {
 
     /** {@code from}~{@code to}(양끝 포함) 안의 쉬는 날, 오름차순 */
     List<LocalDate> restDatesBetween(UUID familyId, LocalDate from, LocalDate to);
+
+    /** 여러 가족의 {@link #restDatesBetween} 을 쿼리 한 번으로. 쉬는 날이 있는 가족만 키가 있다. 날짜는 오름차순. */
+    Map<UUID, List<LocalDate>> restDatesOf(Collection<UUID> familyIds, LocalDate from, LocalDate to);
 }

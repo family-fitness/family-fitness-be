@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.identity.adapter.outbound.persistence;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,6 +52,19 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
     @Override
     public @Nullable Family findById(UUID familyId) {
         return familyJpa.findById(familyId).map(this::toDomain).orElse(null);
+    }
+
+    /** 가족 행 한 번, 프로필 행 한 번(IN)으로 읽어 가족마다 묶는다. 프로필 차례는 {@link #findById} 와 같다(만든 시각 · id). */
+    @Override
+    public List<Family> findAllById(Collection<UUID> familyIds) {
+        if (familyIds.isEmpty()) return List.of();
+        Map<UUID, List<Profile>> profiles = profileJpa.findByFamilyIdInOrderByCreatedAtAscIdAsc(familyIds).stream()
+                .collect(Collectors.groupingBy(
+                        ProfileEntity::getFamilyId,
+                        Collectors.mapping(FamilyRepositoryAdapter::toDomain, Collectors.toList())));
+        return familyJpa.findAllById(familyIds).stream()
+                .map(it -> Family.restore(it.getId(), it.getName(), profiles.getOrDefault(it.getId(), List.of())))
+                .toList();
     }
 
     @Override
