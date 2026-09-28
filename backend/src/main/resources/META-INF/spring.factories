@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+kr.ac.kookmin.familyfitness.shared.security.DevFeatureGuard
