@@ -34,6 +34,14 @@ class InMemoryFitnessTestRepository implements FitnessTestRepository {
     }
 
     @Override
+    public @Nullable FitnessTest findEarliestByProfileId(UUID profileId) {
+        return saved.values().stream()
+                .filter(it -> it.getProfileId().equals(profileId))
+                .min(Comparator.comparing(FitnessTest::getTestedOn))
+                .orElse(null);
+    }
+
+    @Override
     public List<FitnessTest> findRecentByProfileId(UUID profileId, int limit) {
         return saved.values().stream()
                 .filter(it -> it.getProfileId().equals(profileId))

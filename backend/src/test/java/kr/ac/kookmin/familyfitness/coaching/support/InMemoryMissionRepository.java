@@ -6,6 +6,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import org.jspecify.annotations.Nullable;
 
 public class InMemoryMissionRepository implements MissionRepository {
@@ -43,5 +45,21 @@ public class InMemoryMissionRepository implements MissionRepository {
         return (int) missions.values().stream()
                 .filter(it -> coachRunId.equals(it.getCoachRunId()))
                 .count();
+    }
+
+    @Override
+    public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
+        return missions.values().stream()
+                .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
+                .map(it -> {
+                    MissionParticipant me = it.participantOf(profileId);
+                    return new MissionSpan(
+                            it.getStartsOn(),
+                            it.getEndsOn(),
+                            it.getTargetMetric(),
+                            me.isCompleted() || me.getProgress() > 0,
+                            me.isCompleted() ? me.getVerifiedAt() : null);
+                })
+                .toList();
     }
 }

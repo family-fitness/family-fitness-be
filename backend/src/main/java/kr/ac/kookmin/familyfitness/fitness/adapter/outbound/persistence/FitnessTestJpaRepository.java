@@ -12,6 +12,9 @@ public interface FitnessTestJpaRepository extends JpaRepository<FitnessTestEntit
     @Nullable
     FitnessTestEntity findFirstByProfileIdOrderByTestedOnDesc(UUID profileId);
 
+    @Nullable
+    FitnessTestEntity findFirstByProfileIdOrderByTestedOnAsc(UUID profileId);
+
     List<FitnessTestEntity> findByProfileIdOrderByTestedOnDesc(UUID profileId, Limit limit);
 
     boolean existsByProfileIdAndTestedOn(UUID profileId, LocalDate testedOn);
