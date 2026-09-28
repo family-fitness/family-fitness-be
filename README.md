@@ -8,8 +8,9 @@
 
 ## 상태
 
-API 주소 34개가 있다(2026-09-28 develop 기준). 프론트 요청(FE 저장소 `BACKEND_API.md`)에 맞춰 편성을 「아이 한 명의 하루」로 바꾸고, 미션 칸 · 측정 이력 · AI 운동 영상 구간을 더했다.
-그 요청의 새 주소(캘린더 · 레벨 · 칸 끝 · 리그 · 알림 등) 중 아직 없는 것은 [docs/api-contract.md](./docs/api-contract.md) 6장에 적었다.
+API 경로 46개(메서드까지 53개)가 있다(2026-09-29 develop `062e552` 기준). 프론트 요청(FE 저장소 `BACKEND_API.md`)의 새 주소 — 칸 끝 · 캘린더 · 레벨 · 리그 · 알림 · 쉬는 날 · 운동 구간 · 운동할 수 있는 시간 · 초대코드 미리 보기 — 는 모두 열었다.
+아직 없는 것은 프로필 사진, 앱 밖 푸시 · 재촉 알림, 미션 고치기 등이고 [docs/api-contract.md](./docs/api-contract.md) 9장에 적었다.
+FE 가 부르지 않는 옛 주소 9개(예측 · 대화 · 주간 요약 · 영상 셋 · 타이머 · 걸음수 · 보호자 확인)는 남아 있고, 걷을지는 결정을 기다린다.
 프론트는 `cd backend && ./gradlew bootRun` 한 줄로 뜬 서버(H2 · 개발 로그인 · AI 스텁)에 바로 붙을 수 있다.
 연동 방법은 [backend/README.md](./backend/README.md), 계약은 [docs/api-contract.md](./docs/api-contract.md).
 
@@ -24,7 +25,7 @@ API 주소 34개가 있다(2026-09-28 develop 기준). 프론트 요청(FE 저�
 ## 구조
 
 ```
-backend/    Spring Boot 모듈러 모놀리스 (identity · fitness · activity · coaching)
+backend/    Spring Boot 모듈러 모놀리스 (identity · fitness · activity · progress · coaching · league · notification)
 docs/       API 계약 · 아키텍처 · ERD · ADR
 .github/    CI (포맷 검사 + 빌드·테스트)
 ```
