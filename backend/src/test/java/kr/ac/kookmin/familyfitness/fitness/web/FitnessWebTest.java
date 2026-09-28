@@ -105,19 +105,34 @@ class FitnessWebTest {
     private record Item(String code, String value) {}
 
     private String registerBody(Item... items) {
+        return registerBody(testedOn, "135.5", "31.2", items);
+    }
+
+    /** heightCm · weightKg 는 JSON 값 그대로 넣는다("null" 이면 그 회차에 안 적은 것). */
+    private String registerBody(LocalDate on, String heightCm, String weightKg, Item... items) {
         String rendered = Stream.of(items)
                 .map(it -> "{\"itemCode\":\"" + it.code() + "\",\"value\":" + it.value() + "}")
                 .collect(Collectors.joining(","));
-        return "{\"testedOn\":\"" + testedOn + "\",\"source\":\"SELF_INPUT\",\"heightCm\":135.5,\"weightKg\":31.2,\n"
-                + " \"items\":[" + rendered + "]}";
+        return "{\"testedOn\":\"" + on + "\",\"source\":\"SELF_INPUT\",\"heightCm\":" + heightCm + ",\"weightKg\":"
+                + weightKg + ",\n" + " \"items\":[" + rendered + "]}";
     }
 
-    private ResultActions registerYouthTest() throws Exception {
+    private ResultActions register(LocalDate on, String heightCm, String weightKg, Item... items) throws Exception {
         return mvc.perform(post("/api/v1/profiles/" + childId + "/fitness-tests")
                 .header(HttpHeaders.AUTHORIZATION, bearer())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(registerBody(
-                        new Item("012", "9"), new Item("020", "42"), new Item("022", "142"), new Item("028", "30"))));
+                .content(registerBody(on, heightCm, weightKg, items)));
+    }
+
+    private ResultActions registerYouthTest() throws Exception {
+        return register(
+                testedOn,
+                "135.5",
+                "31.2",
+                new Item("012", "9"),
+                new Item("020", "42"),
+                new Item("022", "142"),
+                new Item("028", "30"));
     }
 
     @Test
@@ -128,6 +143,7 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest"))
                 .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests")).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -170,7 +186,8 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(48)))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("참가")))
+                // 등급 기준 85·65·40 — 백분위 48 은 3등급(옛 기준 90·75·50 이면 참가)
+                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 52%")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(35)))
@@ -259,10 +276,14 @@ class FitnessWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fitnessTestId").value(nullValue()))
                 .andExpect(jsonPath("$.testedOn").value(nullValue()))
-                .andExpect(jsonPath("$.radar", hasSize(5)))
+                .andExpect(jsonPath("$.heightCm").value(nullValue()))
+                .andExpect(jsonPath("$.weightKg").value(nullValue()))
+                .andExpect(jsonPath("$.radar", hasSize(6)))
                 .andExpect(jsonPath("$.radar[0].factor").value("근력"))
                 .andExpect(jsonPath("$.radar[0].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.radar[4].factor").value("순발력"))
+                .andExpect(jsonPath("$.radar[5].factor").value("민첩성"))
+                .andExpect(jsonPath("$.radar[5].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.items", hasSize(0)))
                 .andExpect(jsonPath("$.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.strongest").value(nullValue()))
@@ -271,8 +292,8 @@ class FitnessWebTest {
     }
 
     @Test
-    @DisplayName("latest 는 레이더 5요인과 코치 방향을 준다")
-    void latest_는_레이더_5요인과_코치_방향을_준다() throws Exception {
+    @DisplayName("latest 는 그 회차의 키·몸무게, 레이더 6요인, 코치 방향을 준다")
+    void latest_는_그_회차의_키_몸무게_레이더_6요인_코치_방향을_준다() throws Exception {
         registerYouthTest().andExpect(status().isCreated());
 
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
@@ -280,17 +301,90 @@ class FitnessWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fitnessTestId").isNotEmpty())
                 .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
-                .andExpect(jsonPath("$.radar[*].factor", contains("근력", "근지구력", "유연성", "심폐지구력", "순발력")))
+                .andExpect(jsonPath("$.heightCm").value(135.5))
+                .andExpect(jsonPath("$.weightKg").value(31.2))
+                .andExpect(jsonPath("$.radar[*].factor", contains("근력", "근지구력", "유연성", "심폐지구력", "순발력", "민첩성")))
                 .andExpect(jsonPath("$.radar[0].percentile").value(10))
                 .andExpect(jsonPath("$.radar[1].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.radar[2].percentile").value(48))
                 .andExpect(jsonPath("$.radar[3].percentile").value(35))
                 .andExpect(jsonPath("$.radar[4].percentile").value(63))
+                .andExpect(jsonPath("$.radar[5].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("참가")))
                 .andExpect(jsonPath("$.weakest.itemCode").value("028"))
                 .andExpect(jsonPath("$.strongest.itemCode").value("022"))
                 .andExpect(jsonPath("$.coachDirection").value("GROWTH"));
+    }
+
+    @Test
+    @DisplayName("043 반복옆뛰기를 재면 레이더 민첩성 꼭지점에 백분위가 들어간다")
+    void 반복옆뛰기_043_을_재면_레이더_민첩성_꼭지점에_백분위가_들어간다() throws Exception {
+        // 여아 만 11세 규준에서 35회는 85번째 백분위 — 새 기준 1등급(옛 기준이면 2등급)
+        register(testedOn, "135.5", "31.2", new Item("043", "35"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[0].percentile").value(85))
+                .andExpect(jsonPath("$.items[0].grade").value("1등급"));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.radar[5].factor").value("민첩성"))
+                .andExpect(jsonPath("$.radar[5].percentile").value(85))
+                .andExpect(jsonPath("$.radar[0].percentile").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("측정 이력은 최근 회차부터 id·날짜·통합 백분위·그 회차의 키·몸무게를 주고, 없으면 빈 목록")
+    void 측정_이력은_최근_회차부터_id_날짜_통합_백분위_그_회차의_키_몸무게를_주고_없으면_빈_목록() throws Exception {
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(0)));
+
+        LocalDate earlier = testedOn.minusDays(30);
+        register(earlier, "null", "null", new Item("028", "30")).andExpect(status().isCreated());
+        registerYouthTest().andExpect(status().isCreated());
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests")
+                        .param("size", "12")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(2)))
+                .andExpect(jsonPath("$.tests[*].testedOn", contains(testedOn.toString(), earlier.toString())))
+                .andExpect(jsonPath("$.tests[0].fitnessTestId").isNotEmpty())
+                // 체력 지도 latest.overallPercentile 과 같은 셈(항목 백분위 평균)
+                .andExpect(jsonPath("$.tests[0].overallPercentile").value(39))
+                .andExpect(jsonPath("$.tests[0].heightCm").value(135.5))
+                .andExpect(jsonPath("$.tests[0].weightKg").value(31.2))
+                .andExpect(jsonPath("$.tests[1].overallPercentile").value(10))
+                .andExpect(jsonPath("$.tests[1].heightCm").value(nullValue()))
+                .andExpect(jsonPath("$.tests[1].weightKg").value(nullValue()));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests")
+                        .param("size", "1")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(1)))
+                .andExpect(jsonPath("$.tests[0].testedOn").value(testedOn.toString()));
+    }
+
+    @Test
+    @DisplayName("측정 이력 — size 가 1~100 밖이면 400, 다른 가족이면 403")
+    void 측정_이력_size_가_1_100_밖이면_400_다른_가족이면_403() throws Exception {
+        for (String size : List.of("0", "101")) {
+            mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests")
+                            .param("size", size)
+                            .header(HttpHeaders.AUTHORIZATION, bearer()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
+
+        UUID stranger = UUID.randomUUID();
+        when(familyAccess.requireSameFamilyAsProfile(stranger, childId)).thenThrow(new NotSameFamilyException());
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(stranger)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_SAME_FAMILY"));
     }
 
     @Test
@@ -328,6 +422,21 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.members[1].latest.weakest.itemCode").value("028"))
                 .andExpect(jsonPath("$.members[1].latest.coachDirection").value("GROWTH"))
                 .andExpect(jsonPath("$.disclaimer").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("체력 지도 headline 은 오늘 연령대가 아니라 측정 당시 연령대로 붙는다")
+    void 체력_지도_headline_은_오늘_연령대가_아니라_측정_당시_연령대로_붙는다() throws Exception {
+        registerYouthTest().andExpect(status().isCreated());
+        // 만 11세(유소년)에 잰 뒤 13세 생일이 지나 오늘 연령대가 청소년이 된 경우
+        ProfileSummary grownUp = summaryOf(childId, familyId, AgeGroup.ADOLESCENT);
+        when(familyAccess.requireMember(userId, familyId)).thenReturn(grownUp);
+        when(profileQuery.summariesOfFamily(familyId)).thenReturn(List.of(grownUp));
+
+        mvc.perform(get("/api/v1/families/" + familyId + "/fitness-map").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[0].ageGroup").value("청소년"))
+                .andExpect(jsonPath("$.members[0].headline").value("유소년 상위 61%"));
     }
 
     @Test
