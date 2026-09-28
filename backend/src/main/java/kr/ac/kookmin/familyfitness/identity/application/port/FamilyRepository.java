@@ -28,6 +28,7 @@ public interface FamilyRepository {
 
     /**
      * 가족과 모든 프로필을 한 트랜잭션에 저장한다(신규 INSERT · 기존 UPDATE).
+     * 가족이 모아 둔 동의 이력({@link Family#drainConsentEvents})도 꺼내 consent_events 에 넣는다(INSERT 만).
      * 새 프로필의 계정이 이미 다른 프로필에 붙어 있으면(동시 가족 만들기) AlreadyInFamilyException.
      */
     Family save(Family family);

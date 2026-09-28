@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -77,6 +78,14 @@ public class ProfileEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * 낙관적 잠금 버전(V145). Hibernate 가 UPDATE 에 읽을 때의 값을 조건으로 걸고 1 을 더한다 — 0행이면 다른 요청이 먼저 이 행을 바꾼 것이다.
+     * 새 행은 null 로 두면 persist 때 0 으로 시작한다. 초대 코드 사용의 조건부 UPDATE({@link ProfileJpaRepository#attachUserIfUnclaimed})도 올린다.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private @Nullable Long version;
+
     protected ProfileEntity() {}
 
     public ProfileEntity(
@@ -140,12 +149,24 @@ public class ProfileEntity {
         return displayName;
     }
 
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
     public LocalDate getBirthDate() {
         return birthDate;
     }
 
+    public void setBirthDate(LocalDate birthDate) {
+        this.birthDate = birthDate;
+    }
+
     public String getSex() {
         return sex;
+    }
+
+    public void setSex(String sex) {
+        this.sex = sex;
     }
 
     public String getRole() {

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 초대·초대 코드 사용·참여 수준·보호자 동의. */
+/** 초대·초대 코드 사용·참여 수준·보호자 동의·이름 · 생년월일 · 성별 고치기. */
 @RestController
 @RequestMapping("/api/v1/profiles")
 public class ProfileController {
@@ -52,10 +52,26 @@ public class ProfileController {
         return settings.changeSupportMode(user.userId(), profileId, Objects.requireNonNull(request.supportMode()));
     }
 
+    /**
+     * 보호자 동의 주기 · 거두기 — 가족의 PARENT 만(403 NOT_SAME_FAMILY · NOT_A_PARENT). 자기 프로필은 403 SELF_CONSENT,
+     * 만 14세 미만 보호자는 422 UNDER_14_NOT_ALLOWED. 거둔 동의는 만 14세가 지나도 다시 동의할 때까지 막힌 채다.
+     */
     @PatchMapping("/{profileId}/consent")
     public ConsentResponse consent(
             CurrentUser user, @PathVariable UUID profileId, @Valid @RequestBody ConsentRequest request) {
         ConsentState state = settings.updateConsent(user.userId(), profileId, request.toDomain());
         return new ConsentResponse(state.consentGiven(), state.consentAt(), state.consentBy(), state.measurable());
+    }
+
+    /**
+     * 이름 · 생년월일 · 성별 고치기 — 가족의 PARENT 만(403 NOT_SAME_FAMILY · NOT_A_PARENT).
+     * 계정 없는 프로필과 자기 프로필만 고친다(계정이 붙은 다른 사람이면 403 FORBIDDEN). 응답은 고친 뒤의 {@link ProfileSummary}.
+     * PARENT 의 생년월일을 만 14세 미만으로 고치면 422 UNDER_14_NOT_ALLOWED. 아이 생일을 고쳐 만 14세 미만이 되면
+     * consentRequired=true 가 되고, 동의 기록이 없으면 consentGiven · measurable 이 바로 false 다. 지난 측정의 백분위는 그대로다.
+     */
+    @PatchMapping("/{profileId}")
+    public ProfileSummary edit(
+            CurrentUser user, @PathVariable UUID profileId, @Valid @RequestBody EditProfileRequest request) {
+        return settings.editProfile(user.userId(), profileId, request.toDomain());
     }
 }

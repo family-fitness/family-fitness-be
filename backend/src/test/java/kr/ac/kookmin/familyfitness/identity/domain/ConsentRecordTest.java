@@ -26,4 +26,16 @@ class ConsentRecordTest {
         assertThat(revoked.personalAt()).isEqualTo(at);
         assertThat(revoked.revokedAt()).isEqualTo(at.plusSeconds(1));
     }
+
+    @Test
+    @DisplayName("거둔 채인지는 철회 시각으로 본다 — 동의한 적 없이 거둬도 거둔 채고, 다시 동의하면 풀린다")
+    void 거둔_채인지는_철회_시각으로_본다() {
+        assertThat(ConsentRecord.NONE.isRevoked()).isFalse();
+        assertThat(ConsentRecord.granted(at, by).isRevoked()).isFalse();
+        assertThat(ConsentRecord.NONE.revoke(at).isRevoked()).isTrue();
+
+        ConsentRecord revoked = ConsentRecord.granted(at, by).revoke(at.plusSeconds(1));
+        assertThat(revoked.isRevoked()).isTrue();
+        assertThat(ConsentRecord.granted(at.plusSeconds(2), by).isRevoked()).isFalse();
+    }
 }

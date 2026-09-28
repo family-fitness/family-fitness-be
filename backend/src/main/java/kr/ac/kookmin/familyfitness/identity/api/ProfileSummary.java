@@ -25,9 +25,9 @@ public record ProfileSummary(
         @Nullable SupportMode supportMode,
         /** 만 4세 이상이고 (동의 불필요이거나) 동의가 살아 있는가 */
         boolean measurable,
-        /** 만 14세 미만인가 */
+        /** 보호자 동의가 있어야 하는가 — 만 14세 미만이거나, 동의를 거둔 채다(거둔 동의는 만 14세가 지나도 풀리지 않는다) */
         boolean consentRequired,
-        /** 동의가 살아 있는가. 동의 불필요(성인)면 true */
+        /** 동의가 살아 있는가. 동의가 필요 없으면(만 14세 이상이고 거둔 채가 아님) true */
         boolean consentGiven) {
     @JsonIgnore
     public boolean isParent() {

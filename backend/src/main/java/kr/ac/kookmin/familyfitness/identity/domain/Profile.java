@@ -21,9 +21,9 @@ public class Profile {
     private final UUID familyId;
     private final ProfileRole role;
     private final boolean isOwner;
-    private final String displayName;
-    private final LocalDate birthDate;
-    private final Sex sex;
+    private String displayName;
+    private LocalDate birthDate;
+    private Sex sex;
 
     @Nullable
     private final BigDecimal heightCm;
@@ -155,12 +155,16 @@ public class Profile {
         return AgeGroup.of(birthDate, today);
     }
 
-    /** 만 14세 미만인가 */
+    /**
+     * 보호자 동의가 있어야 하는가 — 만 14세 미만이거나, 동의를 거둔 채다.
+     * 거둔 동의는 만 14세 생일이 지나도 저절로 풀리지 않는다. 보호자가 다시 동의해야 풀린다.
+     * 다른 모듈은 {@code consentRequired && !consentGiven} 으로 막으므로 거둔 채인 14세 이상도 여기서 true 여야 막힌다.
+     */
     public boolean consentRequired(LocalDate today) {
-        return GuardianConsent.isRequired(birthDate, today);
+        return GuardianConsent.isRequired(birthDate, today) || consent.isRevoked();
     }
 
-    /** 동의가 살아 있는가. 동의 불필요(만 14세 이상)면 true */
+    /** 동의가 살아 있는가. 동의가 필요 없으면(만 14세 이상이고 거둔 적이 없거나 다시 동의함) true */
     public boolean consentGiven(LocalDate today) {
         return !consentRequired(today) || consent.isGiven();
     }
@@ -205,5 +209,17 @@ public class Profile {
     /** 둘 다 true 면 새로 동의(시각·동의자 갱신), 하나라도 false 면 철회(과거 시각은 유지). */
     void recordConsent(GuardianConsent decision, UUID byUserId, Instant at) {
         consent = decision.isComplete() ? ConsentRecord.granted(at, byUserId) : consent.revoke(at);
+    }
+
+    /**
+     * 이름 · 생년월일 · 성별을 고친다. null 인 칸은 그대로 둔다. 규칙(누가 · 어느 프로필 · 나이)은 {@link Family#editProfile} 이 본다.
+     * 지난 측정의 나이 · 백분위는 측정 때 굳혀 저장했으므로 여기서 바뀌지 않는다.
+     */
+    void edit(ProfileEdit edit) {
+        String name = edit.name();
+        if (name != null && name.isBlank()) throw new IllegalArgumentException("이름은 비어 있을 수 없다");
+        if (name != null) displayName = name;
+        if (edit.birthDate() != null) birthDate = edit.birthDate();
+        if (edit.sex() != null) sex = edit.sex();
     }
 }
