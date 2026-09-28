@@ -8,7 +8,8 @@
 
 ## 상태
 
-Notion 「API 명세서」의 백엔드 엔드포인트 27개 중 26개를 구현했다(`GET /facilities` 는 공공데이터 출처 미확정으로 제외).
+API 주소 34개가 있다(2026-09-28 develop 기준). 프론트 요청(FE 저장소 `BACKEND_API.md`)에 맞춰 편성을 「아이 한 명의 하루」로 바꾸고, 미션 칸 · 측정 이력 · AI 운동 영상 구간을 더했다.
+그 요청의 새 주소(캘린더 · 레벨 · 칸 끝 · 리그 · 알림 등) 중 아직 없는 것은 [docs/api-contract.md](./docs/api-contract.md) 6장에 적었다.
 프론트는 `cd backend && ./gradlew bootRun` 한 줄로 뜬 서버(H2 · 개발 로그인 · AI 스텁)에 바로 붙을 수 있다.
 연동 방법은 [backend/README.md](./backend/README.md), 계약은 [docs/api-contract.md](./docs/api-contract.md).
 
@@ -18,7 +19,7 @@ Notion 「API 명세서」의 백엔드 엔드포인트 27개 중 26개를 구�
 | API 계약 | [`docs/api-contract.md`](./docs/api-contract.md) · 서버의 `/swagger-ui.html` |
 | 구조 | [`docs/architecture.md`](./docs/architecture.md) · [`docs/erd.dbml`](./docs/erd.dbml) |
 | 설계 원본 | Notion(API 명세서 · AI 인터페이스 명세) · [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf) |
-| AI 서비스 | `family-fitness-ai` (FastAPI). 아직 `/v1/*` 미구현이라 백엔드는 기본으로 스텁을 쓴다 |
+| AI 서비스 | `family-fitness-ai` (FastAPI). `/v1` 아래 평가 · 추이 · 영상 검색 · 편성 · 대화 다섯 주소를 연다. 로컬(`bootRun`)은 AI 없이 뜨도록 스텁이 기본이고, 운영(`prod`)은 http 로 부른다 |
 
 ## 구조
 

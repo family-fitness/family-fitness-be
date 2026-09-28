@@ -214,8 +214,17 @@ Table coach_runs {
   updated_at timestamptz [not null]
   ai_refused boolean [not null]
   ai_refusal_reason varchar(60)
+  subject_profile_id uuid
+  run_date date
+  quiet boolean
+  place varchar(10)
+  focus_factor varchar(20)
+  with_parent boolean
+  lock_key varchar(60)
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
+    (status, created_at) [name: 'ix_coach_runs_status_created']
+    (subject_profile_id, run_date) [name: 'ix_coach_runs_subject_date']
   }
   Note: '''(trigger_type in ('SCHEDULE', 'MANUAL'))
 (status in ('RUNNING', 'AWAITING_APPROVAL', 'APPROVED', 'REJECTED', 'FAILED'))
@@ -317,6 +326,56 @@ Table coach_message_citations {
   }
 }
 
+Table video_exercises {
+  clip_id varchar(48) [pk, not null]
+  video_id varchar(32) [not null]
+  seq smallint [not null]
+  name_on_video varchar(60) [not null]
+  exercise_name varchar(60)
+  title varchar(60) [not null]
+  fitness_factor varchar(20)
+  phase varchar(10) [not null]
+  start_sec int [not null]
+  end_sec int [not null]
+  home_ok boolean [not null]
+  quiet boolean [not null]
+  needs_props boolean [not null]
+  is_exercise boolean [not null]
+  age_group varchar(12)
+  source varchar(10)
+  active boolean [not null]
+  indexes {
+    (video_id, start_sec) [unique, name: 'uq_video_exercises_start']
+  }
+  Note: '''(start_sec >= 0 and end_sec > start_sec)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(fitness_factor is null or fitness_factor in
+(age_group is null or age_group in'''
+}
+
+Table mission_sessions {
+  mission_id uuid [not null]
+  position smallint [not null]
+  phase varchar(10) [not null]
+  title varchar(120) [not null]
+  factor varchar(20)
+  minutes smallint [not null]
+  video_id varchar(32)
+  start_sec int
+  end_sec int
+  clip_title varchar(120)
+  indexes {
+    (mission_id, position) [pk]
+  }
+  Note: '''(position >= 1)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(minutes >= 1)
+((video_id is null) = (start_sec is null))
+(video_id is not null or (end_sec is null and clip_title is null))
+(start_sec is null or start_sec >= 0)
+(end_sec is null or end_sec > start_sec)'''
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id
@@ -344,3 +403,5 @@ Ref: mission_participants.profile_id > profiles.id
 Ref: mission_participants.confirmed_by_profile_id > profiles.id
 Ref: coach_messages.profile_id > profiles.id
 Ref: coach_message_citations.coach_message_id > coach_messages.id
+Ref: video_exercises.video_id > exercise_videos.video_id
+Ref: mission_sessions.mission_id > missions.id
