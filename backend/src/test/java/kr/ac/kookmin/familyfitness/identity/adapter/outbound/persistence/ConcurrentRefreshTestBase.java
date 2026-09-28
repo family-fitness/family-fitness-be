@@ -129,6 +129,11 @@ abstract class ConcurrentRefreshTestBase {
             return delegate.revokeFamily(familyId, at);
         }
 
+        @Override
+        public int deleteExpiredOrRevoked(Instant expiredBefore, Instant revokedBefore) {
+            return delegate.deleteExpiredOrRevoked(expiredBefore, revokedBefore);
+        }
+
         private static void await(CyclicBarrier current) {
             try {
                 current.await(5, TimeUnit.SECONDS);
