@@ -76,6 +76,12 @@ spotless {
 	}
 }
 
+// ./gradlew bootRun(과 bootTestRun)은 프로필을 주지 않으면 local 로 뜬다. jar 에는 기본 프로필이 없다.
+// --args='--spring.profiles.active=compose' 나 SPRING_PROFILES_ACTIVE 로 프로필을 주면 그 프로필만 켜진다.
+tasks.withType(org.springframework.boot.gradle.tasks.run.BootRun).configureEach {
+	systemProperty 'spring.profiles.default', 'local'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 	testLogging {

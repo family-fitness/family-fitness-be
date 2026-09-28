@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.domain;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -109,6 +110,8 @@ public class Family {
                 birthDate,
                 sex,
                 ProfileRole.CHILD,
+                null,
+                null,
                 new GuardianConsent(personalConsentGranted, healthConsentGranted),
                 consentedAt,
                 today);
@@ -117,6 +120,7 @@ public class Family {
     /**
      * 구성원 추가 — PARENT 만. 만 14세 미만이면 {@code guardianConsent} 가 둘 다 true 여야 하고,
      * 동의 시각·동의자는 서버(여기)가 채운다. 만 4세 미만도 프로필은 만든다(측정만 불가).
+     * 키·몸무게는 가입 때 적은 값이고 없으면 null 이다. 범위는 요청 검증이 본다.
      */
     public Profile addMember(
             UUID actorUserId,
@@ -124,6 +128,8 @@ public class Family {
             LocalDate birthDate,
             Sex sex,
             ProfileRole role,
+            @Nullable BigDecimal heightCm,
+            @Nullable BigDecimal weightKg,
             @Nullable GuardianConsent guardianConsent,
             Instant consentedAt,
             LocalDate today) {
@@ -146,8 +152,8 @@ public class Family {
                 displayName,
                 birthDate,
                 sex,
-                null,
-                null,
+                heightCm,
+                weightKg,
                 null,
                 null,
                 null,

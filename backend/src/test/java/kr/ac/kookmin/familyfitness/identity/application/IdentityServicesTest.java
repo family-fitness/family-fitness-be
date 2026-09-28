@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.identity.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -82,7 +83,8 @@ class IdentityServicesTest {
 
     private ProfileSummary addChild(
             UUID familyId, @Nullable GuardianConsent consent, LocalDate birthDate, String name) {
-        return familyService.addMember(parentUser, familyId, name, birthDate, Sex.M, ProfileRole.CHILD, consent);
+        return familyService.addMember(
+                parentUser, familyId, name, birthDate, Sex.M, ProfileRole.CHILD, null, null, consent);
     }
 
     @Nested
@@ -103,6 +105,7 @@ class IdentityServicesTest {
             assertThat(owner.consentGiven()).isTrue();
             assertThat(owner.measurable()).isTrue();
             assertThat(owner.supportMode()).isNull();
+            assertThat(owner.sex()).isEqualTo(Sex.F);
             assertThat(families.findById(created.familyId()).getProfiles()).hasSize(1);
         }
 
@@ -134,6 +137,7 @@ class IdentityServicesTest {
             ProfileSummary child = addChild(family.familyId());
 
             assertThat(child.role()).isEqualTo(ProfileRole.CHILD);
+            assertThat(child.sex()).isEqualTo(Sex.M);
             assertThat(child.hasAccount()).isFalse();
             assertThat(child.ageGroup()).isEqualTo(AgeGroup.YOUTH);
             assertThat(child.consentRequired()).isTrue();
@@ -141,6 +145,28 @@ class IdentityServicesTest {
             assertThat(child.measurable()).isTrue();
             assertThat(child.inviteStatus()).isEqualTo(InviteStatus.NONE);
             assertThat(families.findById(family.familyId()).getProfiles()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("구성원을 추가할 때 적은 키 · 몸무게는 저장된 프로필에 남는다")
+        void 구성원을_추가할_때_적은_키_몸무게는_저장된_프로필에_남는다() {
+            CreatedFamily family = createFamily();
+
+            ProfileSummary child = familyService.addMember(
+                    parentUser,
+                    family.familyId(),
+                    "첫째",
+                    LocalDate.of(2018, 5, 20),
+                    Sex.M,
+                    ProfileRole.CHILD,
+                    new BigDecimal("128.5"),
+                    new BigDecimal("27.3"),
+                    new GuardianConsent(true, true));
+
+            ProfileDetails saved = summaries.details(
+                    families.findByProfileId(child.profileId()).profile(child.profileId()));
+            assertThat(saved.heightCm()).isEqualByComparingTo("128.5");
+            assertThat(saved.weightKg()).isEqualByComparingTo("27.3");
         }
 
         @Test
@@ -183,6 +209,8 @@ class IdentityServicesTest {
                             LocalDate.of(2018, 5, 20),
                             Sex.M,
                             ProfileRole.CHILD,
+                            null,
+                            null,
                             new GuardianConsent(true, true)));
             assertThrows(
                     FamilyNotFoundException.class,
@@ -193,6 +221,8 @@ class IdentityServicesTest {
                             LocalDate.of(2018, 5, 20),
                             Sex.M,
                             ProfileRole.CHILD,
+                            null,
+                            null,
                             null));
 
             ProfileSummary child = addChild(family.familyId());
@@ -207,6 +237,8 @@ class IdentityServicesTest {
                             LocalDate.of(2020, 1, 1),
                             Sex.F,
                             ProfileRole.CHILD,
+                            null,
+                            null,
                             new GuardianConsent(true, true)));
         }
 
@@ -271,7 +303,15 @@ class IdentityServicesTest {
             CreatedFamily family = createFamily();
             ProfileSummary child = addChild(family.familyId());
             ProfileSummary dad = familyService.addMember(
-                    parentUser, family.familyId(), "아빠", LocalDate.of(1986, 1, 1), Sex.M, ProfileRole.PARENT, null);
+                    parentUser,
+                    family.familyId(),
+                    "아빠",
+                    LocalDate.of(1986, 1, 1),
+                    Sex.M,
+                    ProfileRole.PARENT,
+                    null,
+                    null,
+                    null);
             String childCode = inviteService
                     .issueInvite(parentUser, child.profileId())
                     .claimCode()

@@ -19,4 +19,6 @@ public record MissionView(
         LocalDate endDate,
         @Nullable String rationale,
         @Nullable MissionVideoView video,
-        List<MissionParticipantView> participants) {}
+        List<MissionParticipantView> participants,
+        /** position 차례. 칸 없는 미션은 [] */
+        List<MissionSessionView> sessions) {}

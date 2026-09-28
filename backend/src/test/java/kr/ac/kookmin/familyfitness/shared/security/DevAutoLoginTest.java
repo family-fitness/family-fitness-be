@@ -49,6 +49,13 @@ class DevAutoLoginTest {
     }
 
     @Test
+    @DisplayName("X-Dev-User-Id 가 UUID 가 아니면 500 이 아니라 400")
+    void X_Dev_User_Id_가_UUID_가_아니면_400() throws Exception {
+        mvc.perform(get("/api/v1/me").header(DevAutoLoginFilter.DEV_USER_HEADER, "not-a-uuid"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("임의 출처의 프리플라이트를 허용한다")
     void 임의_출처의_프리플라이트를_허용한다() throws Exception {
         mvc.perform(options("/api/v1/me")

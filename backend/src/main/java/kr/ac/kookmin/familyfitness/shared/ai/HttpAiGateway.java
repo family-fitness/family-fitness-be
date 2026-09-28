@@ -32,6 +32,12 @@ import org.springframework.web.client.RestClientResponseException;
 public class HttpAiGateway implements AiGateway {
     public static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(1);
 
+    /** POST coach/runs 읽기 한도. 재시도하지 않는다. */
+    public static final Duration RUN_START_READ_TIMEOUT = Duration.ofSeconds(2);
+
+    /** GET coach/runs/{id} 한 번의 읽기 한도. 재시도하지 않는다. */
+    public static final Duration RUN_POLL_READ_TIMEOUT = Duration.ofSeconds(3);
+
     private final Logger log = LoggerFactory.getLogger(getClass());
 
     private final Function<Duration, @Nullable ClientHttpRequestFactory> factoryFor;
@@ -62,8 +68,8 @@ public class HttpAiGateway implements AiGateway {
         this.assessmentClient = client(builder, Duration.ofSeconds(3));
         this.videoClient = client(builder, Duration.ofSeconds(4));
         this.messageClient = client(builder, Duration.ofSeconds(10));
-        this.runStartClient = client(builder, Duration.ofSeconds(2));
-        this.runPollClient = client(builder, Duration.ofSeconds(3));
+        this.runStartClient = client(builder, RUN_START_READ_TIMEOUT);
+        this.runPollClient = client(builder, RUN_POLL_READ_TIMEOUT);
     }
 
     @Override

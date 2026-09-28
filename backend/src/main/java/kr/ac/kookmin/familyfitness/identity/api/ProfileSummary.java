@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
+import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
 import org.jspecify.annotations.Nullable;
 
@@ -17,6 +18,8 @@ public record ProfileSummary(
         String name,
         ProfileRole role,
         AgeGroup ageGroup,
+        /** 와이어 값 `M` · `F`. 화면이 「엄마」「아빠」 로 부를 때 쓴다 */
+        Sex sex,
         boolean hasAccount,
         InviteStatus inviteStatus,
         @Nullable SupportMode supportMode,

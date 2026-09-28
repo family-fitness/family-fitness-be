@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.fitness.application;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
@@ -27,6 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class FitnessTestService {
+    /**
+     * 측정 이력 한 번에 주는 최대 회차 수. 영상 목록(VideoService.MAX_PAGE_SIZE)과 같은 값.
+     * 바꾸면 FitnessTestEntity 의 항목 배치 크기(ITEMS_BATCH_SIZE)도 같이 맞춘다.
+     */
+    public static final int HISTORY_MAX_SIZE = 100;
+
     private final FitnessTestRepository tests;
     private final NormCatalog norms;
     private final FamilyAccess familyAccess;
@@ -88,6 +95,19 @@ public class FitnessTestService {
     public @Nullable FitnessTest latest(UUID actorId, UUID profileId) {
         familyAccess.requireSameFamilyAsProfile(actorId, profileId);
         return tests.findLatestByProfileId(profileId);
+    }
+
+    /**
+     * 측정 이력. testedOn 이 늦은 회차부터 최대 size 개, 없으면 빈 목록. 권한은 latest 와 같다(같은 가족).
+     * size 범위는 영상 목록(/videos)과 같다 — 기본 20(컨트롤러) · 1~{@link #HISTORY_MAX_SIZE}, 밖이면 400.
+     */
+    @Transactional(readOnly = true)
+    public List<FitnessTest> history(UUID actorId, UUID profileId, int size) {
+        if (size < 1 || size > HISTORY_MAX_SIZE) {
+            throw new IllegalArgumentException("size 는 1~" + HISTORY_MAX_SIZE + " 이어야 합니다");
+        }
+        familyAccess.requireSameFamilyAsProfile(actorId, profileId);
+        return tests.findRecentByProfileId(profileId, size);
     }
 
     /** 만 14세 미만(consentRequired)인데 동의가 없거나 철회됐으면 저장하지 않는다. */
