@@ -418,6 +418,9 @@ class IdentityApiTest {
                         parent, familyId, "첫째", today.minusYears(10), "CHILD", new boolean[] {true, true}))
                 .get("profileId")
                 .asString();
+        String dadId = read(addMember(parent, familyId, "아빠", today.minusYears(40), "PARENT"))
+                .get("profileId")
+                .asString();
 
         JsonNode created = read(cheer(
                         parent,
@@ -447,7 +450,14 @@ class IdentityApiTest {
                                 "?"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.error.code").value("NOT_FAMILY_MEMBER"));
-        cheer(parent, familyId, Map.of("fromProfileId", childId, "toProfileId", ownerId, "message", "?"))
+        // 보호자 계정은 계정 없는 아이 이름으로 보낼 수 있다(아이가 부모 기기를 빌려 쓴다).
+        JsonNode asChild = read(
+                cheer(parent, familyId, Map.of("fromProfileId", childId, "toProfileId", ownerId, "message", "고마워요"))
+                        .andExpect(status().isCreated()));
+        assertThat(asChild.get("fromProfileId").asString()).isEqualTo(childId);
+        assertThat(asChild.get("toProfileId").asString()).isEqualTo(ownerId);
+        // 계정 없는 부모 자리(초대 전 아빠) 이름으로는 못 보낸다.
+        cheer(parent, familyId, Map.of("fromProfileId", dadId, "toProfileId", childId, "message", "?"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
         cheer(devLogin(), familyId, Map.of("fromProfileId", ownerId, "toProfileId", childId, "message", "?"))

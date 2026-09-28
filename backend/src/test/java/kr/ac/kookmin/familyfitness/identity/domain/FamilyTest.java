@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
@@ -370,28 +371,81 @@ class FamilyTest {
     }
 
     @Test
-    @DisplayName("응원은 내 프로필에서 같은 가족의 다른 프로필로만 보낸다")
-    void 응원은_내_프로필에서_같은_가족의_다른_프로필로만_보낸다() {
+    @DisplayName("본인 프로필과 계정 없는 아이 프로필 이름으로만 행동할 수 있다")
+    void 본인_프로필과_계정_없는_아이_프로필_이름으로만_행동할_수_있다() {
+        Family family = newFamily();
+        Profile parent = family.getProfiles().getFirst();
+        Profile child = addChild(family, "첫째");
+        Profile claimedChild = addChild(family, "둘째");
+        UUID childUserId = UUID.randomUUID();
+        claimedChild.claim(childUserId, consentedAt);
+        Profile dadSeat = addParentSeat(family);
+
+        assertThat(family.canActAs(parentUserId, parent.getId())).isTrue();
+        assertThat(family.canActAs(parentUserId, child.getId())).isTrue();
+        assertThat(family.canActAs(parentUserId, claimedChild.getId())).isFalse();
+        assertThat(family.canActAs(parentUserId, dadSeat.getId())).isFalse();
+        assertThat(family.canActAs(parentUserId, UUID.randomUUID())).isFalse();
+
+        assertThat(family.canActAs(childUserId, claimedChild.getId())).isTrue();
+        assertThat(family.canActAs(childUserId, child.getId())).isFalse();
+        assertThat(family.canActAs(childUserId, parent.getId())).isFalse();
+
+        assertThat(family.canActAs(UUID.randomUUID(), child.getId())).isFalse();
+    }
+
+    @Test
+    @DisplayName("응원은 내가 행동할 수 있는 프로필에서 같은 가족의 다른 프로필로만 보낸다")
+    void 응원은_내가_행동할_수_있는_프로필에서_같은_가족의_다른_프로필로만_보낸다() {
         Family family = newFamily();
         Profile parent = family.getProfiles().getFirst();
         Profile child = addChild(family, "아이");
+        Profile dadSeat = addParentSeat(family);
         UUID stranger = UUID.randomUUID();
 
         family.validateCheer(parentUserId, parent.getId(), child.getId());
+        family.validateCheer(parentUserId, child.getId(), parent.getId());
 
         assertThrows(
                 FamilyAccessDeniedException.class, () -> family.validateCheer(stranger, parent.getId(), child.getId()));
         assertThrows(
-                NotOwnProfileException.class, () -> family.validateCheer(parentUserId, child.getId(), parent.getId()));
+                CannotActAsProfileException.class,
+                () -> family.validateCheer(parentUserId, dadSeat.getId(), child.getId()));
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> family.validateCheer(parentUserId, UUID.randomUUID(), child.getId()));
         assertThrows(
                 SelfCheerException.class, () -> family.validateCheer(parentUserId, parent.getId(), parent.getId()));
+        assertThrows(SelfCheerException.class, () -> family.validateCheer(parentUserId, child.getId(), child.getId()));
         assertThrows(
                 NotFamilyMemberException.class,
                 () -> family.validateCheer(parentUserId, parent.getId(), UUID.randomUUID()));
+
+        UUID childUserId = UUID.randomUUID();
+        child.claim(childUserId, consentedAt);
+        family.validateCheer(childUserId, child.getId(), parent.getId());
+        assertThrows(
+                CannotActAsProfileException.class,
+                () -> family.validateCheer(parentUserId, child.getId(), parent.getId()));
     }
 
     private Family newFamily() {
         return Family.createWithParent(parentUserId, "우리 가족", "부모", LocalDate.of(1988, 3, 1), Sex.F);
+    }
+
+    /** 아직 계정이 붙지 않은 부모 자리(초대 전 아빠). */
+    private Profile addParentSeat(Family family) {
+        return family.addMember(
+                parentUserId,
+                "아빠",
+                LocalDate.of(1986, 1, 1),
+                Sex.M,
+                ProfileRole.PARENT,
+                null,
+                null,
+                null,
+                consentedAt,
+                today);
     }
 
     private Profile addChild(Family family, String name) {

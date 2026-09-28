@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -65,6 +66,19 @@ public class Family {
     public boolean canManageProfile(UUID userId, UUID profileId) {
         Profile actor = memberOf(userId);
         return actor != null && actor.isParent() && profileOrNull(profileId) != null;
+    }
+
+    /**
+     * 이 계정이 이 프로필 이름으로 행동할 수 있다(응원 보내기 등).
+     * 본인 계정에 붙은 프로필이면 된다. 아니면 {@link #canManageProfile} 을 좁혀, 계정 없는 CHILD 프로필만 대신한다.
+     * 계정이 있는 아이는 자기 계정으로 보낸다. 계정 없는 부모 자리를 대신하게 두면 한 보호자가 다른 보호자 이름으로 보낼 수 있다.
+     * 그래서 둘 다 대신하지 않는다.
+     */
+    public boolean canActAs(UUID userId, UUID profileId) {
+        Profile target = profileOrNull(profileId);
+        if (target == null) return false;
+        if (userId.equals(target.getUserId())) return true;
+        return canManageProfile(userId, profileId) && target.getRole() == ProfileRole.CHILD && !target.hasAccount();
     }
 
     /** 구성원이 아니면 {@link FamilyAccessDeniedException}, 구성원이지만 아이면 {@link NotAParentException}. */
@@ -186,12 +200,14 @@ public class Family {
         return profile;
     }
 
-    /** 응원 규칙: 보내는 프로필은 내 계정의 것, 받는 프로필은 같은 가족의 다른 사람. */
+    /**
+     * 응원 규칙: 보내는 프로필은 내가 그 이름으로 행동할 수 있는 것({@link #canActAs}),
+     * 받는 프로필은 같은 가족의 다른 사람.
+     */
     public void validateCheer(UUID actorUserId, UUID fromProfileId, UUID toProfileId) {
         requireMember(actorUserId);
-        Profile from = profileOrNull(fromProfileId);
-        if (from == null || !actorUserId.equals(from.getUserId())) {
-            throw new NotOwnProfileException("fromProfileId 가 내 프로필이 아닙니다");
+        if (!canActAs(actorUserId, fromProfileId)) {
+            throw new CannotActAsProfileException("fromProfileId 는 내 프로필이나 계정 없는 아이 프로필이어야 합니다");
         }
         if (fromProfileId.equals(toProfileId)) throw new SelfCheerException();
         if (profileOrNull(toProfileId) == null) throw new NotFamilyMemberException();

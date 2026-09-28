@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
+/** fromProfileId 는 내 프로필, 또는 내가 보호자일 때 같은 가족의 계정 없는 아이 프로필. */
 public record CheerRequest(
         @NotNull @Nullable UUID fromProfileId,
         @NotNull @Nullable UUID toProfileId,
