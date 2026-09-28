@@ -3,23 +3,19 @@ package kr.ac.kookmin.familyfitness.notification.adapter.outbound.persistence;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.PostLoad;
-import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.data.domain.Persistable;
 
 /**
- * `notifications` — unique(profile_id, dedupe_key). 넣은 뒤에는 read_at 만 바뀐다(조건부 UPDATE).
- * 키를 직접 정하는 엔티티라 {@link Persistable} 로 새 행임을 알린다 — 저장이 먼저 읽지(merge) 않고 곧바로 INSERT 한다.
+ * `notifications` — unique(profile_id, dedupe_key). 읽기와 조건부 UPDATE · DELETE 에만 쓴다. 넣기는 JDBC 의
+ * ON CONFLICT DO NOTHING 으로 한다({@link NotificationPersistenceAdapter#insertIfAbsent}) — 넣은 뒤에는 read_at 만 바뀐다.
  */
 @Entity
 @Table(name = "notifications")
-public class NotificationEntity implements Persistable<UUID> {
+public class NotificationEntity {
     @Id
     @Column(name = "id")
     private UUID id;
@@ -63,54 +59,8 @@ public class NotificationEntity implements Persistable<UUID> {
     @Column(name = "dedupe_key", nullable = false, length = 100)
     private String dedupeKey;
 
-    @Transient
-    private boolean fresh = true;
-
     protected NotificationEntity() {}
 
-    public NotificationEntity(
-            UUID id,
-            UUID profileId,
-            String kind,
-            String title,
-            @Nullable String body,
-            @Nullable UUID aboutProfileId,
-            @Nullable UUID fromProfileId,
-            @Nullable UUID missionId,
-            @Nullable UUID cheerId,
-            @Nullable String stickerId,
-            @Nullable LocalDate eventDate,
-            Instant createdAt,
-            @Nullable Instant readAt,
-            String dedupeKey) {
-        this.id = id;
-        this.profileId = profileId;
-        this.kind = kind;
-        this.title = title;
-        this.body = body;
-        this.aboutProfileId = aboutProfileId;
-        this.fromProfileId = fromProfileId;
-        this.missionId = missionId;
-        this.cheerId = cheerId;
-        this.stickerId = stickerId;
-        this.eventDate = eventDate;
-        this.createdAt = createdAt;
-        this.readAt = readAt;
-        this.dedupeKey = dedupeKey;
-    }
-
-    @PostLoad
-    @PostPersist
-    void markStored() {
-        fresh = false;
-    }
-
-    @Override
-    public boolean isNew() {
-        return fresh;
-    }
-
-    @Override
     public UUID getId() {
         return id;
     }

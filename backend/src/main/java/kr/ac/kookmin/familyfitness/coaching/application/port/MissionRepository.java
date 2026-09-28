@@ -37,6 +37,9 @@ public interface MissionRepository {
     /** {@code from}~{@code to}(양끝 포함)와 기간이 겹치는 가족 미션. */
     List<Mission> findOverlapping(UUID familyId, LocalDate from, LocalDate to);
 
+    /** {@code day} 가 기간 안에 드는 미션이 있는 가족(중복 없이). 미션 행만 한 번 읽는다. */
+    List<UUID> familiesWithMissionsOn(LocalDate day);
+
     int countByCoachRun(UUID coachRunId);
 
     /** 이 프로필이 참여자이고 기간이 {@code from}~{@code to}(양끝 포함)와 겹치는 미션을, 그 사람의 진행과 함께. */

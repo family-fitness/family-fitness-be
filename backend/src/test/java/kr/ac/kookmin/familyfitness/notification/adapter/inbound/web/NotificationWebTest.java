@@ -21,9 +21,11 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.api.MissionCancelled;
 import kr.ac.kookmin.familyfitness.coaching.api.MissionCompleted;
+import kr.ac.kookmin.familyfitness.coaching.api.StandingMissionQuery;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
+import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.CheerSent;
@@ -63,7 +65,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * H2 + Flyway(V149 notifications) 위에서 알림함을 끝까지 돈다. 리스너는 발행한 트랜잭션이 <b>커밋된 뒤</b> 받으므로 이 시험은
- * 트랜잭션으로 감싸지 않고 실제로 커밋하고, 끝나면 만든 행을 지운다. 오늘 서는 미션 · 마지막 측정일은 coaching · fitness 의 실제 구현이다.
+ * 트랜잭션으로 감싸지 않고 실제로 커밋하고, 끝나면 만든 행을 지운다. 운영은 알림을 전용 스레드 풀에서 비동기로 쓰지만 시험 프로필은
+ * 부른 스레드에서 곧바로 쓴다(app.notification.executor.async=false) — 커밋이 끝나면 알림도 들어가 있다. 비동기 쪽은
+ * NotificationConcurrencyTest 가 본다. 오늘 서는 미션 · 마지막 측정일은 coaching · fitness 의 실제 구현이다.
  * identity 는 목: 식구 · 권한 판단만 흉내 낸다. 「오늘」 은 실제 KST 날짜다.
  */
 @SpringBootTest
@@ -99,6 +103,9 @@ class NotificationWebTest {
     @Autowired
     MissionRepository missions;
 
+    @Autowired
+    StandingMissionQuery standingMissions;
+
     @MockitoBean
     FamilyAccess familyAccess;
 
@@ -132,6 +139,8 @@ class NotificationWebTest {
                 summary(sibling, "지우", ProfileRole.CHILD, Sex.F));
         when(profileQuery.summariesOfFamily(familyId)).thenReturn(family);
         family.forEach(it -> when(profileQuery.findSummary(it.profileId())).thenReturn(it));
+        family.forEach(
+                it -> when(familyAccess.requireActingAs(user, it.profileId())).thenReturn(it));
     }
 
     /** 커밋한 행을 FK 차례로 지운다. */
@@ -143,6 +152,7 @@ class NotificationWebTest {
         jdbc.update("delete from progress_xp_events where profile_id in (" + profiles + ")", familyId);
         jdbc.update("delete from progress_achievements where profile_id in (" + profiles + ")", familyId);
         jdbc.update("delete from cheers where family_id = ?", familyId);
+        jdbc.update("delete from rest_cards where family_id = ?", familyId);
         jdbc.update("delete from fitness_tests where profile_id in (" + profiles + ")", familyId);
         String familyMissions = "select id from missions where family_id = ?";
         jdbc.update("delete from mission_participants where mission_id in (" + familyMissions + ")", familyId);
@@ -298,6 +308,9 @@ class NotificationWebTest {
         Mission squat = mission("스쿼트", TargetMetric.TIMER_MINUTES, createdAt, kid, sibling, mom);
         mission("걸음", TargetMetric.STEPS, createdAt, kid);
         Instant readyAt = today.atTime(7, 30).atZone(KST).toInstant();
+        // 07:30 스케줄러는 오늘 기간이 걸친 미션이 있는 가족만 고른다 — 이 가족은 한 번만
+        assertThat(standingMissions.familiesWithMissionsOn(today)).containsOnlyOnce(familyId);
+        assertThat(standingMissions.familiesWithMissionsOn(today.plusDays(1))).doesNotContain(familyId);
 
         assertThat(writer.missionReadyForFamily(familyId, today, readyAt)).isEqualTo(2);
         assertThat(writer.missionReadyForFamily(familyId, today, readyAt)).isZero();
@@ -355,6 +368,44 @@ class NotificationWebTest {
                 .andExpect(jsonPath("$.items[0].aboutProfileId").value(kid.toString()))
                 .andExpect(jsonPath("$.items[0].date").isEmpty());
         assertThat(count(mom)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("다시 재면(측정 등록이 커밋되면) 그 아이의 다시 재기 알림이 부모 모두에게서 빠진다 — 다른 아이 것은 남는다(목은 마지막 측정일로 셈한다)")
+    void 다시_재면_다시_재기_알림이_빠진다() throws Exception {
+        test(kid, today.minusDays(40));
+        test(sibling, today.minusDays(35));
+        writer.remeasureForFamily(familyId, today, kst(today, 9));
+        assertThat(count(mom)).isEqualTo(2);
+        assertThat(count(dad)).isEqualTo(2);
+
+        UUID fresh = test(kid, today);
+        tx.executeWithoutResult(status -> events.publishEvent(
+                new FitnessTestRegistered(kid, fresh, today, new FitnessTestRegistered.Round(fresh, today))));
+
+        list(mom)
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].kind").value("REMEASURE"))
+                .andExpect(jsonPath("$.items[0].aboutProfileId").value(sibling.toString()));
+        assertThat(count(dad)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("오늘이 쉬는 날이면 오늘 서는 미션 알림은 목록에서 빠진다 — 07:30 뒤에 쉬는 날 카드를 써도. 다른 알림은 그대로")
+    void 쉬는_날에는_오늘_미션_알림이_빠진다() throws Exception {
+        mission("스쿼트", TargetMetric.TIMER_MINUTES, kst(today.minusDays(1), 20), kid);
+        writer.missionReadyForFamily(
+                familyId, today, today.atTime(7, 30).atZone(KST).toInstant());
+        tx.executeWithoutResult(status -> sendCheer(CheerKind.DONE, kid, mom, null, "했어요", Instant.now()));
+        list(kid).andExpect(jsonPath("$.items[?(@.kind == 'MISSION_READY')]", hasSize(1)));
+
+        restCard(today);
+
+        list(kid)
+                .andExpect(jsonPath("$.items[?(@.kind == 'MISSION_READY')]", hasSize(0)))
+                .andExpect(jsonPath("$.unread").value(0));
+        list(mom).andExpect(jsonPath("$.items[?(@.kind == 'KID_DONE')]", hasSize(1)));
+        assertThat(count(kid)).isEqualTo(1);
     }
 
     @Test
@@ -448,10 +499,20 @@ class NotificationWebTest {
         return mission;
     }
 
-    private void test(UUID profileId, LocalDate testedOn) {
+    private UUID test(UUID profileId, LocalDate testedOn) {
+        UUID id = UUID.randomUUID();
         jdbc.update("""
                 insert into fitness_tests (id, profile_id, tested_on, source, age_at_test, created_at)
                 values (?, ?, ?, 'SELF_INPUT', 9, ?)\
-                """, UUID.randomUUID(), profileId, testedOn, Instant.now());
+                """, id, profileId, testedOn, Instant.now());
+        return id;
+    }
+
+    /** 보호자(엄마)가 이 날에 쉬는 날 카드를 썼다. */
+    private void restCard(LocalDate day) {
+        jdbc.update("""
+                insert into rest_cards (id, family_id, rest_date, rest_month, card_no, created_by, created_at)
+                values (?, ?, ?, ?, 1, ?, ?)\
+                """, UUID.randomUUID(), familyId, day, day.withDayOfMonth(1), mom, Instant.now());
     }
 }

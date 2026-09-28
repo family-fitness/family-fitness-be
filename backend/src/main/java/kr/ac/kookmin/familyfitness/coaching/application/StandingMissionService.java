@@ -47,6 +47,11 @@ public class StandingMissionService implements StandingMissionQuery {
         return mission == null ? null : standingOf(mission, today);
     }
 
+    @Override
+    public List<UUID> familiesWithMissionsOn(LocalDate day) {
+        return missions.familiesWithMissionsOn(day);
+    }
+
     private static @Nullable StandingMission standingOf(Mission mission, LocalDate today) {
         MissionSpan span =
                 new MissionSpan(mission.getStartsOn(), mission.getEndsOn(), mission.getTargetMetric(), false, Set.of());

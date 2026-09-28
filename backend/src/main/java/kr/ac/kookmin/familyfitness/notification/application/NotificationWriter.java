@@ -26,8 +26,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 알림 만들기 · 지우기. 메서드마다 <b>새 트랜잭션</b>이다(REQUIRES_NEW) — 이벤트 리스너는 발행한 트랜잭션이 커밋된 뒤에 부르므로,
- * 여기서 실패해도 응원 · 칸 끝 · 미션 만들기는 되돌아가지 않는다. 같은 (받는 사람, 멱등 키)는 한 번만 들어가서 다시 불러도 늘지 않는다.
+ * 알림 만들기 · 지우기. 메서드마다 <b>새 트랜잭션</b>이다(REQUIRES_NEW). 보통은 알림 전용 스레드(트랜잭션 없음)나 스케줄러 스레드가
+ * 부르지만, 시험 프로필처럼 커밋 뒤 콜백에서 곧바로 부를 때도 원래 트랜잭션에 끼지 않게 한다. 여기서 실패해도 응원 · 칸 끝 · 미션
+ * 만들기는 되돌아가지 않는다. 같은 (받는 사람, 멱등 키)는 한 번만 들어가서 다시 불러도 늘지 않는다(동시에 넣어도 DB 가 한 건만 남긴다).
  * 돌려주는 수는 새로 넣거나 지운 행 수다.
  */
 @Service
@@ -164,6 +165,27 @@ public class NotificationWriter {
             }
         }
         return made;
+    }
+
+    /**
+     * 이 사람의 측정 회차가 새로 저장됐다 — 마지막 측정 회차가 아닌 회차로 만든 REMEASURE 를 부모 모두에게서 지운다. 목은 알림함을
+     * 읽을 때마다 마지막 측정일로 셈하므로 다시 재면 사라진다(fe:src/mocks/notifications.ts 의 {@code days < 30} 이면 건너뜀).
+     * 지난 날짜를 나중에 적어 마지막 측정일이 그대로면 그 회차의 알림은 남는다(목도 그대로 보인다).
+     *
+     * <p>REMEASURE 는 아이에 관해서만 생기므로 부모 · 모르는 프로필의 측정이면 쿼리를 돌리지 않는다. 지울 곳은 그 아이 가족의 부모
+     * 알림함이다 — 09:00 이 보낸 사람과 같다(프로필의 가족 · 역할은 바뀌지 않는다).
+     */
+    public int remeasured(UUID profileId) {
+        ProfileSummary measured = profiles.findSummary(profileId);
+        if (measured == null || measured.role() != ProfileRole.CHILD) return 0;
+        List<UUID> parentIds = profiles.summariesOfFamily(measured.familyId()).stream()
+                .filter(ProfileSummary::isParent)
+                .map(ProfileSummary::profileId)
+                .toList();
+        if (parentIds.isEmpty()) return 0;
+        LocalDate last = fitness.lastTestedOn(List.of(profileId)).get(profileId);
+        return notifications.deleteRemeasureAbout(
+                parentIds, profileId, last == null ? null : Notification.remeasureKey(profileId, last));
     }
 
     /** 이 사람이 미션을 끝까지 했다 — 그 미션의 MISSION_READY 를 목록에서 뺀다(목은 끝낸 미션을 셈하지 않는다). */

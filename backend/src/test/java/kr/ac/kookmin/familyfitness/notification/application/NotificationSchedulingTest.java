@@ -3,29 +3,34 @@ package kr.ac.kookmin.familyfitness.notification.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.api.MissionCreated;
+import kr.ac.kookmin.familyfitness.coaching.api.StandingMissionQuery;
 import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.CheerSent;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.core.task.TaskExecutor;
 
-/** 07:30 · 09:00 스케줄러와 기동 따라잡기, 새 미션 이벤트의 07:30 판정, 리스너의 실패 삼키기. 시계는 고정한다. */
+/**
+ * 07:30 · 09:00 스케줄러와 기동 따라잡기, 새 미션 이벤트의 07:30 판정, 리스너의 실패 삼키기. 시계는 고정한다. 알림 스레드 풀은
+ * 부른 자리에서 곧바로 돌리는 실행기로 바꾼다(넘긴 일을 따로 모아 보는 시험만 예외).
+ */
 class NotificationSchedulingTest {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -36,14 +41,21 @@ class NotificationSchedulingTest {
     private final UUID familyB = UUID.randomUUID();
     private final NotificationWriter writer = mock(NotificationWriter.class);
     private final ProfileQuery profiles = mock(ProfileQuery.class);
+    private final StandingMissionQuery standingMissions = mock(StandingMissionQuery.class);
+    private final TaskExecutor inPlace = Runnable::run;
 
     private NotificationScheduler schedulerAt(Instant now) {
+        return schedulerAt(now, inPlace);
+    }
+
+    private NotificationScheduler schedulerAt(Instant now, TaskExecutor executor) {
         when(profiles.allFamilyIds()).thenReturn(List.of(familyA, familyB));
-        return new NotificationScheduler(profiles, writer, Clock.fixed(now, KST), KST);
+        when(standingMissions.familiesWithMissionsOn(today)).thenReturn(List.of(familyA, familyB));
+        return new NotificationScheduler(profiles, standingMissions, writer, executor, Clock.fixed(now, KST), KST);
     }
 
     private NotificationEventListener listenerAt(Instant now) {
-        return new NotificationEventListener(writer, Clock.fixed(now, KST), KST);
+        return new NotificationEventListener(writer, inPlace, Clock.fixed(now, KST), KST);
     }
 
     @Nested
@@ -64,20 +76,36 @@ class NotificationSchedulingTest {
             when(writer.remeasureForFamily(familyA, today, remeasureAt)).thenReturn(1);
             when(writer.remeasureForFamily(familyB, today, remeasureAt)).thenReturn(2);
 
-            assertThat(schedulerAt(remeasureAt.plusSeconds(1)).remeasure())
-                    .isEqualTo(new NotificationScheduler.Run(3, 0));
+            assertThat(schedulerAt(remeasureAt).remeasure()).isEqualTo(new NotificationScheduler.Run(3, 0));
         }
 
         @Test
-        @DisplayName("이벤트 리스너와 같은 알림을 동시에 넣어 유니크 제약에 걸리면 그 가족을 한 번 더 쓴다")
-        void 유니크_충돌은_한_번_더() {
-            DataIntegrityViolationException duplicate =
-                    new DataIntegrityViolationException("duplicate", new SQLException("duplicate key", "23505"));
-            when(writer.missionReadyForFamily(familyA, today, readyAt))
-                    .thenThrow(duplicate)
-                    .thenReturn(1);
+        @DisplayName("07:30 몫은 오늘 기간이 걸친 미션이 있는 가족만 돈다 — 모든 가족을 돌지 않는다. 09:00 몫은 모든 가족")
+        void 오늘_미션이_있는_가족만() {
+            NotificationScheduler scheduler = schedulerAt(remeasureAt);
+            when(standingMissions.familiesWithMissionsOn(today)).thenReturn(List.of(familyB));
 
-            assertThat(schedulerAt(readyAt).missionReady()).isEqualTo(new NotificationScheduler.Run(1, 0));
+            scheduler.missionReady();
+            scheduler.remeasure();
+
+            verify(writer).missionReadyForFamily(familyB, today, remeasureAt);
+            verify(writer, never()).missionReadyForFamily(eq(familyA), any(), any());
+            verify(writer).remeasureForFamily(familyA, today, remeasureAt);
+            verify(writer).remeasureForFamily(familyB, today, remeasureAt);
+        }
+
+        @Test
+        @DisplayName("기동 따라잡기는 알림 스레드 풀에 넘기기만 한다 — 기동(main) 스레드에서는 가족을 돌지 않는다")
+        void 기동_따라잡기는_넘기기만() {
+            List<Runnable> handedOver = new ArrayList<>();
+
+            schedulerAt(remeasureAt, handedOver::add).onReady();
+
+            verifyNoInteractions(writer);
+            assertThat(handedOver).hasSize(1);
+            handedOver.getFirst().run();
+            verify(writer).missionReadyForFamily(familyA, today, remeasureAt);
+            verify(writer).remeasureForFamily(familyA, today, remeasureAt);
         }
 
         @Test
@@ -86,12 +114,23 @@ class NotificationSchedulingTest {
             schedulerAt(readyAt.minusSeconds(1)).onReady();
             verifyNoInteractions(writer);
 
-            schedulerAt(readyAt.plusSeconds(60)).onReady();
+            schedulerAt(readyAt).onReady();
             verify(writer).missionReadyForFamily(familyA, today, readyAt);
             verify(writer, never()).remeasureForFamily(any(), any(), any());
 
             schedulerAt(remeasureAt).onReady();
             verify(writer).remeasureForFamily(familyA, today, remeasureAt);
+        }
+
+        @Test
+        @DisplayName("늦게 돈 실행(기동 따라잡기)이 만든 알림은 만든 시각이 07:30 · 09:00 이 아니라 지금 — 그 전에 받은 목록의 upTo 에 걸리지 않게")
+        void 늦게_돈_실행은_지금_시각() {
+            Instant late = remeasureAt.plusSeconds(3600); // 10:00 KST 에 다시 떴다
+
+            schedulerAt(late).onReady();
+
+            verify(writer).missionReadyForFamily(familyA, today, late);
+            verify(writer).remeasureForFamily(familyA, today, late);
         }
     }
 

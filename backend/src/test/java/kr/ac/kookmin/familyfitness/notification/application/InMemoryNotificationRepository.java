@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.notification.application;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -14,6 +15,8 @@ import org.jspecify.annotations.Nullable;
 /** 알림 메모리 저장소. 보이는 알림 거르기는 JPA 쿼리와 같은 조건이다(실제 쿼리는 웹 시험이 H2 로 본다). */
 class InMemoryNotificationRepository implements NotificationRepository {
     final List<Notification> rows = new ArrayList<>();
+    /** REMEASURE 지우기를 부른 횟수 — 지울 것이 없는 측정에 쿼리를 돌리지 않는지 본다. */
+    int remeasureDeletes;
 
     @Override
     public boolean insertIfAbsent(Notification n) {
@@ -26,11 +29,12 @@ class InMemoryNotificationRepository implements NotificationRepository {
     }
 
     @Override
-    public List<Notification> latest(UUID profileId, LocalDate readyOn, LocalDate achievementsSince, int limit) {
+    public List<Notification> latest(
+            UUID profileId, LocalDate readyOn, boolean missionReadyShown, LocalDate achievementsSince, int limit) {
         return rows.stream()
                 .filter(it -> it.profileId().equals(profileId))
                 .filter(it -> it.kind() != NotificationKind.MISSION_READY
-                        || !dateOf(it).isBefore(readyOn))
+                        || (missionReadyShown && !dateOf(it).isBefore(readyOn)))
                 .filter(it ->
                         it.kind() != NotificationKind.ACHIEVEMENT || !dateOf(it).isBefore(achievementsSince))
                 .sorted(Comparator.comparing(Notification::createdAt).reversed())
@@ -64,6 +68,17 @@ class InMemoryNotificationRepository implements NotificationRepository {
     public int deleteByMission(UUID missionId) {
         int before = rows.size();
         rows.removeIf(it -> missionId.equals(it.missionId()));
+        return before - rows.size();
+    }
+
+    @Override
+    public int deleteRemeasureAbout(Collection<UUID> recipientIds, UUID kidId, @Nullable String keepDedupeKey) {
+        remeasureDeletes++;
+        int before = rows.size();
+        rows.removeIf(it -> recipientIds.contains(it.profileId())
+                && it.kind() == NotificationKind.REMEASURE
+                && kidId.equals(it.aboutProfileId())
+                && !it.dedupeKey().equals(keepDedupeKey));
         return before - rows.size();
     }
 

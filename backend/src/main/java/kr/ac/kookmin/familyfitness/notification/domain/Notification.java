@@ -171,7 +171,12 @@ public record Notification(
                 null,
                 null,
                 createdAt,
-                "remeasure-" + kidId + "-" + lastTestedOn);
+                remeasureKey(kidId, lastTestedOn));
+    }
+
+    /** REMEASURE 의 멱등 키 — 아이와 그 알림을 만든 측정 회차(마지막 testedOn). 부모마다 같은 키다. */
+    public static String remeasureKey(UUID kidId, LocalDate lastTestedOn) {
+        return "remeasure-" + kidId + "-" + lastTestedOn;
     }
 
     private static Notification fresh(

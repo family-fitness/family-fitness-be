@@ -6,7 +6,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.activity.api.RestDayQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.notification.application.port.NotificationRepository;
 import kr.ac.kookmin.familyfitness.notification.domain.NotificationRules;
 import org.jspecify.annotations.Nullable;
@@ -22,24 +24,40 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationService {
     private final NotificationRepository notifications;
     private final FamilyAccess familyAccess;
+    private final RestDayQuery restDays;
     private final Clock clock;
     private final ZoneId zone;
 
     public NotificationService(
-            NotificationRepository notifications, FamilyAccess familyAccess, Clock clock, ZoneId appZone) {
+            NotificationRepository notifications,
+            FamilyAccess familyAccess,
+            RestDayQuery restDays,
+            Clock clock,
+            ZoneId appZone) {
         this.notifications = notifications;
         this.familyAccess = familyAccess;
+        this.restDays = restDays;
         this.clock = clock;
         this.zone = appZone;
     }
 
-    /** 보이는 알림 최신 30건({@link NotificationRules}). */
+    /**
+     * 보이는 알림 최신 30건({@link NotificationRules}). 오늘이 그 가족의 쉬는 날이면 오늘 서는 미션 알림(MISSION_READY)은 싣지 않는다
+     * — 07:30 에 알림을 만든 뒤 쉬는 날 카드를 써도 쉬는 날 규칙(결정 45 「쉬는 날 제외」)과 어긋나지 않게 읽을 때 가른다.
+     */
     @Transactional(readOnly = true)
     public NotificationListView list(UUID userId, UUID profileId) {
-        familyAccess.requireActingAs(userId, profileId);
+        ProfileSummary profile = familyAccess.requireActingAs(userId, profileId);
         LocalDate today = LocalDate.ofInstant(clock.instant(), zone);
+        boolean restDay =
+                restDays.restDaysBetween(profile.familyId(), today, today).contains(today);
         List<NotificationView> items = notifications
-                .latest(profileId, today, NotificationRules.achievementsShownSince(today), NotificationRules.LIST_LIMIT)
+                .latest(
+                        profileId,
+                        today,
+                        !restDay,
+                        NotificationRules.achievementsShownSince(today),
+                        NotificationRules.LIST_LIMIT)
                 .stream()
                 .map(NotificationView::of)
                 .toList();

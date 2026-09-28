@@ -17,4 +17,10 @@ public interface StandingMissionQuery {
     /** 미션 하나가 {@code today} 에 서면 그 미션. 없는 미션 · 걸음수 · 기간 밖 · 모두 끝냈으면 null. */
     @Nullable
     StandingMission standing(UUID missionId, LocalDate today);
+
+    /**
+     * {@code day} 가 기간 안에 드는 미션이 하나라도 있는 가족. 쿼리 한 번이다. 07:30 알림이 모든 가족을 돌지 않고 이 가족만 돈다.
+     * 걸음수 · 다 끝낸 미션만 있는 가족도 들어 있을 수 있다 — 실제로 서는지는 {@link #standingOn} 이 가른다. 차례는 정하지 않는다.
+     */
+    List<UUID> familiesWithMissionsOn(LocalDate day);
 }
