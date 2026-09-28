@@ -79,6 +79,25 @@ class FitnessTestTest {
     }
 
     @Test
+    @DisplayName("항목 범위 밖 값은 ITEM_OUT_OF_RANGE, 양 끝 값은 받는다")
+    void 항목_범위_밖_값은_ITEM_OUT_OF_RANGE_양_끝_값은_받는다() {
+        // 012 앉아윗몸앞으로굽히기 범위 -30~40
+        assertThatThrownBy(() -> register(List.of(m("012", 999))))
+                .isInstanceOf(ItemOutOfRangeException.class)
+                .hasMessageContaining("012");
+        assertThatThrownBy(() -> register(List.of(m("012", -31)))).isInstanceOf(ItemOutOfRangeException.class);
+        assertThat(register(List.of(m("012", -30))).getItems()).hasSize(1);
+        assertThat(register(List.of(m("012", 40))).getItems()).hasSize(1);
+        // 소수 값도 같은 조건 — 014 체공시간 범위 0~2(청소년)
+        assertThatThrownBy(() ->
+                        register(List.of(new Measurement("014", new BigDecimal("2.01"))), 15, (item, value) -> 50))
+                .isInstanceOf(ItemOutOfRangeException.class);
+        assertThat(register(List.of(new Measurement("014", new BigDecimal("2.00"))), 15, (item, value) -> 50)
+                        .getItems())
+                .hasSize(1);
+    }
+
+    @Test
     @DisplayName("같은 항목이 두 번 들어오면 거부한다")
     void 같은_항목이_두_번_들어오면_거부한다() {
         assertThatThrownBy(() -> register(List.of(m("028", 30), m("028", 31))))

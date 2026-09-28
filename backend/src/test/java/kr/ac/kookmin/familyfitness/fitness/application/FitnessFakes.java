@@ -54,6 +54,40 @@ public final class FitnessFakes {
                 consentGiven);
     }
 
+    /** 계정이 붙은 보호자(PARENT) 프로필 요약. 호출 계정이 부모인 경우를 흉내 낸다. */
+    public static ProfileSummary parentOf(UUID profileId, UUID familyId) {
+        return new ProfileSummary(
+                profileId,
+                familyId,
+                "엄마",
+                ProfileRole.PARENT,
+                AgeGroup.ADULT,
+                Sex.F,
+                true,
+                InviteStatus.CLAIMED,
+                null,
+                true,
+                false,
+                true);
+    }
+
+    /** 계정이 붙은 자녀(CHILD) 프로필 요약. 호출 계정이 아이 본인 계정인 경우를 흉내 낸다. */
+    public static ProfileSummary childAccountOf(UUID profileId, UUID familyId) {
+        return new ProfileSummary(
+                profileId,
+                familyId,
+                "첫째",
+                ProfileRole.CHILD,
+                AgeGroup.ADOLESCENT,
+                Sex.M,
+                true,
+                InviteStatus.CLAIMED,
+                null,
+                true,
+                true,
+                true);
+    }
+
     public static ProfileDetails detailsOf(UUID profileId, UUID familyId, LocalDate birthDate) {
         return detailsOf(profileId, familyId, birthDate, Sex.F, null, null, true);
     }
