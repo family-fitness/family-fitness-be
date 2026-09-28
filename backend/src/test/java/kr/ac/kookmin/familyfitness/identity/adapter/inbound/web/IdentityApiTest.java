@@ -762,6 +762,55 @@ class IdentityApiTest {
                 .andExpect(jsonPath("$.userId").value(parent.userId().toString()));
     }
 
+    private ResultActions refresh(String refreshToken) throws Exception {
+        return mvc.perform(json(post("/api/v1/auth/refresh"), Map.of("refreshToken", refreshToken)));
+    }
+
+    private ResultActions logout(Object body) throws Exception {
+        return mvc.perform(json(post("/api/v1/auth/logout"), body));
+    }
+
+    @Test
+    @DisplayName("리프레시 토큰은 한 번만 쓴다 — 다시 쓰면 그 로그인의 토큰이 모두 끊기고 401 INVALID_REFRESH_TOKEN")
+    void 리프레시_토큰은_한_번만_쓴다() throws Exception {
+        Session parent = devLogin();
+
+        String second = read(refresh(parent.refreshToken()).andExpect(status().isOk()))
+                .get("refreshToken")
+                .asString();
+        assertThat(second).isNotEqualTo(parent.refreshToken());
+
+        refresh(parent.refreshToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
+        // 401 을 내면서도 묶음 폐기는 커밋됐다 — 회전으로 받은 새 토큰도 끊긴다.
+        refresh(second)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
+        // 액세스 토큰은 상태 없는 JWT 라 만료까지는 그대로 통한다.
+        mvc.perform(auth(get("/api/v1/me"), parent)).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("로그아웃은 그 로그인의 리프레시 토큰만 끊고 204 다 — 본문이 없거나 모르는 토큰이어도 204")
+    void 로그아웃은_그_로그인의_리프레시_토큰만_끊고_204_다() throws Exception {
+        String providerUserId = "dev-" + UUID.randomUUID();
+        Session phone = devLogin(providerUserId, null);
+        Session tablet = devLogin(providerUserId, null);
+
+        logout(Map.of("refreshToken", phone.refreshToken())).andExpect(status().isNoContent());
+
+        refresh(phone.refreshToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REFRESH_TOKEN"));
+        refresh(tablet.refreshToken()).andExpect(status().isOk());
+
+        logout(Map.of("refreshToken", phone.refreshToken())).andExpect(status().isNoContent());
+        logout(Map.of("refreshToken", "not-a-token")).andExpect(status().isNoContent());
+        logout(Map.of()).andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/logout")).andExpect(status().isNoContent());
+    }
+
     @Test
     @DisplayName("필수 누락과 형식 오류는 400 BAD_REQUEST")
     void 필수_누락과_형식_오류는_400_BAD_REQUEST() throws Exception {

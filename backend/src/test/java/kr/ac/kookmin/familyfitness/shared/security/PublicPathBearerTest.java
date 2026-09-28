@@ -97,6 +97,16 @@ class PublicPathBearerTest {
     }
 
     @Test
+    @DisplayName("만료 토큰을 실어도 로그아웃은 204 다")
+    void 만료_토큰을_실어도_로그아웃은_204_다() throws Exception {
+        mvc.perform(post("/api/v1/auth/logout")
+                        .header(HttpHeaders.AUTHORIZATION, expiredBearer(UUID.randomUUID()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"not-a-token\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
     @DisplayName("만료 토큰을 실은 구글 로그인은 인증이 아니라 본문 검증에서 갈린다")
     void 만료_토큰을_실은_구글_로그인은_인증이_아니라_본문_검증에서_갈린다() throws Exception {
         mvc.perform(post("/api/v1/auth/google")
