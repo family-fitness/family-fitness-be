@@ -115,7 +115,7 @@ public class RestCardService implements RestDayQuery {
         return view(familyId, month.month());
     }
 
-    /** 그날 운동한 아이가 있는가. 운동한 것 = 그날 TIMER · VIDEO 분이 0 보다 크다(FE 목: 그날 기록 minutes &gt; 0). */
+    /** 그날 운동한 아이가 있는가. 운동한 것 = 그날 TIMER · VIDEO 초가 0 보다 크다(결정 37 — 이어서 한 날 · 리그의 「움직인 날」 과 같은 기준). */
     private boolean anyChildMoved(UUID familyId, LocalDate date) {
         List<UUID> children = profiles.summariesOfFamily(familyId).stream()
                 .filter(profile -> profile.role() == ProfileRole.CHILD)

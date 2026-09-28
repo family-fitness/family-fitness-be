@@ -22,12 +22,12 @@ public interface ActivityDailyRepository {
 
     int activeMinutesOn(UUID profileId, LocalDate activityDate);
 
-    /** 이 프로필들 중 누구라도 그날 운동한 분(TIMER · VIDEO)이 있는가. MANUAL(걸음수) 행은 분이 늘 0 이라 세지 않는다. */
+    /** 이 프로필들 중 누구라도 그날 운동한 초(TIMER · VIDEO)가 있는가. MANUAL(걸음수) 행은 초가 늘 0 이라 세지 않는다. */
     boolean anyActiveOn(Collection<UUID> profileIds, LocalDate activityDate);
 
-    /** {@code from}~{@code to} 양끝 포함, 서버가 잰 분(TIMER · VIDEO)이 0 보다 큰 날과 그날 분. 날짜 오름차순. */
+    /** {@code from}~{@code to} 양끝 포함, 서버가 잰 초(TIMER · VIDEO)가 0 보다 큰 날과 그날 분(내림). 날짜 오름차순. */
     List<DailyMinutes> verifiedDays(UUID profileId, LocalDate from, LocalDate to);
 
-    /** 기간 제한 없이 서버가 잰 분이 있는 날 수와 분 합. */
+    /** 기간 제한 없이 서버가 잰 초가 있는 날 수와 분 합(초 합 내림). */
     VerifiedSummary verifiedSummary(UUID profileId);
 }

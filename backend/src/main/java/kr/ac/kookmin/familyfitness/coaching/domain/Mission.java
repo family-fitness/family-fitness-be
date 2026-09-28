@@ -137,6 +137,47 @@ public class Mission {
         return sessions;
     }
 
+    public boolean hasSessions() {
+        return !sessions.isEmpty();
+    }
+
+    /**
+     * 칸 끝이 받는 칸. 칸 없는 미션은 미션 전체를 본운동 한 칸(position 1)으로 본다(결정 35) — 그 칸의 분은
+     * FE session-plan(fe:src/lib/session-plan.ts sessionsOf · stepMinutes)과 같게 분 목표면 targetValue, 아니면 1분이다.
+     * 이 칸은 저장하지 않는다 — 응답의 sessions 는 여전히 [] 다(서버가 칸을 지어내 싣지 않는다, FE 요청서 4장).
+     * 그 번호의 칸이 없으면 null.
+     */
+    public @Nullable MissionSession plannedSession(int position) {
+        List<MissionSession> planned = plannedSessions();
+        return position >= 1 && position <= planned.size() ? planned.get(position - 1) : null;
+    }
+
+    /** 칸 끝이 받는 칸 전부, position 차례. 칸 없는 미션은 미션 전체 한 칸이다({@link #plannedSession}). */
+    public List<MissionSession> plannedSessions() {
+        if (hasSessions()) return sessions;
+        int minutes = targetMetric == TargetMetric.TIMER_MINUTES ? targetValue : 1;
+        return List.of(new MissionSession(1, SessionPhase.MAIN, title, null, minutes, null));
+    }
+
+    /** 칸 끝을 받는 날인가 — startDate ≤ 오늘(KST) ≤ endDate(결정 22). 여러 날짜리는 기간 안 어느 날이든 된다. */
+    public boolean isActiveOn(LocalDate today) {
+        return !today.isBefore(startsOn) && !today.isAfter(endsOn);
+    }
+
+    /**
+     * 아이가 끝낸 칸을 같이 끝내는 보호자(결정 34). 코치 미션은 편성 역할이 동반자인 참여자, 직접 짜기 미션은 보호자
+     * 참여자 전원이다(부모가 직접 골라 넣었다). 응원만 하는 부모에게는 번지지 않고, 형제(보호자가 아닌 참여자)에게도 번지지 않는다.
+     *
+     * @param parentProfileIds 이 가족의 보호자 프로필. 역할은 identity 가 들고 있어 부르는 쪽이 넘긴다
+     */
+    public List<UUID> companionsOf(Set<UUID> parentProfileIds) {
+        return participants.stream()
+                .filter(it -> parentProfileIds.contains(it.getProfileId()))
+                .filter(it -> origin != MissionOrigin.COACH || CoachRoles.COMPANION.equals(it.getCoachRole()))
+                .map(MissionParticipant::getProfileId)
+                .toList();
+    }
+
     public boolean isServerVerifiable() {
         return targetMetric.isServerVerifiable();
     }
@@ -165,8 +206,13 @@ public class Mission {
         return participantOf(profileId).apply(computed, isServerVerifiable(), at);
     }
 
+    /**
+     * 보호자 확인. 서버가 재는 지표(타이머 · 영상 · 칸)는 확인할 것이 없어 바꾸지 않는다 — 이미 확인됐거나 아직 덜 했을 뿐이다
+     * (FE 요청서 4장 「확인할 것이 없으면 바꾸지 않고 200」, fe:src/mocks/handlers.ts confirm). 걸음수만 확인으로 끝난다.
+     */
     public MissionParticipant confirm(UUID profileId, UUID confirmedBy, Instant at) {
         MissionParticipant participant = participantOf(profileId);
+        if (isServerVerifiable()) return participant;
         participant.confirm(confirmedBy, at);
         return participant;
     }

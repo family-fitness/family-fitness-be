@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -13,8 +14,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.SessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionCompletions;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
@@ -23,6 +26,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionCompletion;
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -35,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MissionService {
     private final MissionRepository missions;
+    private final SessionCompletionRepository completions;
     private final ExerciseVideoRepository videos;
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
@@ -43,12 +48,14 @@ public class MissionService {
 
     public MissionService(
             MissionRepository missions,
+            SessionCompletionRepository completions,
             ExerciseVideoRepository videos,
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
             MissionCompletionPolicy policy,
             AppTime time) {
         this.missions = missions;
+        this.completions = completions;
         this.videos = videos;
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
@@ -90,25 +97,29 @@ public class MissionService {
 
     /**
      * 가족 미션 목록. `MINE` = 호출 계정의 이 가족 프로필이 참여자 · `FAMILY` = 참여자 2명 이상.
-     * 차례: scope 로 먼저 거른다(진행도와 상관없다) → 남은 것 중 기간 안 미션의 미완료 참여자만 다시 계산해 바뀐 것만 저장한다
-     * (기간이 끝난 미션 · 완료된 참여자는 저장된 값 그대로) → status 로 거른다(DONE 여부가 다시 계산한 진행도에 달려 있다).
+     * 차례: scope 로 먼저 거른다(진행도와 상관없다) → 남은 미션의 칸 끝 기록을 한 번에 읽는다 → 기간 안 미션의 미완료 참여자만
+     * 다시 계산해 바뀐 것만 저장한다(기간이 끝난 미션 · 완료된 참여자는 저장된 값 그대로) → status 로 거른다(DONE 여부가 다시
+     * 계산한 진행도에 달려 있다).
      */
     @Transactional
     public MissionListView list(UUID userId, UUID familyId, MissionScope scope, @Nullable MissionStatus status) {
         ProfileSummary caller = familyAccess.requireMember(userId, familyId);
         LocalDate today = time.today();
         Instant now = time.now();
-        List<Mission> filtered = missions.findByFamily(familyId).stream()
+        List<Mission> scoped = missions.findByFamily(familyId).stream()
                 .filter(it -> switch (scope) {
                     case ALL -> true;
                     case MINE -> it.isParticipant(caller.profileId());
                     case FAMILY -> it.getParticipants().size() >= 2;
                 })
-                .map(it -> policy.refreshAll(it, today, now))
+                .toList();
+        Map<UUID, MissionCompletions> done = completionsOf(scoped);
+        List<Mission> filtered = scoped.stream()
+                .map(it -> policy.refreshAll(it, doneOf(done, it), today, now))
                 .filter(it -> status == null || it.statusOn(today) == status)
                 .sorted(Comparator.comparing(Mission::getStartsOn).reversed().thenComparing(Mission::getCreatedAt))
                 .toList();
-        return new MissionListView(toViews(filtered, namesOf(familyId)));
+        return new MissionListView(toViews(filtered, done, namesOf(familyId)));
     }
 
     /** 미션 한 건. 목록과 같은 모양 · 같은 권한(가족 구성원) · 같은 다시 계산 규칙이다. 없으면 404 `MISSION_NOT_FOUND`. */
@@ -117,11 +128,16 @@ public class MissionService {
         Mission mission = missions.findById(missionId);
         if (mission == null) throw new MissionNotFoundException(missionId);
         familyAccess.requireMember(userId, mission.getFamilyId());
-        Mission refreshed = policy.refreshAll(mission, time.today(), time.now());
-        return toViews(List.of(refreshed), namesOf(refreshed.getFamilyId())).getFirst();
+        Map<UUID, MissionCompletions> done = completionsOf(List.of(mission));
+        Mission refreshed = policy.refreshAll(mission, doneOf(done, mission), time.today(), time.now());
+        return toViews(List.of(refreshed), done, namesOf(refreshed.getFamilyId()))
+                .getFirst();
     }
 
-    /** 보호자 확인(STEPS 등 사람이 말한 값). 목표 도달 전이면 422 `TARGET_NOT_REACHED`. */
+    /**
+     * 보호자 확인(STEPS 등 사람이 말한 값). 걸음수가 목표 도달 전이면 422 `TARGET_NOT_REACHED`.
+     * 서버가 재는 미션(타이머 · 영상 · 칸)은 확인할 것이 없어 바꾸지 않고 200 이다(FE 요청서 4장).
+     */
     @Transactional
     public ConfirmParticipantView confirm(UUID userId, UUID missionId, UUID profileId) {
         Mission mission = missions.findById(missionId);
@@ -154,14 +170,30 @@ public class MissionService {
         }
     }
 
+    /** 미션들의 칸 끝 기록을 missionId IN 으로 한 번에 읽어 미션마다 나눈다. */
+    private Map<UUID, MissionCompletions> completionsOf(List<Mission> ms) {
+        Map<UUID, List<SessionCompletion>> byMission = new LinkedHashMap<>();
+        completions.findByMissions(ms.stream().map(Mission::getId).toList()).forEach(it -> byMission
+                .computeIfAbsent(it.missionId(), k -> new ArrayList<>())
+                .add(it));
+        Map<UUID, MissionCompletions> out = new LinkedHashMap<>();
+        byMission.forEach((missionId, rows) -> out.put(missionId, MissionCompletions.of(rows)));
+        return out;
+    }
+
+    private static MissionCompletions doneOf(Map<UUID, MissionCompletions> done, Mission mission) {
+        return done.getOrDefault(mission.getId(), MissionCompletions.none());
+    }
+
     private Map<UUID, String> namesOf(UUID familyId) {
         Map<UUID, String> names = new LinkedHashMap<>();
         profileQuery.summariesOfFamily(familyId).forEach(it -> names.put(it.profileId(), it.name()));
         return names;
     }
 
-    /** 목록 · 단건이 같이 쓰는 조립. 미션 영상은 한 번에 읽는다. */
-    private List<MissionView> toViews(List<Mission> ordered, Map<UUID, String> names) {
+    /** 목록 · 단건이 같이 쓰는 조립. 미션 영상은 한 번에 읽는다. 끝낸 칸은 사람마다 싣는다(doneSessions). */
+    private List<MissionView> toViews(
+            List<Mission> ordered, Map<UUID, MissionCompletions> done, Map<UUID, String> names) {
         Set<String> videoIds = new LinkedHashSet<>();
         for (Mission mission : ordered) {
             MissionVideo video = mission.getVideo();
@@ -191,7 +223,8 @@ public class MissionService {
                                         p.getProgress(),
                                         p.isCompleted(),
                                         p.getVerifiedBy(),
-                                        p.isNeedsGuardianCheck()))
+                                        p.isNeedsGuardianCheck(),
+                                        doneOf(done, m).positionsOf(p.getProfileId())))
                                 .toList(),
                         m.getSessions().stream()
                                 .map(MissionService::toSessionView)

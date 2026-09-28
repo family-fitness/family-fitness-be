@@ -15,7 +15,7 @@ public interface MissionParticipantJpaRepository extends JpaRepository<MissionPa
     /** 이 프로필의 참여 행과 그 미션의 기간 · 지표. 칸 · 다른 참여자는 읽지 않는다. */
     @Query("""
             select new kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence.MissionSpanRow(
-                m.startsOn, m.endsOn, m.targetMetric, p.status, p.progress, p.verifiedAt)
+                m.id, m.startsOn, m.endsOn, m.targetMetric, p.status, p.progress, p.verifiedAt)
             from MissionParticipantEntity p, MissionEntity m
             where m.id = p.id.missionId and p.id.profileId = :profileId
               and m.startsOn <= :to and m.endsOn >= :from
