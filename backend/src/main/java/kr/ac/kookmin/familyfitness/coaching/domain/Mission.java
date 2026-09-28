@@ -29,6 +29,7 @@ public class Mission {
     private final @Nullable UUID createdBy;
     private final Instant createdAt;
     private final List<MissionParticipant> participants;
+    private final List<MissionSession> sessions;
 
     private Mission(
             UUID id,
@@ -45,7 +46,8 @@ public class Mission {
             LocalDate endsOn,
             @Nullable UUID createdBy,
             Instant createdAt,
-            List<MissionParticipant> participants) {
+            List<MissionParticipant> participants,
+            List<MissionSession> sessions) {
         if (targetValue <= 0) throw new IllegalArgumentException("목표값은 0보다 커야 한다");
         if (endsOn.isBefore(startsOn)) throw new IllegalArgumentException("endDate 는 startDate 이후여야 한다");
         if (participants.isEmpty()) throw new IllegalArgumentException("참여자가 한 명 이상 있어야 한다");
@@ -67,6 +69,7 @@ public class Mission {
         this.createdBy = createdBy;
         this.createdAt = createdAt;
         this.participants = List.copyOf(participants);
+        this.sessions = MissionSession.ordered(sessions);
     }
 
     public UUID getId() {
@@ -129,6 +132,11 @@ public class Mission {
         return participants;
     }
 
+    /** position 차례의 칸. 칸 없는 미션은 빈 목록이다. */
+    public List<MissionSession> getSessions() {
+        return sessions;
+    }
+
     public boolean isServerVerifiable() {
         return targetMetric.isServerVerifiable();
     }
@@ -173,6 +181,10 @@ public class Mission {
         return !startsOn.isAfter(to) && !endsOn.isBefore(from);
     }
 
+    /**
+     * 부모가 직접 만든 미션. 칸이 있으면 목표는 분(TIMER_MINUTES)이고 {@code targetValue} 가 칸 시간의 합과 같아야 한다 —
+     * 다르면 고쳐 넣지 않고 거부한다. 칸은 보낸 position 차례 그대로 두고 단계로 다시 세우지 않는다.
+     */
     public static Mission manual(
             UUID id,
             UUID familyId,
@@ -183,8 +195,10 @@ public class Mission {
             LocalDate startsOn,
             LocalDate endsOn,
             List<UUID> participantProfileIds,
+            List<MissionSession> sessions,
             UUID createdBy,
             Instant at) {
+        requireSessionTarget(targetMetric, targetValue, sessions);
         Set<UUID> distinct = new LinkedHashSet<>(participantProfileIds);
         List<MissionParticipant> participants = new ArrayList<>();
         for (UUID profileId : distinct) {
@@ -205,7 +219,25 @@ public class Mission {
                 endsOn,
                 createdBy,
                 at,
-                participants);
+                participants,
+                sessions);
+    }
+
+    /**
+     * 칸이 있으면 목표는 칸을 다 했을 때 딱 채워지는 분이어야 한다. 합보다 크면 칸을 다 해도 미션이 안 끝나고,
+     * 작으면 칸을 덜 해도 끝난다({@code MissionCompletionPolicy} 가 진행도를 목표 분으로 나눈다).
+     */
+    private static void requireSessionTarget(
+            TargetMetric targetMetric, int targetValue, List<MissionSession> sessions) {
+        if (sessions.isEmpty()) return;
+        if (targetMetric != TargetMetric.TIMER_MINUTES) {
+            throw new IllegalArgumentException("칸이 있는 미션의 목표 지표는 TIMER_MINUTES 여야 한다");
+        }
+        int total = MissionSession.totalMinutes(sessions);
+        if (targetValue != total) {
+            throw new IllegalArgumentException(
+                    "칸이 있는 미션의 목표 분(targetValue " + targetValue + ")은 칸 시간의 합(" + total + "분)과 같아야 한다");
+        }
     }
 
     /** 승인된 제안 항목의 복사. 제안에 기간이 없으면 실행의 주(월~일)를 쓴다. */
@@ -233,7 +265,8 @@ public class Mission {
                 item.endsOn() == null ? run.getWeekEnd() : item.endsOn(),
                 createdBy,
                 at,
-                participants);
+                participants,
+                List.of());
     }
 
     public static Mission reconstitute(
@@ -251,7 +284,8 @@ public class Mission {
             LocalDate endsOn,
             @Nullable UUID createdBy,
             Instant createdAt,
-            List<MissionParticipant> participants) {
+            List<MissionParticipant> participants,
+            List<MissionSession> sessions) {
         return new Mission(
                 id,
                 familyId,
@@ -267,6 +301,7 @@ public class Mission {
                 endsOn,
                 createdBy,
                 createdAt,
-                participants);
+                participants,
+                sessions);
     }
 }
