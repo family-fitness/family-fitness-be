@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
+import kr.ac.kookmin.familyfitness.identity.domain.ConcurrentFamilyChangeException;
+import kr.ac.kookmin.familyfitness.identity.domain.ConsentEvent;
 import kr.ac.kookmin.familyfitness.identity.domain.ConsentRecord;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
 import kr.ac.kookmin.familyfitness.identity.domain.Profile;
@@ -21,6 +23,7 @@ import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -113,6 +116,19 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
             profileJpa.flush();
         } catch (DataIntegrityViolationException e) {
             throw translated(e);
+        } catch (OptimisticLockingFailureException e) {
+            // 읽은 뒤 다른 요청이 같은 프로필 행을 먼저 바꿔 커밋했다(행 버전이 다르다). 옛 값으로 덮지 않고 409 로 끝낸다.
+            throw new ConcurrentFamilyChangeException(e);
+        }
+        // 프로필 행이 먼저 있어야 이력의 FK 가 맞는다 — 위 flush 뒤에 넣는다.
+        for (ConsentEvent event : family.drainConsentEvents()) {
+            em.persist(new ConsentEventEntity(
+                    event.profileId(),
+                    event.actorUserId(),
+                    event.kind().name(),
+                    event.personalData(),
+                    event.healthData(),
+                    event.occurredAt()));
         }
         return family;
     }
@@ -205,9 +221,15 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                 now);
     }
 
-    /** 생성 뒤 바뀔 수 있는 값만 덮어쓴다. 계정 연결(user_id)은 조건부 UPDATE 로만 바꾼다. */
+    /**
+     * 생성 뒤 바뀔 수 있는 값만 덮어쓴다. 계정 연결(user_id)은 조건부 UPDATE 로만 바꾼다.
+     * Hibernate 는 바뀐 행의 모든 칸을 다시 쓰므로(user_id 포함) 옛 상태로 덮는 것은 행 버전({@link ProfileEntity} @Version)이 막는다.
+     */
     private static void applyChanges(ProfileEntity entity, Profile profile, Instant now) {
         ClaimCode claimCode = profile.getClaimCode();
+        entity.setDisplayName(profile.getDisplayName());
+        entity.setBirthDate(profile.getBirthDate());
+        entity.setSex(profile.getSex().name());
         entity.setSupportMode(
                 profile.getSupportMode() == null
                         ? null

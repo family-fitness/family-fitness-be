@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
@@ -15,6 +16,7 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -122,7 +124,8 @@ class FamilyTest {
         Family family = newFamily();
         Profile child = addChild(family, "아이");
         UUID otherParentId = UUID.randomUUID();
-        Family otherFamily = Family.createWithParent(otherParentId, "다른 가족", "다른 부모", LocalDate.of(1985, 1, 1), Sex.M);
+        Family otherFamily =
+                Family.createWithParent(otherParentId, "다른 가족", "다른 부모", LocalDate.of(1985, 1, 1), Sex.M, today);
 
         assertThat(otherFamily.getProfiles())
                 .singleElement()
@@ -249,7 +252,7 @@ class FamilyTest {
         Profile child = addChild(family, "아이");
         Instant revokedAt = consentedAt.plusSeconds(60);
 
-        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, false), revokedAt);
+        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, false), revokedAt, today);
 
         assertThat(child.getConsent().isGiven()).isFalse();
         assertThat(child.getConsent().revokedAt()).isEqualTo(revokedAt);
@@ -258,7 +261,7 @@ class FamilyTest {
         assertThat(child.measurable(today)).isFalse();
 
         Instant regrantedAt = revokedAt.plusSeconds(60);
-        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, true), regrantedAt);
+        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, true), regrantedAt, today);
 
         assertThat(child.getConsent().isGiven()).isTrue();
         assertThat(child.getConsent().personalAt()).isEqualTo(regrantedAt);
@@ -275,11 +278,11 @@ class FamilyTest {
         assertThrows(
                 FamilyAccessDeniedException.class,
                 () -> family.updateConsent(
-                        UUID.randomUUID(), child.getId(), new GuardianConsent(true, true), consentedAt));
+                        UUID.randomUUID(), child.getId(), new GuardianConsent(true, true), consentedAt, today));
         assertThrows(
                 ProfileNotFoundException.class,
                 () -> family.updateConsent(
-                        parentUserId, UUID.randomUUID(), new GuardianConsent(true, true), consentedAt));
+                        parentUserId, UUID.randomUUID(), new GuardianConsent(true, true), consentedAt, today));
     }
 
     @Test
@@ -461,8 +464,257 @@ class FamilyTest {
                 () -> family.validateCheer(parentUserId, child.getId(), parent.getId()));
     }
 
+    @Test
+    @DisplayName("만 14세 미만은 가족을 만들지 못하고 PARENT 로도 들어오지 못한다. 만 14세 생일부터는 된다")
+    void 만_14세_미만은_가족을_만들지_못하고_PARENT_로도_들어오지_못한다() {
+        LocalDate thirteen = today.minusYears(14).plusDays(1);
+        LocalDate fourteen = today.minusYears(14);
+
+        assertThrows(
+                Under14NotAllowedException.class,
+                () -> Family.createWithParent(UUID.randomUUID(), "아이 가족", "아이", thirteen, Sex.F, today));
+        assertThat(Family.createWithParent(UUID.randomUUID(), "큰애 가족", "큰애", fourteen, Sex.F, today)
+                        .getProfiles())
+                .hasSize(1);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> Family.createWithParent(UUID.randomUUID(), "미래", "미래", today.plusDays(1), Sex.F, today));
+
+        Family family = newFamily();
+        assertThrows(
+                Under14NotAllowedException.class,
+                () -> family.addMember(
+                        parentUserId,
+                        "어린 보호자",
+                        thirteen,
+                        Sex.M,
+                        ProfileRole.PARENT,
+                        null,
+                        null,
+                        new GuardianConsent(true, true),
+                        consentedAt,
+                        today));
+        // 같은 나이라도 CHILD 는 동의와 함께 들어온다
+        Profile child = family.addChild(parentUserId, "아이", thirteen, Sex.M, true, true, consentedAt, today);
+        assertThat(child.getRole()).isEqualTo(ProfileRole.CHILD);
+        assertThat(family.getProfiles()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("자기 프로필의 동의는 주지도 거두지도 못하고, 만 14세 미만 보호자는 남의 동의도 바꾸지 못한다")
+    void 자기_프로필의_동의는_바꾸지_못하고_만_14세_미만_보호자는_동의를_바꾸지_못한다() {
+        Family family = newFamily();
+        Profile parent = family.getProfiles().getFirst();
+        Profile child = addChild(family, "아이");
+
+        assertThrows(
+                SelfConsentException.class,
+                () -> family.updateConsent(
+                        parentUserId, parent.getId(), new GuardianConsent(true, true), consentedAt, today));
+        assertThrows(
+                SelfConsentException.class,
+                () -> family.updateConsent(
+                        parentUserId, parent.getId(), new GuardianConsent(false, false), consentedAt, today));
+        assertThat(parent.getConsent()).isEqualTo(ConsentRecord.NONE);
+
+        // 막힌 시도는 이력을 남기지 않는다(아이 추가 때의 GRANTED 한 줄만)
+        assertThat(family.drainConsentEvents()).hasSize(1);
+
+        // 이 규칙이 생기기 전에 만 14세 미만이 owner 로 가족을 만든 경우(지난 데이터)
+        UUID familyId = UUID.randomUUID();
+        UUID kidOwner = UUID.randomUUID();
+        Profile sibling = legacyProfile(familyId, null, ProfileRole.CHILD, today.minusYears(9));
+        Family kidFamily = Family.restore(
+                familyId,
+                "아이 가족",
+                List.of(legacyProfile(familyId, kidOwner, ProfileRole.PARENT, today.minusYears(11)), sibling));
+        assertThrows(
+                Under14NotAllowedException.class,
+                () -> kidFamily.updateConsent(
+                        kidOwner, sibling.getId(), new GuardianConsent(true, true), consentedAt, today));
+        assertThat(sibling.getConsent()).isEqualTo(ConsentRecord.NONE);
+        assertThat(kidFamily.drainConsentEvents()).isEmpty();
+    }
+
+    private Profile legacyProfile(UUID familyId, @Nullable UUID userId, ProfileRole role, LocalDate birthDate) {
+        return new Profile(
+                UUID.randomUUID(),
+                familyId,
+                userId,
+                role,
+                role == ProfileRole.PARENT,
+                "아이",
+                birthDate,
+                Sex.F,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                ConsentRecord.NONE);
+    }
+
+    @Test
+    @DisplayName("거둔 동의는 만 14세 생일이 지나도 풀리지 않고, 보호자가 다시 동의해야 풀린다")
+    void 거둔_동의는_만_14세_생일이_지나도_풀리지_않는다() {
+        Family family = newFamily();
+        LocalDate birth = today.minusYears(14).plusDays(10);
+        Profile teen = family.addChild(parentUserId, "큰애", birth, Sex.F, true, true, consentedAt, today);
+        family.updateConsent(parentUserId, teen.getId(), new GuardianConsent(false, false), consentedAt, today);
+        LocalDate afterBirthday = today.plusDays(10);
+
+        assertThat(teen.consentRequired(afterBirthday)).isTrue();
+        assertThat(teen.consentGiven(afterBirthday)).isFalse();
+        assertThat(teen.measurable(afterBirthday)).isFalse();
+
+        family.updateConsent(
+                parentUserId,
+                teen.getId(),
+                new GuardianConsent(true, true),
+                consentedAt.plusSeconds(60),
+                afterBirthday);
+        assertThat(teen.consentRequired(afterBirthday)).isFalse();
+        assertThat(teen.consentGiven(afterBirthday)).isTrue();
+        assertThat(teen.measurable(afterBirthday)).isTrue();
+
+        // 거둔 적 없는 만 14세 이상은 전과 같이 동의 없이도 된다
+        Profile adult = family.addMember(
+                parentUserId,
+                "큰형",
+                today.minusYears(15),
+                Sex.M,
+                ProfileRole.CHILD,
+                null,
+                null,
+                null,
+                consentedAt,
+                today);
+        assertThat(adult.consentRequired(today)).isFalse();
+        assertThat(adult.consentGiven(today)).isTrue();
+        // 만 14세 이상도 보호자가 거두면 다시 동의할 때까지 막힌다(FE 목과 같다)
+        family.updateConsent(parentUserId, adult.getId(), new GuardianConsent(false, false), consentedAt, today);
+        assertThat(adult.consentRequired(today)).isTrue();
+        assertThat(adult.consentGiven(today)).isFalse();
+        assertThat(adult.measurable(today)).isFalse();
+    }
+
+    @Test
+    @DisplayName("동의를 주고 거둘 때마다 이력이 한 줄씩 쌓이고, 재동의가 철회 줄을 지우지 않는다")
+    void 동의를_주고_거둘_때마다_이력이_한_줄씩_쌓이고_재동의가_철회_줄을_지우지_않는다() {
+        Family family = newFamily();
+        UUID dadUserId = UUID.randomUUID();
+        Profile dadSeat = addParentSeat(family);
+        dadSeat.claim(dadUserId, consentedAt);
+        Profile child = addChild(family, "아이");
+        Instant revokedAt = consentedAt.plusSeconds(60);
+        Instant regrantedAt = consentedAt.plusSeconds(120);
+
+        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, false), revokedAt, today);
+        family.updateConsent(dadUserId, child.getId(), new GuardianConsent(true, true), regrantedAt, today);
+
+        assertThat(family.drainConsentEvents())
+                .containsExactly(
+                        new ConsentEvent(
+                                child.getId(), parentUserId, ConsentEvent.Kind.GRANTED, true, true, consentedAt),
+                        new ConsentEvent(
+                                child.getId(), parentUserId, ConsentEvent.Kind.REVOKED, true, false, revokedAt),
+                        new ConsentEvent(child.getId(), dadUserId, ConsentEvent.Kind.GRANTED, true, true, regrantedAt));
+        // 꺼내면 비워진다 — 같은 줄을 두 번 넣지 않는다
+        assertThat(family.drainConsentEvents()).isEmpty();
+        // 동의 없이 들어온 만 14세 이상 · 부모 자리는 이력을 남기지 않는다
+        addParentSeat(family);
+        assertThat(family.drainConsentEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("프로필 고치기 — 보호자가 계정 없는 프로필과 자기 프로필의 이름 · 생년월일 · 성별을 고친다")
+    void 프로필_고치기_보호자가_계정_없는_프로필과_자기_프로필을_고친다() {
+        Family family = newFamily();
+        Profile parent = family.getProfiles().getFirst();
+        Profile teen = family.addMember(
+                parentUserId,
+                "큰애",
+                today.minusYears(20),
+                Sex.F,
+                ProfileRole.CHILD,
+                null,
+                null,
+                null,
+                consentedAt,
+                today);
+        assertThat(teen.consentRequired(today)).isFalse();
+        assertThat(teen.consentGiven(today)).isTrue();
+
+        // 생일을 2006 → 2016 처럼 바로잡아 만 14세 미만이 되면 동의가 필요하고, 동의 기록이 없으니 바로 막힌다
+        LocalDate corrected = today.minusYears(10);
+        family.editProfile(parentUserId, teen.getId(), new ProfileEdit("둘째", corrected, Sex.M), today);
+        assertThat(teen.getDisplayName()).isEqualTo("둘째");
+        assertThat(teen.getBirthDate()).isEqualTo(corrected);
+        assertThat(teen.getSex()).isEqualTo(Sex.M);
+        assertThat(teen.consentRequired(today)).isTrue();
+        assertThat(teen.consentGiven(today)).isFalse();
+        assertThat(teen.measurable(today)).isFalse();
+
+        // 빠진 칸은 그대로
+        family.editProfile(parentUserId, parent.getId(), new ProfileEdit(null, null, Sex.M), today);
+        assertThat(parent.getDisplayName()).isEqualTo("부모");
+        assertThat(parent.getBirthDate()).isEqualTo(LocalDate.of(1988, 3, 1));
+        assertThat(parent.getSex()).isEqualTo(Sex.M);
+    }
+
+    @Test
+    @DisplayName("프로필 고치기 규칙 — 보호자만 · 계정 붙은 남의 프로필 불가 · 미래 생일 불가 · PARENT 는 만 14세 이상 · 이름 공백 불가")
+    void 프로필_고치기_규칙() {
+        Family family = newFamily();
+        Profile parent = family.getProfiles().getFirst();
+        Profile child = addChild(family, "아이");
+        Profile claimedChild = addChild(family, "둘째");
+        UUID childUserId = UUID.randomUUID();
+        claimedChild.claim(childUserId, consentedAt);
+        Profile dadSeat = addParentSeat(family);
+        ProfileEdit rename = new ProfileEdit("새 이름", null, null);
+
+        assertThrows(
+                FamilyAccessDeniedException.class,
+                () -> family.editProfile(UUID.randomUUID(), child.getId(), rename, today));
+        assertThrows(NotAParentException.class, () -> family.editProfile(childUserId, child.getId(), rename, today));
+        assertThrows(
+                NotAParentException.class, () -> family.editProfile(childUserId, claimedChild.getId(), rename, today));
+        assertThrows(
+                ProfileNotFoundException.class,
+                () -> family.editProfile(parentUserId, UUID.randomUUID(), rename, today));
+        assertThrows(
+                NotOwnProfileException.class,
+                () -> family.editProfile(parentUserId, claimedChild.getId(), rename, today));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> family.editProfile(
+                        parentUserId, child.getId(), new ProfileEdit(null, today.plusDays(1), null), today));
+        assertThrows(
+                Under14NotAllowedException.class,
+                () -> family.editProfile(
+                        parentUserId, dadSeat.getId(), new ProfileEdit(null, today.minusYears(13), null), today));
+        assertThrows(
+                Under14NotAllowedException.class,
+                () -> family.editProfile(
+                        parentUserId, parent.getId(), new ProfileEdit(null, today.minusYears(13), null), today));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> family.editProfile(parentUserId, child.getId(), new ProfileEdit("  ", null, null), today));
+
+        assertThat(claimedChild.getDisplayName()).isEqualTo("둘째");
+        assertThat(dadSeat.getBirthDate()).isEqualTo(LocalDate.of(1986, 1, 1));
+        assertThat(parent.getBirthDate()).isEqualTo(LocalDate.of(1988, 3, 1));
+        assertThat(child.getDisplayName()).isEqualTo("아이");
+
+        // 계정 없는 부모 자리는 고친다
+        family.editProfile(parentUserId, dadSeat.getId(), rename, today);
+        assertThat(dadSeat.getDisplayName()).isEqualTo("새 이름");
+    }
+
     private Family newFamily() {
-        return Family.createWithParent(parentUserId, "우리 가족", "부모", LocalDate.of(1988, 3, 1), Sex.F);
+        return Family.createWithParent(parentUserId, "우리 가족", "부모", LocalDate.of(1988, 3, 1), Sex.F, today);
     }
 
     /** 아직 계정이 붙지 않은 부모 자리(초대 전 아빠). */

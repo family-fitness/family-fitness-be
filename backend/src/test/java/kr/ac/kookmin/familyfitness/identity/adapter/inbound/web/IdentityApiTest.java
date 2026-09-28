@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -37,6 +38,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -73,6 +75,9 @@ class IdentityApiTest {
 
     @Autowired
     private TransactionTemplate tx;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private final LocalDate today = LocalDate.now();
 
@@ -213,6 +218,34 @@ class IdentityApiTest {
 
     private JsonNode read(ResultActions action) throws Exception {
         return json.readTree(action.andReturn().getResponse().getContentAsString());
+    }
+
+    private ResultActions editProfile(Session session, String profileId, Map<String, Object> body) throws Exception {
+        return mvc.perform(json(auth(patch("/api/v1/profiles/" + profileId), session), body));
+    }
+
+    private ResultActions consent(Session session, String profileId, boolean personal, boolean health)
+            throws Exception {
+        return mvc.perform(json(
+                auth(patch("/api/v1/profiles/" + profileId + "/consent"), session),
+                Map.of("personalData", personal, "healthData", health)));
+    }
+
+    private String ownerProfileId(Session session) throws Exception {
+        return read(mvc.perform(auth(get("/api/v1/me"), session)))
+                .get("profiles")
+                .get(0)
+                .get("profileId")
+                .asString();
+    }
+
+    private JsonNode profileIn(Session session, String familyId, String profileId) throws Exception {
+        JsonNode profiles = read(mvc.perform(auth(get("/api/v1/families/" + familyId + "/profiles"), session)))
+                .get("profiles");
+        return StreamSupport.stream(profiles.spliterator(), false)
+                .filter(it -> it.get("profileId").asString().equals(profileId))
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test
@@ -1119,7 +1152,7 @@ class IdentityApiTest {
 
         // 서비스의 profilesOfUser 검사를 건너뛰고 저장소에 바로 넣는다(두 요청이 검사를 함께 지나친 경우)
         assertThatThrownBy(() -> tx.executeWithoutResult(status -> familyRepository.save(
-                        Family.createWithParent(dad.userId(), "또", "아빠", LocalDate.of(1986, 1, 1), Sex.M))))
+                        Family.createWithParent(dad.userId(), "또", "아빠", LocalDate.of(1986, 1, 1), Sex.M, today))))
                 .isInstanceOf(AlreadyInFamilyException.class);
         assertThatThrownBy(() -> tx.executeWithoutResult(
                         status -> familyRepository.attachUserIfUnclaimed(dadSeat, dad.userId(), Instant.now())))
@@ -1192,5 +1225,163 @@ class IdentityApiTest {
             expected.put(edge, "201");
         }
         assertThat(outcomes).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("PATCH /profiles/{id} — 보호자가 이름 · 생년월일 · 성별을 고치고, 만 14세 미만이 되면 동의가 필요한 상태가 바로 실린다")
+    void 프로필_고치기() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        String ownerId = ownerProfileId(parent);
+        String teenId = read(addMember(parent, familyId, "큰애", today.minusYears(20), "CHILD", null, "F")
+                        .andExpect(status().isCreated()))
+                .get("profileId")
+                .asString();
+
+        JsonNode edited = read(editProfile(
+                        parent,
+                        teenId,
+                        Map.of("name", "서연", "birthDate", today.minusYears(10).toString(), "sex", "M"))
+                .andExpect(status().isOk()));
+        assertThat(edited.get("profileId").asString()).isEqualTo(teenId);
+        assertThat(edited.get("name").asString()).isEqualTo("서연");
+        assertThat(edited.get("sex").asString()).isEqualTo("M");
+        assertThat(edited.get("ageGroup").asString()).isEqualTo("유소년");
+        assertThat(edited.get("consentRequired").asBoolean()).isTrue();
+        assertThat(edited.get("consentGiven").asBoolean()).isFalse();
+        assertThat(edited.get("measurable").asBoolean()).isFalse();
+        JsonNode listed = profileIn(parent, familyId, teenId);
+        assertThat(listed.get("name").asString()).isEqualTo("서연");
+        assertThat(listed.get("consentGiven").asBoolean()).isFalse();
+        ProfileDetails saved = profileQuery.findDetails(UUID.fromString(teenId));
+        assertThat(saved).isNotNull();
+        assertThat(saved.birthDate()).isEqualTo(today.minusYears(10));
+
+        // 빠진 칸은 그대로 — 자기 프로필은 고친다
+        JsonNode renamed =
+                read(editProfile(parent, ownerId, Map.of("name", "엄마2")).andExpect(status().isOk()));
+        assertThat(renamed.get("name").asString()).isEqualTo("엄마2");
+        assertThat(renamed.get("sex").asString()).isEqualTo("F");
+
+        Map<String, String> outcomes = new LinkedHashMap<>();
+        outcomes.put("빈 이름", outcome(editProfile(parent, teenId, Map.of("name", ""))));
+        outcomes.put("공백 이름", outcome(editProfile(parent, teenId, Map.of("name", "   "))));
+        outcomes.put("21자 이름", outcome(editProfile(parent, teenId, Map.of("name", "가".repeat(21)))));
+        outcomes.put(
+                "미래 생일",
+                outcome(editProfile(
+                        parent, teenId, Map.of("birthDate", today.plusDays(1).toString()))));
+        outcomes.put("모르는 성별", outcome(editProfile(parent, teenId, Map.of("sex", "X"))));
+        outcomes.put(
+                "보호자 생일을 13살로",
+                outcome(editProfile(
+                        parent,
+                        ownerId,
+                        Map.of("birthDate", today.minusYears(13).toString()))));
+        outcomes.put("없는 프로필", outcome(editProfile(parent, UUID.randomUUID().toString(), Map.of("name", "누구"))));
+        outcomes.put("다른 가족", outcome(editProfile(devLogin(), teenId, Map.of("name", "침입"))));
+        assertThat(outcomes)
+                .containsExactly(
+                        Map.entry("빈 이름", "400 BAD_REQUEST"),
+                        Map.entry("공백 이름", "400 BAD_REQUEST"),
+                        Map.entry("21자 이름", "400 BAD_REQUEST"),
+                        Map.entry("미래 생일", "400 BAD_REQUEST"),
+                        Map.entry("모르는 성별", "400 BAD_REQUEST"),
+                        Map.entry("보호자 생일을 13살로", "422 UNDER_14_NOT_ALLOWED"),
+                        Map.entry("없는 프로필", "404 PROFILE_NOT_FOUND"),
+                        Map.entry("다른 가족", "403 NOT_SAME_FAMILY"));
+
+        // 계정이 붙은 아이 — 보호자도 못 고치고(403 FORBIDDEN), 아이 계정은 보호자가 아니다(403 NOT_A_PARENT)
+        String code = read(invite(parent, teenId).andExpect(status().isCreated()))
+                .get("claimCode")
+                .asString();
+        Session kid = devLoginWithCode(code);
+        claim(kid, code).andExpect(status().isOk());
+        assertThat(outcome(editProfile(parent, teenId, Map.of("name", "바꿈")))).isEqualTo("403 FORBIDDEN");
+        assertThat(outcome(editProfile(kid, teenId, Map.of("name", "바꿈")))).isEqualTo("403 NOT_A_PARENT");
+        assertThat(profileIn(parent, familyId, teenId).get("name").asString()).isEqualTo("서연");
+    }
+
+    @Test
+    @DisplayName("만 14세 미만은 가족을 만들거나 PARENT 로 들어오지 못하고, 자기 동의는 SELF_CONSENT 로 막는다")
+    void 만_14세_미만_보호자와_자기_동의를_막는다() throws Exception {
+        Session kid = devLogin();
+        mvc.perform(json(
+                        auth(post("/api/v1/families"), kid),
+                        Map.of(
+                                "familyName",
+                                "아이 가족",
+                                "owner",
+                                Map.of(
+                                        "name",
+                                        "아이",
+                                        "birthDate",
+                                        today.minusYears(11).toString(),
+                                        "sex",
+                                        "F"))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("UNDER_14_NOT_ALLOWED"));
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), kid)))
+                        .get("nextStep")
+                        .asString())
+                .isEqualTo("CREATE_FAMILY");
+
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        String ownerId = ownerProfileId(parent);
+        assertThat(outcome(addMember(
+                        parent, familyId, "어린 보호자", today.minusYears(13), "PARENT", new boolean[] {true, true})))
+                .isEqualTo("422 UNDER_14_NOT_ALLOWED");
+        assertThat(outcome(addMember(parent, familyId, "아빠", today.minusYears(14), "PARENT")))
+                .isEqualTo("201");
+
+        assertThat(outcome(consent(parent, ownerId, true, true))).isEqualTo("403 SELF_CONSENT");
+        assertThat(outcome(consent(parent, ownerId, false, false))).isEqualTo("403 SELF_CONSENT");
+        assertThat(profileIn(parent, familyId, ownerId).get("consentGiven").asBoolean())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("거둔 동의는 만 14세 이상이어도 다시 동의할 때까지 막히고, 동의를 바꿀 때마다 consent_events 에 한 줄씩 남는다")
+    void 거둔_동의는_만_14세_이상도_막히고_이력이_남는다() throws Exception {
+        Session parent = devLogin();
+        String familyId = createFamily(parent).get("familyId").asString();
+        String teenId = read(addMember(parent, familyId, "큰애", today.minusYears(15), "CHILD"))
+                .get("profileId")
+                .asString();
+        String childId = read(addMember(
+                        parent, familyId, "첫째", today.minusYears(10), "CHILD", new boolean[] {true, true}))
+                .get("profileId")
+                .asString();
+
+        JsonNode revoked = read(consent(parent, teenId, false, false).andExpect(status().isOk()));
+        assertThat(revoked.get("consentGiven").asBoolean()).isFalse();
+        assertThat(revoked.get("measurable").asBoolean()).isFalse();
+        JsonNode blocked = profileIn(parent, familyId, teenId);
+        assertThat(blocked.get("consentRequired").asBoolean()).isTrue();
+        assertThat(blocked.get("consentGiven").asBoolean()).isFalse();
+        assertThat(blocked.get("measurable").asBoolean()).isFalse();
+
+        JsonNode regranted = read(consent(parent, teenId, true, true).andExpect(status().isOk()));
+        assertThat(regranted.get("consentGiven").asBoolean()).isTrue();
+        assertThat(profileIn(parent, familyId, teenId).get("consentRequired").asBoolean())
+                .isFalse();
+
+        consent(parent, childId, true, false).andExpect(status().isOk());
+        consent(parent, childId, true, true).andExpect(status().isOk());
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select actor_user_id, kind, personal_data, health_data from consent_events"
+                        + " where profile_id = ? order by occurred_at, id",
+                UUID.fromString(childId));
+        assertThat(rows)
+                .extracting(it -> it.get("KIND"), it -> it.get("PERSONAL_DATA"), it -> it.get("HEALTH_DATA"))
+                .containsExactly(
+                        tuple("GRANTED", true, true), tuple("REVOKED", true, false), tuple("GRANTED", true, true));
+        assertThat(rows).allSatisfy(it -> assertThat(it.get("ACTOR_USER_ID")).isEqualTo(parent.userId()));
+        assertThat(jdbc.queryForList(
+                        "select kind from consent_events where profile_id = ? order by occurred_at, id",
+                        String.class,
+                        UUID.fromString(teenId)))
+                .containsExactly("REVOKED", "GRANTED");
     }
 }
