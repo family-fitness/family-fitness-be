@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.UUID;
 import javax.crypto.spec.SecretKeySpec;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -36,17 +37,25 @@ public class ServiceTokenIssuer {
                 .build();
     }
 
+    /** 새 토큰 쌍을 만든다. 저장은 하지 않는다 — 리프레시 토큰의 jti 를 기록하는 일은 identity 가 한다. */
     public ServiceTokens issue(UUID userId) {
         Instant now = clock.instant();
         Instant accessExpiresAt = now.plus(props.auth().jwt().accessTtl());
+        Instant refreshExpiresAt = now.plus(props.auth().jwt().refreshTtl());
+        UUID refreshTokenId = UUID.randomUUID();
         return new ServiceTokens(
-                encode(userId, now, accessExpiresAt, TokenClaims.ACCESS),
-                encode(userId, now, now.plus(props.auth().jwt().refreshTtl()), TokenClaims.REFRESH),
-                accessExpiresAt);
+                encode(userId, UUID.randomUUID(), now, accessExpiresAt, TokenClaims.ACCESS),
+                encode(userId, refreshTokenId, now, refreshExpiresAt, TokenClaims.REFRESH),
+                accessExpiresAt,
+                refreshTokenId,
+                refreshExpiresAt);
     }
 
-    /** 리프레시 토큰을 검증하고 계정 ID 를 돌려준다. 액세스 토큰을 넣으면 거부한다. */
-    public UUID userIdOfRefreshToken(String refreshToken) {
+    /**
+     * 리프레시 토큰의 서명 · 용도 · 발급자 · 만료를 검증하고 계정 ID 와 jti 를 돌려준다. 액세스 토큰을 넣으면 거부한다.
+     * 폐기 여부는 여기서 보지 않는다(발급 기록은 identity 에 있다).
+     */
+    public RefreshTokenClaims readRefreshToken(String refreshToken) {
         Jwt jwt;
         try {
             jwt = refreshDecoder.decode(refreshToken);
@@ -62,16 +71,25 @@ public class ServiceTokenIssuer {
         Instant exp = jwt.getExpiresAt();
         if (exp == null) throw new InvalidRefreshTokenException("만료 시각이 없습니다");
         if (exp.isBefore(clock.instant())) throw new InvalidRefreshTokenException("만료된 리프레시 토큰입니다");
-        return UUID.fromString(jwt.getSubject());
+        return new RefreshTokenClaims(uuidClaim(jwt.getSubject(), "sub"), uuidClaim(jwt.getId(), "jti"));
     }
 
-    private String encode(UUID userId, Instant issuedAt, Instant expiresAt, String tokenUse) {
+    private static UUID uuidClaim(@Nullable String value, String name) {
+        if (value == null) throw new InvalidRefreshTokenException(name + " 가 없습니다");
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRefreshTokenException(name + " 가 UUID 가 아닙니다", e);
+        }
+    }
+
+    private String encode(UUID userId, UUID tokenId, Instant issuedAt, Instant expiresAt, String tokenUse) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(props.auth().jwt().issuer())
                 .subject(userId.toString())
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
-                .id(UUID.randomUUID().toString())
+                .id(tokenId.toString())
                 .claim(TokenClaims.TOKEN_USE_CLAIM, tokenUse)
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();

@@ -2,11 +2,10 @@ package kr.ac.kookmin.familyfitness.shared.web;
 
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Path;
-import java.sql.SQLException;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.shared.domain.DomainException;
 import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
-import org.jspecify.annotations.Nullable;
+import kr.ac.kookmin.familyfitness.shared.persistence.SqlErrors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -35,8 +34,6 @@ public class ApiErrorHandler {
     static final String SERVER_ERROR_MESSAGE = "서버 오류가 발생했습니다";
     private static final String BAD_REQUEST_MESSAGE = "요청 형식이 올바르지 않습니다";
     private static final String UNREADABLE_BODY_MESSAGE = "요청 본문을 읽을 수 없습니다";
-    /** SQLSTATE 23505 unique_violation. PostgreSQL · H2 모두 이 값을 쓴다. */
-    private static final String UNIQUE_VIOLATION = "23505";
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -102,7 +99,7 @@ public class ApiErrorHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> dataIntegrity(DataIntegrityViolationException e) {
-        if (!isUniqueViolation(e)) return unexpected(e);
+        if (!SqlErrors.isUniqueViolation(e)) return unexpected(e);
         log.warn("유니크 제약 위반을 409 로 돌림: {}", e.getMostSpecificCause().getMessage());
         return respond(HttpStatus.CONFLICT, "CONFLICT", "이미 같은 데이터가 있습니다");
     }
@@ -176,14 +173,6 @@ public class ApiErrorHandler {
     static String reasonOf(HttpStatusCode status) {
         HttpStatus known = HttpStatus.resolve(status.value());
         return known != null ? known.getReasonPhrase() : BAD_REQUEST_MESSAGE;
-    }
-
-    /** 원인 사슬 어딘가에 SQLSTATE 23505 가 있으면 유니크 위반이다. JDBC 직접 호출 · JPA flush 어느 쪽에서 와도 같다. */
-    private static boolean isUniqueViolation(Throwable e) {
-        for (@Nullable Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLException sql && UNIQUE_VIOLATION.equals(sql.getSQLState())) return true;
-        }
-        return false;
     }
 
     private static String leafOf(Path path) {

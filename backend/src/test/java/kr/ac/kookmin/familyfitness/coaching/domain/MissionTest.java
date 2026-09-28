@@ -303,4 +303,65 @@ class MissionTest {
         assertThat(mission.getRationale()).isEqualTo("부모용 문구");
         assertThat(mission.getSessions()).isEmpty();
     }
+
+    private CoachProposalItem itemWithSessions(int targetValue, String targetMetric, List<MissionSession> sessions) {
+        return new CoachProposalItem(
+                0,
+                "유연성 키우기 7분",
+                targetMetric,
+                targetValue,
+                null,
+                null,
+                monday,
+                monday,
+                List.of(new ProposalParticipant(childId, ProfileRole.CHILD, "주행자")),
+                null,
+                List.of(),
+                null,
+                null,
+                sessions);
+    }
+
+    @Test
+    @DisplayName("승인된 제안의 칸은 차례 그대로 미션 칸이 된다")
+    void 승인된_제안의_칸은_차례_그대로_미션_칸이_된다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(
+                        1, SessionPhase.WARMUP, "나비자세", FitnessFactor.FLEXIBILITY, 1, new SessionClip("v", 1, 2, "나비")),
+                new MissionSession(2, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(3, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+        CoachRun run = CoachRun.awaitingApproval(
+                UUID.randomUUID(),
+                familyId,
+                List.of(itemWithSessions(7, "TIMER_MINUTES", sessions)),
+                monday,
+                List.of(),
+                null,
+                3,
+                15,
+                Instant.EPOCH);
+        run.approve(new CoachApprover(parentId, familyId, true), at);
+
+        Mission mission = Mission.fromProposal(
+                UUID.randomUUID(), run, run.proposalsForMissionCreation().getFirst(), parentId, at);
+
+        assertThat(mission.getSessions()).isEqualTo(sessions);
+        assertThat(mission.getTargetValue()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("칸이 있는 제안 항목은 목표가 분이고 칸 분의 합과 같아야 한다 — 직접 만들기와 같은 규칙")
+    void 칸이_있는_제안_항목은_목표가_분이고_칸_분의_합과_같아야_한다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(1, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(2, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(20, "TIMER_MINUTES", sessions));
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(6, "STEPS", sessions));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> itemWithSessions(6, "TIMER_MINUTES", List.of(sessions.getLast(), sessions.getLast())));
+        assertThat(itemWithSessions(6, "TIMER_MINUTES", sessions.reversed()).sessions())
+                .isEqualTo(sessions);
+    }
 }

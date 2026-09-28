@@ -1,5 +1,9 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.COOLDOWN;
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.MAIN;
+import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.WARMUP;
+import static kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository.clip;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
@@ -12,14 +16,19 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
+import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeAiGateway;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
@@ -31,6 +40,7 @@ import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunRequest;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -48,13 +58,18 @@ class CoachRunExecutorTest {
     private final InMemoryCoachRunRepository runs = new InMemoryCoachRunRepository();
     private final FakeAiGateway gateway = new FakeAiGateway();
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
+    /** 기본은 비어 있다 — 대체 편성은 영상 한 편 통째로 짠다. 클립으로 짜는 시험만 채운다. */
+    private final InMemoryExerciseClipRepository clips = new InMemoryExerciseClipRepository();
+
     private final CoachRunPipeline pipeline = new CoachRunPipeline(
             runs,
             identity,
             fitness,
             JsonMapper.builder().build(),
             Fixed.time(),
-            new LabelBasedProposalPlanner(fitness, videos));
+            new LabelBasedProposalPlanner(fitness, videos, clips),
+            clips,
+            videos);
     private final CoachRunExecutor executor = new CoachRunExecutor(pipeline, gateway, new SyncTaskExecutor(), 0, 3);
 
     /** 측정은 있지만 요인 백분위(약점 · 강점)가 없다 — 대체 편성할 근거가 없는 기본 상태. */
@@ -151,13 +166,67 @@ class CoachRunExecutorTest {
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.startsOn()).isEqualTo(Fixed.TODAY);
         assertThat(item.endsOn()).isEqualTo(Fixed.TODAY);
-        assertThat(item.video().videoId()).isEqualTo("IdpXx2gm90o");
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
         assertThat(item.participants())
                 .containsExactly(
                         new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"),
                         new ProposalParticipant(family.parent.profileId(), ProfileRole.PARENT, "동반자"));
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
                 .containsExactly(1, 2);
+        // 스텁은 AI 가짓수 규칙대로 20분 = 준비 2 · 본 4 · 정리 1, 칸 분은 준비 · 정리 1분에 남는 17분을 본운동이 나눈다
+        assertThat(item.sessions().stream().map(MissionSession::phase).toList())
+                .containsExactly(WARMUP, WARMUP, MAIN, MAIN, MAIN, MAIN, COOLDOWN);
+        assertThat(item.sessions().stream().map(MissionSession::minutes).toList())
+                .containsExactly(1, 1, 5, 4, 4, 4, 1);
+        assertThat(item.sessions().getFirst().clip()).isEqualTo(new SessionClip("Eg3GpTv7z8s", 144, 182, null));
+    }
+
+    @Test
+    @DisplayName("AI 장애 때 클립 표가 있으면 대상 연령대 · 조건에 맞는 클립을 가짓수 규칙대로 골라 칸으로 짠다 — 요인 같은 것, 한 세트 60초에 가까운 것 먼저")
+    void AI_장애_때_클립_표가_있으면_가짓수_규칙대로_클립을_골라_칸으로_짠다() {
+        fitness.measured(
+                family.child.profileId(),
+                new FactorPoint(FitnessFactor.FLEXIBILITY, "012", 24),
+                new FactorPoint(FitnessFactor.CARDIO, "020", 80),
+                new FakeFitness.Item("012", 8.0));
+        String eg = "Eg3GpTv7z8s";
+        List.of(
+                        clip("IdpXx2gm90o", 56, 116, "스트레칭", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 188, 226, "고양이자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 500, 534, "양팔 펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 536, 588, "가슴펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 614, 674, "팔꿈치 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                        clip(eg, 680, 754, "팔 스트레칭", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 1104, 1150, "다리 늘리기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 1426, 1466, "다리 뒤 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 1822, 1860, "어깨 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        // 다른 연령대 · 시끄러운 클립은 60초 · 같은 요인이어도 고르지 않는다
+                        clip("sample00005", 0, 60, "유아 늘이기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.TODDLER),
+                        noisy(clip(eg, 2000, 2060, "제자리 뛰기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH)))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨 기반 편성 · 클립 7개");
+        assertThat(saved.getSteps().get(2).summary()).isEqualTo("하루 20분 · 준비 2 · 본 4 · 정리 1");
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.sessions().stream().map(MissionSession::title).toList())
+                .containsExactly("스트레칭", "나비자세", "가슴펴기", "팔 스트레칭", "다리 늘리기", "양팔 펴기", "다리 뒤 늘리기");
+        assertThat(item.sessions().stream().map(MissionSession::minutes).toList())
+                .containsExactly(1, 1, 5, 4, 4, 4, 1);
+        assertThat(item.targetValue()).isEqualTo(20);
+        assertThat(item.sessions().get(2).clip()).isEqualTo(new SessionClip(eg, 536, 588, "가슴펴기"));
+        assertThat(item.video()).isEqualTo(new ProposalVideo("IdpXx2gm90o", 56));
+        // 인용: 규준 1건 + 클립이 나온 영상마다 1건
+        assertThat(item.citations().stream().map(ProposalCitation::chunkId).toList())
+                .containsExactly("norm:유소년-012", "video:IdpXx2gm90o", "video:" + eg);
     }
 
     @Test
@@ -517,6 +586,27 @@ class CoachRunExecutorTest {
             if (calls.incrementAndGet() == 1) throw new AiUnavailableException("AI 503 (GET coach/runs/" + id + ")");
             return resultWithCheer(id);
         }
+    }
+
+    private static ExerciseClip noisy(ExerciseClip quiet) {
+        return new ExerciseClip(
+                quiet.clipId(),
+                quiet.videoId(),
+                quiet.seq(),
+                quiet.nameOnVideo(),
+                quiet.exerciseName(),
+                quiet.title(),
+                quiet.factor(),
+                quiet.phase(),
+                quiet.startSec(),
+                quiet.endSec(),
+                quiet.homeOk(),
+                false,
+                quiet.needsProps(),
+                quiet.isExercise(),
+                quiet.ageGroup(),
+                quiet.source(),
+                quiet.active());
     }
 
     /** AI 가 일간 미션에 응원 부모를 참여자로 넣어 돌려준 경우(ai:coach/compose.py 일간 참여자 = 주행자 + 응원). */
