@@ -1,10 +1,15 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRoles;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
@@ -12,6 +17,8 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
@@ -41,6 +48,8 @@ public class CoachRunPipeline {
     private final JsonMapper jsonMapper;
     private final AppTime time;
     private final LabelBasedProposalPlanner fallbackPlanner;
+    private final ExerciseClipRepository clips;
+    private final ExerciseVideoRepository videos;
 
     public CoachRunPipeline(
             CoachRunRepository runs,
@@ -48,13 +57,17 @@ public class CoachRunPipeline {
             FitnessQuery fitnessQuery,
             JsonMapper jsonMapper,
             AppTime time,
-            LabelBasedProposalPlanner fallbackPlanner) {
+            LabelBasedProposalPlanner fallbackPlanner,
+            ExerciseClipRepository clips,
+            ExerciseVideoRepository videos) {
         this.runs = runs;
         this.profileQuery = profileQuery;
         this.fitnessQuery = fitnessQuery;
         this.jsonMapper = jsonMapper;
         this.time = time;
         this.fallbackPlanner = fallbackPlanner;
+        this.clips = clips;
+        this.videos = videos;
     }
 
     /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓴다. */
@@ -110,7 +123,7 @@ public class CoachRunPipeline {
         return written(runs.attachAiRunIfRunning(run), runId, "AI 접수 기록");
     }
 
-    /** `succeeded` 결과를 제안 항목으로 바꿔 붙이고 AWAITING_APPROVAL 로 옮긴다. */
+    /** `succeeded` 결과를 제안 항목(칸 포함)으로 바꿔 붙이고 AWAITING_APPROVAL 로 옮긴다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void complete(UUID runId, CoachRunResult result) {
         CoachRun run = load(runId);
@@ -121,7 +134,8 @@ public class CoachRunPipeline {
         }
         ProfileDetails subject = subjectOf(run);
         @Nullable UUID companion = requireConditions(run).withParent() ? run.getRequestedBy() : null;
-        ProposalConverter converter = new ProposalConverter(subject.profileId(), subject.role(), companion);
+        ProposalConverter converter =
+                new ProposalConverter(subject.profileId(), subject.role(), companion, clipTitlesOf(proposal));
         run.complete(
                 ProposalConverter.steps(result),
                 converter.convert(proposal),
@@ -143,6 +157,26 @@ public class CoachRunPipeline {
         if (alreadyFinished(run, "실패 기록")) return;
         run.fail(reason, time.now(), steps == null ? run.getSteps() : steps, refused, refusalReason);
         written(runs.finishIfRunning(run), runId, "실패 기록");
+    }
+
+    /** 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다). */
+    private ClipTitles clipTitlesOf(CoachRunResult.Proposal proposal) {
+        Set<String> clipIds = new LinkedHashSet<>();
+        Set<String> videoIds = new LinkedHashSet<>();
+        for (CoachRunResult.Mission mission : proposal.missions()) {
+            for (CoachRunResult.Session session : mission.sessions()) {
+                CoachRunResult.Video video = session.video();
+                if (video == null || video.videoId().isBlank()) continue;
+                videoIds.add(video.videoId());
+                clipIds.add(ExerciseClip.idOf(video.videoId(), ProposalConverter.clipStart(video)));
+            }
+        }
+        if (videoIds.isEmpty()) return ClipTitles.none();
+        Map<String, String> clipTitles = clips.findAllByIds(clipIds).stream()
+                .collect(Collectors.toMap(ExerciseClip::clipId, ExerciseClip::title, (a, b) -> a));
+        Map<String, String> videoTitles = videos.findAllByIds(videoIds).stream()
+                .collect(Collectors.toMap(ExerciseVideo::getVideoId, ExerciseVideo::getTitle, (a, b) -> a));
+        return ClipTitles.of(clipTitles, videoTitles);
     }
 
     /** 읽었을 때 이미 RUNNING 이 아니다(정리 작업 · 새 요청이 FAILED 로 바꿨다). 결과를 버린다. */
