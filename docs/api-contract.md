@@ -2,7 +2,9 @@
 
 출처: Notion 「API 명세서」(2026-09-08 · 09-17) · FE 저장소 `BACKEND_API.md`(2026-09-25, 이하 FE 요청서) · `family-fitness-ai/docs/인터페이스-명세.md` · FigJam 보드 F0~F4.
 구현 기준 문서다. 여기 없는 것은 추정하지 말고 코드 주석에 `▲ 확정 필요` 로 남긴다.
-기준 시점은 develop `062e552`(2026-09-29, PR #4~#29 머지 뒤)다. 살아 있는 스키마는 서버의 `/v3/api-docs` 다.
+기준 시점은 develop `a880ad4`(2026-09-29, PR #4~#33 머지 뒤)다. 살아 있는 스키마는 서버의 `/v3/api-docs` 다.
+- null 이 될 수 있는 칸(jspecify `@Nullable`)은 스키마에 `type: [T, "null"]` 로 싣는다. 다른 스키마를 가리키는 칸은 `oneOf: [$ref, {type: "null"}]` 다. `@NotNull` 이 같이 붙은 요청 칸은 null 을 싣지 않는다. required 목록은 그대로다.
+- 로그인 계정 인자(`CurrentUser`)는 JWT 에서 채우므로 스키마에 `user` 쿼리 파라미터로 싣지 않는다. 응원 요청의 검증용 `contentPresent` 도 싣지 않는다.
 
 ## 0. 전 API 공통
 
@@ -39,6 +41,7 @@
 - 가족 경로(`/families/{familyId}/…`)는 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` 차례로 본다.
 - 프로필 경로(`/profiles/{profileId}/…`)는 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` 차례로 본다.
 - 가족 쓰기(구성원 추가 · 프로필 고치기 · 참여 방식 · 동의 · 초대)는 프로필 행 낙관적 잠금(`profiles.version`)을 건다. 겹친 쓰기의 늦은 쪽은 409 `CONFLICT` 다. 가족을 다시 불러와서 다시 보내면 된다.
+- 어느 주소든, 읽은 행을 다른 요청이 먼저 바꾸거나 지워 UPDATE · DELETE 가 0행이 되면(낙관적 잠금 충돌, `OptimisticLockingFailureException`) 409 `CONFLICT` 다. 다시 불러온 뒤 보내면 된다.
 
 ### 시각 · 날짜 (KST) 와 스케줄러
 
@@ -49,11 +52,12 @@
 | 편성 `date` | 오늘보다 앞이면 422 `INVALID_DATE` |
 | 미션 만들기 | 시작일(또는 `dates` 의 어느 날)이 오늘보다 앞이면 422 `INVALID_DATE`. 오늘은 받는다 |
 | 제안 승인 | 끝날이 오늘보다 앞인 항목은 미션으로 만들지 않는다 |
-| 칸 끝 | 오늘이 미션 기간 밖이면 422 `MISSION_NOT_ACTIVE`. 끝낸 날 = 서버가 받은 날 |
+| 칸 끝 · 옛 타이머 | 오늘이 미션 기간 밖이면 422 `MISSION_NOT_ACTIVE`. 끝낸 날 = 서버가 받은 날 |
 | 미션 지우기 | 끝날이 오늘보다 앞이면 409 `MISSION_ENDED` |
 | 쉬는 날 카드 | 쓰기는 오늘부터 이번 달 끝까지, 되돌리기는 오늘과 앞날만 |
 | 측정 | `testedOn` 이 오늘보다 뒤면 400. 나이는 `testedOn` 기준 만 나이 |
-| 활동 날짜 | 타이머는 `startedAt` 의 KST 날짜, 칸 끝은 받은 날 |
+| 활동 날짜 | 칸 끝 · 옛 타이머는 서버가 받은 날(기기의 `startedAt` 이 아니다). 옛 걸음수만 보낸 `activityDate` |
+| 캘린더 | `from` · `to` 가 1900-01-01 ~ 2100-12-31 밖이면 400 |
 | 캘린더 스티커 | 붙인 시각의 KST 날짜에 선다(자정을 넘기면 다음 날) |
 | `month` 가 없을 때 | 쉬는 날 카드 · 리그는 이번 달(KST) |
 
@@ -62,19 +66,21 @@
 | 언제(KST) | 무엇 | 설정 키 | 기동 때 |
 |---|---|---|---|
 | 매일 04:00 | 리프레시 토큰 기록 정리 — 만료된 행, 폐기한 지 30일 지난 행을 지운다 | `app.auth.refresh-token-cleanup.cron` | 돌지 않는다 |
-| 매일 07:30 | `MISSION_READY` 알림 — 오늘 서는 운동, 아이 프로필만 | `app.notification.mission-ready-cron` | 07:30 이 지났으면 그날 몫을 한 번 만든다 |
-| 매일 09:00 | `REMEASURE` 알림 — 마지막 측정에서 30일 이상 지난 아이 → 부모 전원 | `app.notification.remeasure-cron` | 09:00 이 지났으면 한 번 만든다 |
+| 매일 07:30 | `MISSION_READY` 알림 — 오늘 서는 운동, 아이 프로필만. 오늘 기간이 걸친 미션이 있는 가족만 돈다 | `app.notification.mission-ready-cron` | 07:30 이 지났으면 그날 몫을 한 번 만든다 |
+| 매일 09:00 | `REMEASURE` 알림 — 마지막 측정에서 30일 이상 지난 아이 → 부모 전원. 모든 가족을 돈다 | `app.notification.remeasure-cron` | 09:00 이 지났으면 한 번 만든다 |
 | 매월 1일 00:10 | 리그 월초 정산 — 지난달 방을 정산하고 이번 달 방을 짠다 | `app.league.settle-cron` | 밀린 달을 따라잡는다 |
 | 기동 때 + 223초마다 | 멈춘 편성 정리 — 223초 넘은 RUNNING 을 FAILED(`STALE`)로 바꿔 잠금을 푼다(`StaleCoachRunSweeper`) | 폴링 설정에서 계산 | 한 번 돈다 |
 
 - 리그 정산은 1일 정산 전에 조회가 오면 그 자리에서 먼저 정산한다.
+- 07:30 · 09:00 알림의 `createdAt` 은 제때 돈 실행이면 07:30 · 09:00 이다. 기동 따라잡기처럼 늦게 돈 실행은 실제로 만든 시각이다. 그래서 그 전에 받은 목록의 `upTo` 로 읽음 처리해도 보지 못한 알림은 읽음이 되지 않는다.
+- 정해진 일을 도는 스레드는 2개다(`spring.task.scheduling.pool.size`). 기동 따라잡기는 알림 전용 스레드에서 돌아 기동을 늦추지 않는다.
 - 서버를 여러 대로 띄울 때 스케줄러를 한 대만 돌리는 잠금(ShedLock)은 없다. 결과가 두 번 적히지는 않는다(조건부 UPDATE · 유니크 키).
 
 ### 오류 코드
 
 | 상태 | `code` | 뜻 · 나는 곳 |
 |---|---|---|
-| 400 | `BAD_REQUEST` | 필수 누락 · 형식 · 범위(Bean Validation), 본문 파싱 실패, 경로 · 쿼리 형 변환 실패, 필수 헤더 · 파라미터 누락, multipart 오류, 도메인 불변식(칸 규칙 · 목표 분 · 날짜 순서 · 미래 날짜 · size 범위 · 캘린더 43일 이상 · `dates` 와 `startDate` 같이 보냄 · 응원 모양 · 같은 측정 항목 두 번) |
+| 400 | `BAD_REQUEST` | 필수 누락 · 형식 · 범위(Bean Validation), 본문 파싱 실패, 경로 · 쿼리 형 변환 실패, 필수 헤더 · 파라미터 누락, multipart 오류, 도메인 불변식(칸 규칙 · 목표 분 · 칸 없는 `TIMER_MINUTES` 목표 361분 이상 · 날짜 순서 · `endedAt ≤ startedAt` · 미래 날짜 · size 범위 · 캘린더 43일 이상 · 캘린더 날짜가 1900-01-01 ~ 2100-12-31 밖 · `dates` 와 `startDate` 같이 보냄 · 응원 모양 · 같은 측정 항목 두 번) |
 | 400 | `NO_ITEMS` · `ITEM_NOT_ALLOWED` · `UNKNOWN_ITEM` · `ITEM_OUT_OF_RANGE` | 측정 등록 — 항목 0개 · 혈압(005 · 006) · 모르는 코드 · `range` 밖 값 |
 | 400 | `INVALID_SLOT` | 운동할 수 있는 시간 바꾸기 — 칸 값 규칙 위반 |
 | 400 | `PROFILE_REQUIRED` | 운동 구간 찜 · 찜 목록에 `profileId` 가 없음 |
@@ -84,14 +90,14 @@
 | 403 | `NOT_SAME_FAMILY` | 다른 가족의 리소스 |
 | 403 | `NOT_A_PARENT` | 보호자 전용 주소를 아이 계정이 부름. 아이가 칭찬(PRAISE)을 보냄. 아이 계정이 캘린더에서 남의 기록을 봄 |
 | 403 | `NOT_A_PARTICIPANT` | 미션 참여자가 아님 |
-| 403 | `FORBIDDEN` | 대신할 수 없는 프로필(응원 `fromProfileId` · 칸 끝 · 느낌 · 알림함), 자기 프로필이 아님(참여 방식), 계정이 붙은 다른 사람 프로필 고치기, 다른 프로필의 대화, Spring Security 거절 |
+| 403 | `FORBIDDEN` | 대신할 수 없는 프로필(응원 `fromProfileId` · 칸 끝 · 느낌 · 알림함 · 옛 타이머 · 걸음수 · 영상 진행 · 코치 대화 · 예측), 자기 프로필이 아님(참여 방식), 계정이 붙은 다른 사람 프로필 고치기, 다른 프로필의 대화, Spring Security 거절 |
 | 403 | `SELF_CONSENT` | 자기 프로필의 동의를 바꿈 |
 | 404 | `NOT_FOUND` | 없는 경로 |
 | 404 | `FAMILY_NOT_FOUND` · `PROFILE_NOT_FOUND` · `MISSION_NOT_FOUND` · `SESSION_NOT_FOUND` · `COACH_RUN_NOT_FOUND` · `VIDEO_NOT_FOUND` · `CLIP_NOT_FOUND` · `FITNESS_TEST_NOT_FOUND` · `CONVERSATION_NOT_FOUND` · `CODE_NOT_FOUND` · `CHEER_NOT_FOUND` | 각 리소스가 없음. 응원의 `missionId` 가 이 가족 미션이 아니어도 `MISSION_NOT_FOUND` |
 | 404 | `NOT_REST_DAY` | 쉬는 날이 아닌 날을 되돌림 |
 | 404 | `LEAGUE_NOT_FOUND` | 지난달 리그 방에 없던 가족 |
 | 405 · 406 · 413 · 415 | `METHOD_NOT_ALLOWED` · `NOT_ACCEPTABLE` · `CONTENT_TOO_LARGE` · `UNSUPPORTED_MEDIA_TYPE` | Spring MVC 표준 예외(RFC 9110 상태 이름) |
-| 409 | `CONFLICT` | 유니크 제약 위반(동시 요청이 사전 검사를 함께 지나친 경우), 가족 쓰기 낙관적 잠금 충돌, 쉬는 날 카드 경합이 세 번 연달아 남. NOT NULL · FK 위반은 500 |
+| 409 | `CONFLICT` | 유니크 제약 위반(동시 요청이 사전 검사를 함께 지나친 경우), 낙관적 잠금 충돌(가족 쓰기 · 읽은 행을 다른 요청이 먼저 바꾸거나 지움), 쉬는 날 카드 경합이 세 번 연달아 남. NOT NULL · FK 위반은 500 |
 | 409 | `ALREADY_IN_FAMILY` · `ALREADY_CLAIMED` · `ALREADY_MEMBER` | 가족 만들기 · 초대(한 계정 한 가족) |
 | 409 | `DUPLICATE_DATE` | 같은 프로필 같은 날짜 측정 |
 | 409 | `RUN_IN_PROGRESS` | 같은 (대상, 날짜)의 편성이 RUNNING |
@@ -103,23 +109,24 @@
 | 409 | `LEAGUE_BUSY` | 리그 방 배정이 다섯 번 연달아 겹침. 다시 부르면 된다 |
 | 410 | `CODE_EXPIRED` | 초대코드 기한 지남 |
 | 422 | `CONSENT_REQUIRED` | 보호자 동의 없음 · 거둠(0장 공통 규칙) |
+| 422 | `CONSENT_NOT_APPLICABLE` | 동의를 바꿀 대상이 보호자(PARENT)임. 보호자 동의는 아이 프로필에만 있다 |
 | 422 | `UNDER_14_NOT_ALLOWED` | 만 14세 미만이 가족을 만들거나 · PARENT 로 들어가거나 · 동의를 기록함. PARENT 생일을 만 14세 미만으로 고침 |
 | 422 | `NOT_MEASURABLE` · `ITEM_NOT_FOR_AGE_GROUP` · `NO_FITNESS_TEST` | 측정 · 예측 — 만 4세 미만 · 연령대 항목 아님 · 측정 기록 없음 |
 | 422 | `NO_MEASURED_MEMBER` · `INVALID_DATE` · `NOT_FAMILY_MEMBER` | 편성 · 미션 · 응원 · 쉬는 날 · 리그. `INVALID_DATE` 는 지난 날짜 · 틀린 날짜 · 앞 달 |
-| 422 | `MISSION_NOT_ACTIVE` · `TOO_SHORT` | 칸 끝 — 오늘이 기간 밖 · 인정 초가 칸 시간의 절반 미만 |
+| 422 | `MISSION_NOT_ACTIVE` · `TOO_SHORT` | 칸 끝 · 옛 타이머 — 오늘이 기간 밖. 칸 끝 — 인정 초가 칸 시간의 절반 미만 |
 | 422 | `INVALID_METRIC` · `TARGET_NOT_REACHED` | 활동 기록(목표 지표가 다름) · 보호자 확인(걸음수 목표 미도달) |
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
 | 422 | `SELF_CHEER` · `CHEER_KIND_NOT_ALLOWED` · `NOT_A_REPLY_TARGET` | 응원 — 자기에게 · 종류와 방향이 안 맞음 · 고마워요가 답할 칭찬이 아님 |
 | 422 | `ALREADY_MOVED` | 쉬는 날 카드 — 그날 아이가 이미 운동함 |
 | 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음 |
 | 500 | `INTERNAL_ERROR` | 처리하지 못한 예외 |
-| 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx(예측 · 대화), 비동기 요청 시간 초과 |
+| 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx · 200 인데 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락)(예측 · 대화), 비동기 요청 시간 초과 |
 | 503 | `AI_BAD_REQUEST` | AI 가 400 을 냄(서버가 잘못 보낸 것) — 예측 · 대화 |
 
 - AI 가 내는 `RUN_IN_PROGRESS`(409) · `RUN_NOT_FOUND`(404)는 편성 실행기 안에서만 쓰이고 클라이언트로 나가지 않는다. 편성은 202 로 접수된 뒤라, 실패는 `CoachRunView.failureCode` 로 알린다(4장).
 - FE 요청서 7장의 「화면이 가르는 코드」 중 서버가 내지 않는 것: `CONSENT_WITHDRAWN`(만들지 않는다 — 동의를 거둬도 `CONSENT_REQUIRED`) · `ALREADY_RUN_THIS_WEEK`(없앴다).
 
-### 구현 상태 (2026-09-29 · develop `062e552`)
+### 구현 상태 (2026-09-29 · develop `a880ad4`)
 
 - 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
@@ -129,10 +136,12 @@
   - 3차(PR #18~#23): progress 모듈(경험치 · 레벨 · 업적 · 이어서 한 날). 운동 구간 목록 · 찜(`/exercises`). 운동할 수 있는 시간. 초대코드 미리 보기 · 시도 제한 · 한 계정 한 가족 · `selfProfileId`. 측정은 보호자만 · 아이 계정에 부모만 볼 값 비우기 · 값 범위 검사. 리프레시 토큰 기록 정리.
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
+  - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 예측은 `MAINTAIN` 만. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
 - **FE 가 부르지 않음 · 걷을 후보**: `POST /profiles/{id}/predictions` · `POST /coach/chat` · `GET /families/{id}/report/weekly` · `GET /videos` · `POST /videos/{id}/favorite` · `POST /videos/{id}/progress` · `POST /missions/{id}/activity/timer` · `POST /missions/{id}/activity/steps` · `POST /missions/{id}/participants/{profileId}/confirm`. 아래 각 절 제목에도 같은 표시를 붙였다.
   - 이 경로로 끝난 미션은 `MissionCompleted` 를 내지 않는다. 그래서 그날 `MISSION_READY` 알림이 남는다. 이 경로는 미션 행을 잠그지 않는다.
+  - 예측 · 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
 ### 주소 목록 (경로 46개 · 메서드 53개)
@@ -158,7 +167,7 @@
 | fitness | POST · GET | `/profiles/{profileId}/fitness-tests` | 보호자 · 같은 가족 | 201 · 200 |
 | fitness | GET | `/profiles/{profileId}/fitness-tests/latest` | 같은 가족 | 200 |
 | fitness | GET | `/families/{familyId}/fitness-map` | 같은 가족 | 200 |
-| fitness | POST | `/profiles/{profileId}/predictions` | 같은 가족 · FE 가 부르지 않음 | 201 |
+| fitness | POST | `/profiles/{profileId}/predictions` | 대신 · FE 가 부르지 않음 | 201 |
 | activity | GET · POST | `/families/{familyId}/rest-cards` | 같은 가족 · 보호자 | 200 · 201 |
 | activity | DELETE | `/families/{familyId}/rest-cards/{restDate}` | 보호자 | 200 |
 | coaching | POST | `/families/{familyId}/coach/runs` | 보호자 | 202 |
@@ -171,15 +180,15 @@
 | coaching | POST | `/missions/{missionId}/sessions/{seq}/complete` | 대신 + 참여자 | 200 |
 | coaching | POST | `/missions/{missionId}/feedback` | 대신 + 참여자 | 204 |
 | coaching | POST | `/missions/{missionId}/participants/{profileId}/confirm` | 보호자 · FE 가 부르지 않음 | 200 |
-| coaching | POST | `/missions/{missionId}/activity/steps` | 같은 가족 + 참여자 · FE 가 부르지 않음 | 200 |
-| coaching | POST | `/missions/{missionId}/activity/timer` | 같은 가족 + 참여자 · FE 가 부르지 않음 | 200 |
+| coaching | POST | `/missions/{missionId}/activity/steps` | 대신 + 참여자 · FE 가 부르지 않음 | 200 |
+| coaching | POST | `/missions/{missionId}/activity/timer` | 대신 + 참여자 · FE 가 부르지 않음 | 200 |
 | coaching | GET | `/families/{familyId}/calendar` | 보호자는 식구 누구나 · 아이 계정은 자기 것만 | 200 |
 | coaching | GET | `/exercises` | 로그인(`profileId` 를 주면 같은 가족) | 200 |
 | coaching | POST | `/exercises/{exerciseId}/favorite` | 같은 가족 | 200 |
 | coaching | GET | `/videos` | 로그인 · FE 가 부르지 않음 | 200 |
 | coaching | POST | `/videos/{videoId}/favorite` | 같은 가족 · FE 가 부르지 않음 | 200 |
-| coaching | POST | `/videos/{videoId}/progress` | 같은 가족 · FE 가 부르지 않음 | 200 |
-| coaching | POST | `/coach/chat` | 같은 가족 · FE 가 부르지 않음 | 200 |
+| coaching | POST | `/videos/{videoId}/progress` | 대신 · FE 가 부르지 않음 | 200 |
+| coaching | POST | `/coach/chat` | 대신 · FE 가 부르지 않음 | 200 |
 | coaching | GET | `/families/{familyId}/report/weekly` | 같은 가족 · FE 가 부르지 않음 | 200 |
 | progress | GET | `/profiles/{profileId}/progress` | 같은 가족 | 200 |
 | league | GET | `/families/{familyId}/league` | 같은 가족 | 200 |
@@ -277,10 +286,22 @@
 
 `AuthResponse` = `{accessToken, refreshToken, userId, nextStep, profiles: ProfileSummary[], selfProfileId|null}`. `profiles` 는 이 계정에 붙은 프로필이라 0~1개이고, `selfProfileId` 는 그 프로필의 id 다.
 
+`nextStep` 은 구글 로그인 · dev-login · 리프레시 · `/me` 가 같은 규칙으로 정한다(`NextStep.afterLogin`).
+
+| 차례 | 조건 | `nextStep` |
+|---|---|---|
+| 1 | 프로필이 있고, 초대코드로 붙은 보호자(PARENT · `inviteStatus` CLAIMED)가 참여 방식을 아직 안 골랐다(`supportMode` null) | `SUPPORT_MODE` |
+| 2 | 프로필이 있다 | `HOME` |
+| 3 | 프로필 0개 · 코드 없음 | `CREATE_FAMILY` |
+| 4 | 프로필 0개 · 코드 있음(로그인 요청의 `claimCode`) | `CLAIM` |
+
+- 가족을 만든 보호자는 초대로 붙지 않았으므로(`NONE`) `supportMode` 가 null 이어도 `HOME` 이다.
+
 ### POST /api/v1/auth/google — 토큰 없이
 요청 `{authorizationCode●, redirectUri●, claimCode?}`. 구글 인가코드 교환 → id_token 검증 → (provider=GOOGLE, providerUserId=sub) find-or-create. provider 는 google 하나로 고정, 계정 병합 경로 없음.
 응답 200 `AuthResponse`.
-- `nextStep`: 프로필 있음 `HOME` · 프로필 0개 + 코드 없음 `CREATE_FAMILY` · 프로필 0개 + 코드 있음 `CLAIM`. 로그인이 코드로 프로필을 붙이지는 않는다(붙이는 것은 `POST /profiles/claim`).
+- `nextStep` 은 위 표대로다. 로그인이 코드로 프로필을 붙이지는 않는다(붙이는 것은 `POST /profiles/claim`).
+- 구글 인가코드 교환(외부 HTTP)은 DB 트랜잭션 밖에서 한다. 가입(find-or-create)과 토큰 발급만 한 트랜잭션이다.
 - 로그인마다 새 리프레시 토큰 묶음(family)을 연다. 한 기기의 로그아웃 · 재사용 감지가 다른 기기를 끊지 않는다.
 오류: 401 `GOOGLE_AUTH_FAILED`.
 
@@ -302,7 +323,7 @@
 local 의 자동 로그인에서 `X-Dev-User-Id` 헤더 값이 UUID 가 아니면 400.
 
 ### GET /api/v1/me — 로그인
-응답 200 `{userId, nextStep, profiles, selfProfileId|null}`.
+응답 200 `{userId, nextStep, profiles, selfProfileId|null}`. `nextStep` 은 1장 머리의 표대로다. 초대로 들어온 보호자가 참여 방식을 고르기 전에 앱을 닫았다 다시 열면 `SUPPORT_MODE` 다.
 
 ### POST /api/v1/families — 로그인
 요청 `{familyName●(1~20자), owner●: {name●(1~20), birthDate●, sex●}}`. `role` 없음 — 만든 사람은 항상 PARENT·owner.
@@ -334,10 +355,12 @@ local 의 자동 로그인에서 `X-Dev-User-Id` 헤더 값이 UUID 가 아니�
 
 ### PATCH /api/v1/profiles/{profileId}/consent — 보호자(자기 프로필 제외)
 요청 `{personalData●, healthData●}`. 응답 200 `{consentGiven, consentAt|null, consentBy|null, measurable}`.
+- 보호자 동의는 아이(CHILD) 프로필에만 있다. 대상이 보호자(PARENT)면 422 `CONSENT_NOT_APPLICABLE` 이다. 다른 보호자의 동의를 거두면 그 보호자의 칸 끝 · 측정이 막히는데 본인은 되돌릴 수 없어서다.
+- 이미 거둔 채였던 보호자 동의는 `V151` 이 풀었다. 이력은 지우지 않고 `VOIDED` 줄(누가 · 무엇을은 null)을 더했다.
 - 둘 중 하나라도 false 면 동의를 거둔 것이다. 거둔 뒤에는 0장 공통 규칙대로 새 기록이 422 `CONSENT_REQUIRED` 다. 지난 기록은 지우지 않는다(▲ 법적 규칙 미결).
 - 거둔 동의는 만 14세가 지나도 막힌 채다. 보호자가 다시 동의해야 풀린다(만 14세 이상 본인 동의 절차는 없다).
-- 부여 · 철회마다 `consent_events` 에 한 줄(누가 · 언제 · 무엇을) 남긴다. 다시 동의해도 철회 줄은 지우지 않는다. 이력을 보는 주소는 없다.
-판정 차례: 400 → 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 403 `SELF_CONSENT`(자기 프로필) → 422 `UNDER_14_NOT_ALLOWED`(부른 보호자가 만 14세 미만) → 409 `CONFLICT`.
+- 부여 · 철회마다 `consent_events` 에 한 줄(누가 · 언제 · 무엇을) 남긴다. `kind` 는 `GRANTED` · `REVOKED` · `VOIDED`(앞선 철회를 무효로 함 — 마이그레이션만 쓴다)다. 다시 동의해도 철회 줄은 지우지 않는다. 이력을 보는 주소는 없다.
+판정 차례: 400 → 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 403 `SELF_CONSENT`(자기 프로필) → 422 `CONSENT_NOT_APPLICABLE`(대상이 PARENT) → 422 `UNDER_14_NOT_ALLOWED`(부른 보호자가 만 14세 미만) → 409 `CONFLICT`.
 
 ### POST /api/v1/profiles/{profileId}/invite — 보호자
 본문 없음. 응답 201 `{claimCode(6자리, 0/O·1/I 제외 대문자+숫자), expiresAt(+7일), shareUrl("{app.frontend-base-url}/claim?code=XXXXXX")}`.
@@ -376,7 +399,8 @@ local 의 자동 로그인에서 `X-Dev-User-Id` 헤더 값이 UUID 가 아니�
 - `missionId` 는 이 가족의 미션인지만 본다. 보내는 · 받는 사람이 그 미션 참여자인지는 보지 않는다.
 응답 201 `{cheerId, fromProfileId, toProfileId, kind, message, stickerId, emoji(= stickerId), missionId, replyToCheerId, createdAt}`.
 판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `FORBIDDEN`(대신할 수 없는 `fromProfileId`) → 422 `SELF_CHEER` → 422 `NOT_FAMILY_MEMBER`(`toProfileId`) → 400 `BAD_REQUEST`(`THANKS` 모양) → 403 `NOT_A_PARENT`(아이가 `PRAISE`) → 422 `CHEER_KIND_NOT_ALLOWED`(방향) → 404 `CHEER_NOT_FOUND` → 422 `NOT_A_REPLY_TARGET` → 409 `ALREADY_THANKED` → 404 `MISSION_NOT_FOUND` → 429 `TOO_MANY`((보낸, 받는) 쌍 기준 분당 5회 초과).
-저장 뒤 `CheerSent` 를 낸다. 경험치(스티커 붙은 `PRAISE` +10, 같은 미션에 한 번)는 같은 트랜잭션에서, 알림은 커밋 뒤에 적는다.
+저장 뒤 `CheerSent` 를 낸다. 경험치(스티커 붙은 `PRAISE` +10, 같은 미션에 한 번)는 같은 트랜잭션에서, 알림은 커밋 뒤 알림 전용 스레드에서 적는다(7장).
+- 두 보호자가 같은 아이 · 같은 미션에 동시에 스티커를 붙여도 둘 다 201 이다. 경험치 · 첫 스티커 업적은 한 번만 쌓인다(원장 · 업적 넣기가 `ON CONFLICT DO NOTHING`).
 Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### GET /api/v1/families/{familyId}/cheers?toProfileId=&fromProfileId=&missionId=&size= — 같은 가족
@@ -404,7 +428,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 응답 201 `{fitnessTestId, testedOn, items:[{itemCode, itemLabel, unit, value, percentile|null, grade|null, band|null, topPercentText|null}], weakest|null, strongest|null, disclaimer}`.
 판정 차례: 400(몸통) → 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 400(`testedOn` 이 미래) → 422 `NOT_MEASURABLE`(측정일 기준 만 4세 미만) → 422 `CONSENT_REQUIRED` → 409 `DUPLICATE_DATE` → 400 `NO_ITEMS` → 항목마다 400 `ITEM_NOT_ALLOWED`(005/006) · 400 `UNKNOWN_ITEM` → 400(같은 항목 두 번) → 422 `ITEM_NOT_FOR_AGE_GROUP` → 400 `ITEM_OUT_OF_RANGE`.
 불변식: 항목 0개면 저장 안 함. 백분위 저장 시점에 굳음. 한 프로필 같은 날짜 측정은 하나. `FitnessTest` 통째로 저장. age_at_test = testedOn 기준 만 나이. 동의 판정은 오늘 기준이다.
-저장 뒤 `FitnessTestRegistered` 를 낸다. 가장 이른 회차를 뺀 회차(다시 잰 회차)가 새로 생기면 경험치 `REMEASURE` +20 을 같은 트랜잭션에서 적는다.
+저장 뒤 `FitnessTestRegistered` 를 낸다. 가장 이른 회차를 뺀 회차(다시 잰 회차)가 새로 생기면 경험치 `REMEASURE` +20 을 같은 트랜잭션에서 적는다. 커밋 뒤에는 알림함이 그 아이의 지난 회차로 만든 `REMEASURE` 알림을 지운다(7장).
 
 ### GET /api/v1/profiles/{profileId}/fitness-tests?size= — 같은 가족
 측정 이력. 응답 200 `{tests:[{fitnessTestId, testedOn, overallPercentile|null, heightCm|null, weightKg|null}]}` — testedOn 이 늦은 회차부터. 이력이 없으면 빈 목록.
@@ -428,11 +452,11 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - `latest=null` 이면 "첫 측정을 등록하면 지도가 그려져요", `measurable=false` 면 측정 버튼을 띄우지 않는다. 구성원 사이 순위·비교는 내보내지 않는다.
 오류: 404 `FAMILY_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
-### POST /api/v1/profiles/{profileId}/predictions — 같은 가족 · FE 가 부르지 않음 · 걷을 후보
+### POST /api/v1/profiles/{profileId}/predictions — 대신 · FE 가 부르지 않음 · 걷을 후보
 요청 `{fitnessTestId?(생략=최신), horizonYears?(1~10, 기본 10), itemCode?(기본 028)}` — 본문을 빼도 된다.
 `AiGateway.trajectory` 호출 → 결과 그대로 저장. 응답 201 `{predictionId, modelVersion, basis:"cross_sectional_group_distribution", points:[{scenario:"MAINTAIN", itemCode, yearsFromNow, p10, p50, p90}], notice}`.
 `IMPROVE` 시나리오는 AI 가 내지 않는다(횡단면 자료) → MAINTAIN 만 저장. modelVersion 은 AI 응답에 없으므로 `"ai-trajectory-v1"` 고정(▲ 확정 필요).
-판정 차례: 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 422 `CONSENT_REQUIRED` → 422 `NOT_MEASURABLE` → 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND` → 503 `TEMPORARILY_UNAVAILABLE` · 503 `AI_BAD_REQUEST`.
+판정 차례: 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `FORBIDDEN`(자기 프로필도, 보호자가 대신하는 계정 없는 아이도 아님) → 422 `CONSENT_REQUIRED` → 422 `NOT_MEASURABLE` → 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND` → 503 `TEMPORARILY_UNAVAILABLE`(AI 응답을 읽지 못함 포함) · 503 `AI_BAD_REQUEST`.
 
 ---
 
@@ -481,15 +505,16 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### GET /api/v1/families/{familyId}/coach/runs/latest?profileId= — 같은 가족
 가장 최근 실행(상태와 상관없이). `profileId` 가 있으면 그 프로필을 대상으로 짠 것, 없으면 가족 전체에서. 아이마다 `?profileId=` 를 붙이면 형제의 제안이 서로 가리지 않는다.
+- `APPROVED` 인데 그 실행으로 만든 미션이 하나도 남지 않은 실행(보호자가 모두 지움)은 건너뛰고 그 앞 실행을 준다. 그 실행을 `GET /coach/runs/{runId}` 로 부르면 그대로 `APPROVED` · `missionCount` 0 이다.
 응답 200 `CoachRunView`(아래와 같은 모양). 없으면 404 `COACH_RUN_NOT_FOUND`.
 오류: 404 `FAMILY_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 404 `COACH_RUN_NOT_FOUND`.
 
 ### GET /api/v1/coach/runs/{runId} — 같은 가족
 응답 200 `CoachRunView` = `{coachRunId, familyId, status, weekStart, profileId|null, date|null, summary|null, steps:[{seq,name,status,summary}], proposals|null, canApprove, missionCount, rejectedReason|null, failureCode|null, notices:[]}`.
 - `profileId` · `date`: 누구의 어느 날을 짠 실행인지. 없앤 주간 편성이 남긴 옛 행은 둘 다 null. `weekStart` 는 그 날짜가 든 주의 월요일이다.
-- `canApprove` = `AWAITING_APPROVAL` 이고, 호출자가 보호자이고, 만들 항목이 전부 지난 것은 아니다(전부 지났으면 승인이 409).
+- `canApprove` = `AWAITING_APPROVAL` 이고, 호출자가 보호자이고, 만들 항목이 전부 지난 것은 아니고(전부 지났으면 승인이 409), 미션으로 옮길 참여자가 모두 보호자 동의가 있다(없으면 승인이 422 `CONSENT_REQUIRED`).
 - `steps` 는 실행이 끝날 때 한 번에 저장된다(폴링 중에는 비어 있다).
-- `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 409 · 변환 실패 등). 코드라서 화면 문구는 FE 가 정한다.
+- `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 409 · 서버가 제안을 저장하다 실패 등). AI 응답을 읽지 못한 것은 `ERROR` 가 아니라 대체 편성으로 간다(8장). 코드라서 화면 문구는 FE 가 정한다.
 - `notices`: AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
 `proposals[]`: `{position, title, rationale|null, targetMetric, targetValue, startDate, endDate, participants:[{profileId, role, coachRole}], video|null:{videoId, title|null, url, startSec|null, badges[]}, citations:[{index, label, chunkId, url|null}], sessions:[{position, phase, title, factor|null, minutes, clip|null:{videoId, startSec, endSec|null, title|null}}]}`.
 - `sessions`: 제안의 칸. 모양은 미션 칸과 같고, 승인하면 그대로 미션 칸으로 복사된다. 칸 `minutes` 는 서버가 채운다(8장 칸 분 배분). 칸 끝의 `seq` 는 이 `position` 이다.
@@ -511,7 +536,8 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### POST /api/v1/families/{familyId}/missions — 보호자
 직접 만들기. 한 건 또는 여러 날(날마다 하루짜리 한 건).
-요청 `{title●(1~50), startDate?, endDate?, dates?(1~28개), targetMetric●, targetValue●(≥1), videoId?, participantProfileIds●(1~5, 같은 가족), sessions?(≤10)}`.
+요청 `{title●(1~50), startDate?, endDate?, dates?(1~28개), targetMetric●, targetValue●(≥1, 칸 없는 TIMER_MINUTES 는 1~360), videoId?, participantProfileIds●(1~5, 같은 가족), sessions?(≤10)}`.
+- 칸 없는 `TIMER_MINUTES` 미션은 미션 전체가 한 칸이다. 칸 끝 한 번에 받는 재생 초 상한이 10800초이고 칸 시간의 절반 이상이어야 끝나므로, 360분을 넘으면 끝낼 수 없어 400 이다.
 - 날짜는 둘 중 하나로 보낸다: `startDate` · `endDate`(한 건, `endDate ≥ startDate`) 또는 `dates`(같은 날은 한 번만, 이른 날부터). 둘 다거나 둘 다 없으면 400.
 - 하나라도 틀리면 아무것도 만들지 않는다(한 트랜잭션).
 `sessions[]`(칸): `{position●(1부터), phase●(SessionPhase), title●(≤120), factor?(요인 이름), minutes●(1~60), clip?:{videoId●, startSec●(≥0), endSec●, title?(≤120)}}`
@@ -520,7 +546,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 칸의 `clip.videoId` 는 카탈로그로 확인하지 않고 사본으로 저장한다(404 `VIDEO_NOT_FOUND` 가 나지 않는다). 클립 표를 다시 적재해도 지난 미션의 칸은 바뀌지 않는다.
 - 칸 규칙을 어기면 400 `BAD_REQUEST` 다. 검사하는 단계가 둘이다.
   - 몸통 단계(권한 판정보다 먼저): 11칸 이상, position 이 1보다 작음, minutes 가 1~60 밖, `clip.videoId` 가 `[A-Za-z0-9_-]{1,32}` 가 아님, `endSec <= startSec`.
-  - 미션을 만드는 단계(`VIDEO_NOT_FOUND` 뒤): 칸이 있는데 `targetMetric` 이 `TIMER_MINUTES` 가 아님 → `targetValue` 가 칸 `minutes` 합과 다름 → position 이 1..n 이 아님(겹침 · 빠짐). 이 차례로 검사한다.
+  - 미션을 만드는 단계(`VIDEO_NOT_FOUND` 뒤): position 이 1..n 이 아님(겹침 · 빠짐) → 칸이 있는데 `targetMetric` 이 `TIMER_MINUTES` 가 아님 → `targetValue` 가 칸 `minutes` 합과 다름 → 칸 없는 `TIMER_MINUTES` 인데 `targetValue` 가 360 초과. 이 차례로 검사한다.
 응답 201 `{missionId, origin:"MANUAL", coachRunId:null, serverVerifiable, missions:[{missionId, startDate, endDate}]}` — 맨 위 칸은 첫 건 값이다.
 판정 차례: 400(몸통 · 날짜 칸 조합 · `endDate < startDate` · 칸의 몸통 단계 규칙) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(시작일이나 `dates` 의 어느 날이 오늘 KST 보다 앞) → 422 `NOT_FAMILY_MEMBER` → 422 `CONSENT_REQUIRED` → 404 `VIDEO_NOT_FOUND`(미션 단위 `videoId`) → 400(칸의 미션 단계 규칙).
 만든 미션마다 `MissionCreated` 를 낸다. 멱등 키는 없다(응답을 잃고 다시 보내면 두 벌이 생길 수 있다).
@@ -555,12 +581,13 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 운동 한 칸 끝. `seq` = 칸 `position`. 칸 없는 미션은 `seq` 1 을 미션 전체 한 칸(분 = targetValue, 단계 MAIN)으로 받는다.
 요청 `{profileId●, activeSeconds●(0~10800, 영상 재생 초), startedAt●, endedAt●}`.
 응답 200 `{position, verifiedBy:"VIDEO_PROGRESS", missionProgress, missionCompleted, xpGained}` — `xpGained` 는 부른 프로필 몫이다.
-판정 차례: 400(몸통) → 404 `MISSION_NOT_FOUND` → 404 `SESSION_NOT_FOUND` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 보낼 수 없음) → 403 `NOT_A_PARTICIPANT` → 422 `CONSENT_REQUIRED` → **이미 끝낸 칸이면 200 · `xpGained` 0**(아무것도 다시 쓰지 않는다) → 422 `MISSION_NOT_ACTIVE`(오늘이 기간 밖) → 400(`endedAt ≤ startedAt`) → 422 `TOO_SHORT`.
+판정 차례: 400(몸통) → 404 `MISSION_NOT_FOUND`(잠금을 기다리는 사이 지워졌어도) → 404 `SESSION_NOT_FOUND` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 보낼 수 없음) → 403 `NOT_A_PARTICIPANT` → 422 `CONSENT_REQUIRED` → **이미 끝낸 칸이면 200 · `xpGained` 0**(아무것도 다시 쓰지 않는다) → 422 `MISSION_NOT_ACTIVE`(오늘이 기간 밖) → 400(`endedAt ≤ startedAt`) → 422 `TOO_SHORT`.
+- 미션 행을 `SELECT … FOR UPDATE` 로 잠그고 읽는다(지우기 · 느낌과 같은 잠금). 그래서 같은 미션의 칸 끝은 차례로 돈다. 두 아이가 서로 다른 칸을 동시에 끝내도 늦은 쪽이 먼저 온 쪽의 기록을 보고 진행도 · 완료 · 경험치를 센다.
 - 인정 초 = min(`activeSeconds`, `endedAt − startedAt`). 칸 시간(분 × 60)의 절반보다 짧으면 422 `TOO_SHORT`. 인정 초를 칸 시간으로 자르지는 않는다.
 - 끝낸 날 = 서버가 받은 날(KST).
 - 기록: `mission_session_completions`(`V144`, 기본 키 (미션, 칸, 프로필)) 한 행 · 활동 VIDEO 인정 초 · 진행도 다시 계산 · 경험치(칸 +5, 미션을 다 끝내면 +20)를 한 트랜잭션에서 한다.
 - 아이가 끝낸 칸은 「같이 하기로 한 보호자」 에게도 한 행씩 적는다: 코치 미션은 `coachRole` 동반자, 직접 만든 미션은 PARENT 참여자 전원. 형제 · 응원만 하는 부모 · 동의 없는 보호자는 뺀다. 보호자가 끝낸 칸은 그 보호자 것뿐이다.
-- 같은 칸 요청 둘이 동시에 오면 늦은 쪽은 기본 키에 걸린 뒤 한 번 더 불려 「이미 끝낸 칸」(200 · 0)으로 답한다.
+- 같은 칸 요청 둘이 동시에 오면 늦은 쪽은 먼저 온 쪽의 커밋을 기다렸다가 「이미 끝낸 칸」(200 · 0)으로 답한다. 그래도 유니크 위반이 나면(다른 미션의 칸 끝과 같은 날 활동 행을 동시에 처음 넣음) 한 번 더 부른다.
 - 새로 적은 사람마다 `SessionCompleted` 를, 이 칸으로 미션이 막 끝났으면 `MissionCompleted` 도 낸다.
 
 ### POST /api/v1/missions/{missionId}/feedback — 대신 + 참여자
@@ -574,17 +601,18 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 서버가 재는 미션(타이머 · 영상 · 칸)은 확인할 것이 없어 바꾸지 않고 200 이다.
 판정 차례: 404 `MISSION_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 403 `NOT_A_PARTICIPANT` → 422 `TARGET_NOT_REACHED`.
 
-### POST /api/v1/missions/{missionId}/activity/steps — 같은 가족 + 참여자 · FE 가 부르지 않음 · 걷을 후보
+### POST /api/v1/missions/{missionId}/activity/steps — 대신 + 참여자 · FE 가 부르지 않음 · 걷을 후보
 요청 `{profileId●, activityDate●(미래 불가), steps●(0~100000, 그날 총량 덮어쓰기)}`.
 응답 200 `{source:"MANUAL", serverVerified:false, verifiedBy:"SELF_REPORT", missionProgress, missionCompleted, needsGuardianCheck}`.
-판정 차례: 400(미래 날짜) → 404 `MISSION_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARTICIPANT` → 422 `INVALID_METRIC`(STEPS 미션 아님) → 422 `CONSENT_REQUIRED`.
-같은 가족이면 다른 참여자 이름으로도 적을 수 있다(「대신」 규칙을 쓰지 않는다).
+판정 차례: 400(미래 날짜) → 404 `MISSION_NOT_FOUND` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 적을 수 없음) → 403 `NOT_A_PARTICIPANT` → 422 `INVALID_METRIC`(STEPS 미션 아님) → 422 `CONSENT_REQUIRED`.
+날짜는 보낸 `activityDate` 그대로다(걸음수는 「움직인 날」에 들어가지 않는다).
 
-### POST /api/v1/missions/{missionId}/activity/timer — 같은 가족 + 참여자 · FE 가 부르지 않음 · 걷을 후보
+### POST /api/v1/missions/{missionId}/activity/timer — 대신 + 참여자 · FE 가 부르지 않음 · 걷을 후보
 요청 `{profileId●, startedAt●, endedAt●(> startedAt), activeMinutes●(1~180)}` — `endedAt-startedAt` 분을 넘으면 그 값으로 자른다(최소 1분).
-응답 200 `{activityDate(startedAt KST), source:"TIMER", serverVerified:true, totalActiveMinutes(그날 누적, 모든 출처), missionProgress, missionCompleted}`.
-판정 차례: 400 → 404 `MISSION_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARTICIPANT` → 422 `INVALID_METRIC`(TIMER_MINUTES 미션 아님) → 422 `CONSENT_REQUIRED`.
-칸 있는 미션은 이 경로로 분을 쌓아도 진행되지 않는다. 같은 가족이면 다른 참여자 이름으로도 적을 수 있다.
+응답 200 `{activityDate(서버가 받은 날 KST), source:"TIMER", serverVerified:true, totalActiveMinutes(그날 누적, 모든 출처), missionProgress, missionCompleted}`.
+판정 차례: 400(`endedAt ≤ startedAt`) → 404 `MISSION_NOT_FOUND` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN` → 403 `NOT_A_PARTICIPANT` → 422 `INVALID_METRIC`(TIMER_MINUTES 미션 아님) → 422 `CONSENT_REQUIRED` → 422 `MISSION_NOT_ACTIVE`(오늘이 기간 밖).
+- 활동 날짜는 기기의 `startedAt` 이 아니라 서버가 받은 날(KST)이다. 칸 끝과 같게, 지난 날이나 앞날에 「움직인 날」을 적지 못한다.
+- 칸 있는 미션은 이 경로로 분을 쌓아도 진행되지 않는다.
 
 ### GET /api/v1/families/{familyId}/calendar?profileId=&from=&to= — 보호자는 식구 누구나 · 아이 계정은 자기 것만
 한 사람의 날짜별 기록. 캘린더 · 하루 기록 · 이번 주 링이 이것 하나로 그린다. `from` ~ `to` 는 KST 날짜, 양끝 포함 42일까지. 셋 다 필수.
@@ -598,7 +626,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 운동이 그날 서는지는 이어서 한 날 · 리그와 같은 규칙이다: 하루짜리는 그날, 여러 날짜리는 오늘 · 칸을 끝낸 날 · 한 칸도 안 한 채 지났으면 마지막 날.
 - 여러 날짜리 미션의 칸 `done` 은 그 칸을 그날 끝냈을 때만 true. `completed` 는 마지막 칸을 끝낸 날에만 true.
 - 넣는 날: 선 운동 · 움직인 기록 · 스티커 · 쉬는 날 중 하나라도 있는 날. 오늘 뒤의 날에는 운동 줄을 싣지 않는다.
-판정 차례: 400(파라미터 누락 · 형식 · `to < from` · 43일 이상) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`(대상이 다른 가족) → 403 `NOT_A_PARENT`(아이 계정이 남의 기록).
+판정 차례: 400(파라미터 누락 · 형식 · 날짜가 1900-01-01 ~ 2100-12-31 밖 · `to < from` · 43일 이상) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`(대상이 다른 가족) → 403 `NOT_A_PARENT`(아이 계정이 남의 기록).
 읽기만 한다(진행도를 다시 저장하지 않는다). 42일 · 미션 여럿이어도 미션 · 칸 끝 · 활동 · 응원 · 쉬는 날을 한 번씩 읽는다.
 
 ### GET /api/v1/exercises?factor=&phase=&quiet=&q=&list=ALL|FAVORITES&profileId= — 로그인(`profileId` 를 주면 같은 가족)
@@ -628,16 +656,17 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 요청 `{profileId●, favorited●}`. 응답 200 `{videoId, profileId, favorited, favoritedAt|null}`.
 오류: 404 `VIDEO_NOT_FOUND` → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
-### POST /api/v1/videos/{videoId}/progress — 같은 가족 · FE 가 부르지 않음 · 걷을 후보
+### POST /api/v1/videos/{videoId}/progress — 대신 · FE 가 부르지 않음 · 걷을 후보
 요청 `{profileId●, progress●(0~1), watchedSec●, missionId?}`.
 응답 200 `{maxProgress, completed, creditedMinutes, verifiedBy|null, missionProgress|null}`.
 규칙: 최대 진행률만 남김; 최초로 0.9 이상 도달 시 `activity_daily` source=VIDEO 로 영상 길이(분, 올림) 1회 적립(credited_at); 이미 적립되면 0. AI 영상은 길이 자료가 없어 `creditedMinutes` 가 0 이다. missionId 가 있으면 참여자 진행도 갱신(VIDEO_DONE 미션). 칸 있는 미션은 진행되지 않는다.
-오류: 404 `VIDEO_NOT_FOUND` · 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 422 `CONSENT_REQUIRED` · 404 `MISSION_NOT_FOUND` · 403 `NOT_A_PARTICIPANT`.
+오류: 404 `VIDEO_NOT_FOUND` · 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 적을 수 없음) · 422 `CONSENT_REQUIRED` · 404 `MISSION_NOT_FOUND` · 403 `NOT_A_PARTICIPANT`.
 
-### POST /api/v1/coach/chat — 같은 가족 · FE 가 부르지 않음 · 걷을 후보
+### POST /api/v1/coach/chat — 대신 · FE 가 부르지 않음 · 걷을 후보
 요청 `{profileId●, conversationId?, question●(1~500)}`. `AiGateway.ask`.
 응답 200 `{conversationId, messageId, answer, citations:[{index, sourceLabel, excerpt, url}], refused, refusalReason|null}`.
-USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프로필의 것(다른 프로필의 conversationId → 403 `FORBIDDEN`). 없는 대화 → 404 `CONVERSATION_NOT_FOUND`. AI 장애 → 503(저장 안 함). refused=false 인데 인용 0 → 서버가 `no_citation_generated` 거부로 바꿔 저장. excerpt 는 AI 응답에 없으면 label 로 채움.
+판정 차례: 400 → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 물을 수 없음) → 404 `CONVERSATION_NOT_FOUND` → 403 `FORBIDDEN`(다른 프로필의 대화) → 503.
+USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프로필의 것. AI 장애 · AI 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락) → 503 `TEMPORARILY_UNAVAILABLE`(저장 안 함). refused=false 인데 인용 0 → 서버가 `no_citation_generated` 거부로 바꿔 저장. excerpt 는 AI 응답에 없으면 label 로 채움.
 
 ### GET /api/v1/families/{familyId}/report/weekly?weekStart= — 같은 가족 · FE 가 부르지 않음 · 걷을 후보
 응답 200 `{weekStart, weekEnd, summary|null, missionStats:{total, completed}, members:[{profileId, name, activeMinutes, verifiedMinutes, completedMissions}], cheerCount}`.
@@ -692,24 +721,27 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 
 ## 7. 알림함 (notification)
 
-알림은 행으로 저장한다(`notifications`, `V149`). 문구는 만들 때 굳힌다. (받는 프로필, 중복 키) 유니크라 같은 일로 두 번 생기지 않는다. 앱 밖 푸시는 없다.
+알림은 행으로 저장한다(`notifications`, `V149`). 문구는 만들 때 굳힌다. (받는 프로필, 중복 키) 유니크라 같은 일로 두 번 생기지 않는다. 넣기는 `ON CONFLICT DO NOTHING` 이라 같은 알림이 동시에 와도 오류 없이 한 건만 남는다. 앱 밖 푸시는 없다.
 
 | 종류 | 언제 | 누구에게 |
 |---|---|---|
 | `KID_DONE` | 아이가 「알리기」(DONE 응원)를 보냄. 마지막 칸을 끝냈다고 자동으로 만들지는 않는다 | 그 응원을 받은 부모 |
 | `KID_THANKS` | 아이가 고마워요(THANKS)를 보냄 | 받은 부모 |
 | `PRAISE` | 부모가 칭찬 · 스티커를 보냄 | 그 아이(보낸 이는 「엄마」 · 「아빠」) |
-| `MISSION_READY` | 매일 07:30 그날 서는 운동. 07:30 뒤에 생긴 운동은 생길 때 | 아이 프로필만. 쉬는 날 · 걸음수 · 다 끝낸 운동은 빼고, 다 끝내면 목록에서 빠진다 |
+| `MISSION_READY` | 매일 07:30 그날 서는 운동. 07:30 뒤에 생긴 운동은 생길 때 | 아이 프로필만. 쉬는 날 · 걸음수 · 다 끝낸 운동은 만들지 않고, 다 끝내면 목록에서 빠진다. 07:30 뒤에 오늘을 쉬는 날로 바꿔도 목록에서 빠진다 |
 | `ACHIEVEMENT` | 업적을 처음 받음 | 아이 프로필만, 14일 동안 보인다 |
-| `REMEASURE` | 매일 09:00, 아이의 마지막 측정이 30일 이상 지남 | 부모 전원, 측정 회차당 한 번 |
+| `REMEASURE` | 매일 09:00, 아이의 마지막 측정이 30일 이상 지남 | 부모 전원, 측정 회차당 한 번. 그 아이를 다시 재면 지난 회차로 만든 알림이 지워진다 |
 
-- 알림은 원래 요청이 커밋된 뒤 새 트랜잭션에서 적는다. 알림이 실패해도 응원 · 칸 끝 · 미션 만들기는 되돌려지지 않는다. 응답 전에 적으므로 곧바로 다시 읽으면 보인다.
+- 알림은 원래 요청이 커밋된 뒤 알림 전용 스레드(2개, 대기열 1000)에서 새 트랜잭션으로 적는다. 알림이 실패해도 응원 · 칸 끝 · 미션 만들기 · 측정은 되돌려지지 않는다.
+- 그래서 알림은 응답보다 몇 ms 늦게 생긴다. 응원 · 칸 끝 응답 직후 목록을 다시 읽으면 새 알림이 아직 없을 수 있다(다음 폴링에 보인다). 대기열까지 차면 그 알림은 버리고 로그만 남긴다.
 - 미션이 지워지면(`MissionCancelled`) 그 미션의 알림을 지운다. 미션을 다 끝내면(`MissionCompleted`) 그 사람의 그 미션 `MISSION_READY` 가 빠진다.
+- 측정을 등록하면(`FitnessTestRegistered`) 그 아이 가족의 부모 알림함에서 그 아이의 `REMEASURE` 를 지운다. 마지막 측정 회차로 만든 알림은 남긴다 — 지난 날짜를 나중에 적어 마지막 측정일이 그대로면 알림도 그대로다.
+- 07:30 · 09:00 알림의 `createdAt` 은 0장 「시각 · 날짜」 대로다(늦게 돈 실행은 실제로 만든 시각).
 - 오래된 알림 행을 지우는 보관 기간은 없다.
 
 ### GET /api/v1/notifications?profileId= — 대신
 자기 프로필, 또는 보호자가 계정 없는 아이 프로필(아이 모드)의 알림함.
-응답 200 `{items:[{notificationId, kind, title, body, aboutProfileId, fromProfileId|null, missionId|null, date, stickerId|null, createdAt, read, cheerId|null}], unread}` — 최신 30건(만든 시각이 늦은 것부터). `unread` 는 그 30건 안에서 센다. `cheerId` 는 고마워요 답장(`replyToCheerId`)에 쓴다. `notificationId` 는 서버 UUID 다.
+응답 200 `{items:[{notificationId, kind, title, body, aboutProfileId, fromProfileId|null, missionId|null, date, stickerId|null, createdAt, read, cheerId|null}], unread}` — 최신 30건(만든 시각이 늦은 것부터). `unread` 는 그 30건 안에서 센다. 오늘이 그 가족의 쉬는 날이면 `MISSION_READY` 는 목록에도 `unread` 에도 들어가지 않는다. `cheerId` 는 고마워요 답장(`replyToCheerId`)에 쓴다. `notificationId` 는 서버 UUID 다.
 판정 차례: 400(`profileId` 없음) → 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `FORBIDDEN`(계정 있는 아이의 알림함을 부모 계정으로 엶 등).
 
 ### POST /api/v1/notifications/read — 대신
@@ -724,6 +756,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 - `{app.ai.base-url}/v1`, JSON, 인증 없음(내부망). AI 서비스는 `/v1` 아래 다섯 주소(assessment · trajectory · videos/search · coach/runs · coach/messages)와 `/health` 를 연다. 로컬에서는 AI 저장소의 `make serve`(uvicorn, 8000번)로 띄운다.
 - 모드: `app.ai.mode=stub`(local · compose 기본, AI 없이 결정적 가짜 응답) · `http`(prod 기본, `APP_AI_MODE` 로 바꾼다).
 - AI 오류 봉투 `{"error":{"code","message"}}` → 서버 예외: 409 → `AiRunInProgressException`(`RUN_IN_PROGRESS`) · 404 → `AiRunNotFoundException`(`RUN_NOT_FOUND`) · 400 → `AiBadRequestException`(503 `AI_BAD_REQUEST`) · 그 밖 상태 · 연결 실패 · 시간 초과 · 빈 응답 → `AiUnavailableException`(503 `TEMPORARILY_UNAVAILABLE`).
+- 200 이어도 본문을 읽지 못하거나(깨진 JSON · text/html 오류 페이지) 서버 모양으로 바꾸지 못하면(칸 누락) `AiUnavailableException` 이다. 연결 실패와 같게 다룬다(재시도 · 대체 편성 · 503).
 - 시간 한도 · 재시도: 연결 1s. 읽기 assessment · trajectory 3s · 2회 / videos/search 4s · 2회 / coach/messages 10s · 0회 / POST coach/runs 2s · 0회 / GET coach/runs/{id} 3s. 재시도는 `AiUnavailableException` 에만, 200ms 부터 지수 백오프.
 - `POST /v1/fitness/assessment` `{profile_ref, age, age_unit, sex, height_cm?, weight_kg?, measurements}` → `{input_level, age_group, child_scope:{focus_one|null}, parent_scope:{grade|null, peer_distribution[], factors[], copy{strength,focus}}, low_sample, disclaimer}`.
 - `POST /v1/fitness/trajectory` `{profile_ref, age, age_unit, sex, height_cm?, weight_kg?, measurements?, item_code?, horizon_years?}` → `{basis, item_code, item_name, unit, bands:[{age,p10,p50,p90,n}], notice, low_sample}`.
@@ -764,16 +797,16 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 |---|---|
 | `succeeded` | 제안 저장, `AWAITING_APPROVAL` |
 | `refused` | FAILED(`NO_CITATIONS`), `ai_refused=true` · 거부 사유 |
-| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인도 인용할 근거(측정 · 고른 힘)도 없으면 FAILED(`AI_FAILED`) |
-| 폴링 한 번의 일시 오류(시간 초과 · 503) | 그 회차만 건너뛰고 다음 폴링 |
-| AI 409 · 400 · 응답 변환 실패 | FAILED(`ERROR`) |
+| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인도 인용할 근거(측정 · 고른 힘)도 없으면 FAILED(`AI_FAILED`) |
+| 폴링 한 번의 일시 오류(시간 초과 · 503 · 응답을 읽지 못함) | 그 회차만 건너뛰고 다음 폴링. 40회가 다 차면 위 대체 편성 |
+| AI 409 · 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
 | 요청 뒤 대상의 동의를 거둠 | FAILED(`CONSENT_REQUIRED`) |
 
 - 대체 편성은 `V132` 클립 표에서 대상 연령대 · 요인에 맞는 구간을 고른다. 준비 · 본 · 정리 가짓수는 AI `catalog.py` 와 같다: 10분까지 1·3·1, 20분까지 2·4·1, 35분까지 2·5·2, 그 위 3·6·3. 맞는 클립이 없으면 본운동 한 칸이다. 스텁도 실제 클립 경계(`Eg3GpTv7z8s`)로 칸을 낸다.
 - AI 는 같은 프로필이 든 실행이 돌고 있으면 409 를 낸다. 서버 잠금은 (대상, 날짜) 단위라, 같은 아이의 다른 날 편성이 동시에 돌면 뒤의 것은 AI 409 로 FAILED(`ERROR`)가 된다.
 - AI 가 도중에 죽으면 폴링 40회를 다 채운 뒤 대체 편성으로 넘어간다. 연결이 곧바로 거절되면 약 60초(간격 1.5초 × 39), 응답이 없어 시간 초과가 나면 최대 약 220초(폴링마다 연결 1초 + 읽기 3초가 더해짐)다.
 
-## 9. FE 요청서와 맞대 본 상태 (develop `062e552`)
+## 9. FE 요청서와 맞대 본 상태 (develop `a880ad4`)
 FE 화면 ↔ 주소 대응은 FE 요청서(`BACKEND_API.md`)가 원본이다. 여기에는 서버가 어디까지 했는지만 적는다.
 
 | FE 요청서 | 요청 | 서버 |

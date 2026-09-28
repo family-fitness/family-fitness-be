@@ -37,8 +37,8 @@ public interface NotificationRepository {
      * 이 아이에 관한 REMEASURE 를 {@code recipientIds} 의 알림함에서 지운다. {@code keepDedupeKey} 가 있으면 그 키의 알림은
      * 남긴다(아직 유효한 마지막 측정 회차의 알림). 지운 행 수.
      *
-     * <p>받는 사람을 꼭 준다. about_profile_id 에는 인덱스가 없어서 받는 사람 없이 지우면 PostgreSQL 이 표 전체를 훑는다.
-     * 받는 사람을 주면 profile_id 가 앞 칸인 인덱스(ux_notifications_dedupe)로 그 사람들의 알림만 본다.
+     * <p>받는 사람을 꼭 준다. 다른 가족의 알림함은 건드리지 않게 하려는 것이다. 조회는 about_profile_id 인덱스(V152
+     * ix_notifications_about)나 profile_id 가 앞 칸인 인덱스(ux_notifications_dedupe)를 탄다.
      */
     int deleteRemeasureAbout(Collection<UUID> recipientIds, UUID kidId, @Nullable String keepDedupeKey);
 }
