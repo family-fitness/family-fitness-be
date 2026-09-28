@@ -23,15 +23,19 @@ public interface FamilyRepository {
 
     boolean isClaimCodeTaken(String code);
 
-    /** 이 계정에 붙은 프로필들(여러 가족 가능). */
+    /** 이 계정에 붙은 프로필들. 한 계정 한 가족(V143 uq_profiles_user)이라 0개나 1개다. */
     List<Profile> profilesOfUser(UUID userId);
 
-    /** 가족과 모든 프로필을 한 트랜잭션에 저장한다(신규 INSERT · 기존 UPDATE). */
+    /**
+     * 가족과 모든 프로필을 한 트랜잭션에 저장한다(신규 INSERT · 기존 UPDATE).
+     * 새 프로필의 계정이 이미 다른 프로필에 붙어 있으면(동시 가족 만들기) AlreadyInFamilyException.
+     */
     Family save(Family family);
 
     /**
      * 동시성 안전한 계정 연결: `UPDATE profiles SET user_id=? ... WHERE id=? AND user_id IS NULL` 한 문장.
      * 영향 0행이면 false — 다른 계정이 먼저 가져간 것이다.
+     * 이 계정이 그새 다른 프로필에 붙었으면(동시 수락 · 가족 만들기) AlreadyInFamilyException.
      */
     boolean attachUserIfUnclaimed(UUID profileId, UUID userId, Instant at);
 }

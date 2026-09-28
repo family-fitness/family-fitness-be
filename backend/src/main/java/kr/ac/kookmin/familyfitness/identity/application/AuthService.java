@@ -129,7 +129,7 @@ public class AuthService {
     public AuthSession session(UUID userId, @Nullable String claimCode) {
         List<ProfileSummary> profiles =
                 families.profilesOfUser(userId).stream().map(summaries::summary).toList();
-        return new AuthSession(userId, NextStep.afterLogin(profiles, claimCode), profiles);
+        return AuthSession.of(userId, NextStep.afterLogin(profiles, claimCode), profiles);
     }
 
     /** 로그인마다 새 묶음을 연다. 기기(브라우저)마다 묶음이 따로라 한 기기의 로그아웃 · 재사용 감지가 다른 기기를 끊지 않는다. */

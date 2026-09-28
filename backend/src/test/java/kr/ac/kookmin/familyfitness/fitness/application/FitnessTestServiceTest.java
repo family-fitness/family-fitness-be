@@ -18,7 +18,10 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
+import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered.Round;
 import kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.NormPair;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
@@ -58,8 +61,9 @@ class FitnessTestServiceTest {
     private final FamilyAccess familyAccess = mock(FamilyAccess.class);
     private final ProfileQuery profileQuery = mock(ProfileQuery.class);
     private final NormCatalog norms = normCatalog();
+    private final List<Object> published = new ArrayList<>();
     private final FitnessTestService service =
-            new FitnessTestService(tests, norms, familyAccess, profileQuery, clock, zone);
+            new FitnessTestService(tests, norms, familyAccess, profileQuery, published::add, clock, zone);
 
     private static NormCatalog normCatalog() {
         List<NormPoint> points = new ArrayList<>(norms(
@@ -154,6 +158,45 @@ class FitnessTestServiceTest {
 
         // 규준표가 바뀌어도 저장된 값은 그대로다
         assertThat(itemOf(tests.findById(test.getId()), "028").percentile()).isEqualTo(75);
+    }
+
+    @Test
+    @DisplayName("저장한 회차마다 FitnessTestRegistered 를 한 번 낸다 — 다시 잰 회차는 등록 순서가 아니라 testedOn 이 가장 이른 회차를 뺀 것")
+    void 저장한_회차마다_FitnessTestRegistered_를_낸다() {
+        childProfile();
+        LocalDate sep1 = LocalDate.of(2026, 9, 1);
+        LocalDate sep8 = LocalDate.of(2026, 9, 8);
+        LocalDate aug1 = LocalDate.of(2026, 8, 1);
+        LocalDate aug15 = LocalDate.of(2026, 8, 15);
+        FitnessTest first = service.register(actorId, profileId, command(sep1, new ItemPair("028", 36)));
+        FitnessTest later = service.register(actorId, profileId, command(sep8, new ItemPair("028", 40)));
+        // 지난 날짜를 나중에 적으면 이 회차가 가장 이른 회차가 되고, 그때까지 가장 이르던 9/1 이 다시 잰 회차가 된다
+        FitnessTest past = service.register(actorId, profileId, command(aug1, new ItemPair("028", 30)));
+        // 가장 이른 날과 가장 늦은 날 사이에 적으면 새 회차 자신이다
+        FitnessTest between = service.register(actorId, profileId, command(aug15, new ItemPair("028", 33)));
+
+        assertThat(published)
+                .containsExactly(
+                        new FitnessTestRegistered(profileId, first.getId(), sep1, null),
+                        new FitnessTestRegistered(profileId, later.getId(), sep8, new Round(later.getId(), sep8)),
+                        new FitnessTestRegistered(profileId, past.getId(), aug1, new Round(first.getId(), sep1)),
+                        new FitnessTestRegistered(
+                                profileId, between.getId(), aug15, new Round(between.getId(), aug15)));
+        // FE 목(tests.slice(0, -1))과 같이, 다시 잰 회차는 가장 이른 8/1 을 뺀 셋이다
+        assertThat(published.stream()
+                        .map(it -> ((FitnessTestRegistered) it).remeasured())
+                        .filter(Objects::nonNull)
+                        .map(Round::testedOn))
+                .containsExactlyInAnyOrder(sep1, sep8, aug15);
+    }
+
+    @Test
+    @DisplayName("막힌 등록은 이벤트를 내지 않는다")
+    void 막힌_등록은_이벤트를_내지_않는다() {
+        childProfile(LocalDate.of(2017, 5, 1), true, false, false);
+        assertThatThrownBy(() -> service.register(actorId, profileId, command(new ItemPair("028", 36))))
+                .isInstanceOf(ConsentRequiredException.class);
+        assertThat(published).isEmpty();
     }
 
     @Test

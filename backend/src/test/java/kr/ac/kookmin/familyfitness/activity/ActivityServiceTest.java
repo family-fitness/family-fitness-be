@@ -13,6 +13,8 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
+import kr.ac.kookmin.familyfitness.activity.api.DailyMinutes;
+import kr.ac.kookmin.familyfitness.activity.api.VerifiedSummary;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -132,6 +134,31 @@ class ActivityServiceTest {
         assertThat(empty.steps()).isEqualTo(0);
         assertThat(empty.activeMinutes()).isEqualTo(0);
         assertThat(empty.verifiedMinutes()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("움직인 날은 TIMER · VIDEO 분을 날마다 더해 0 보다 큰 날만, 요약은 기간 없이 날 수와 분 합")
+    void 움직인_날은_TIMER_VIDEO_분이_있는_날만() {
+        recorder.addActiveMinutes(profileId, monday, ActivitySource.TIMER, 10);
+        recorder.addActiveMinutes(profileId, monday, ActivitySource.VIDEO, 5);
+        recorder.addActiveMinutes(profileId, monday.plusDays(2), ActivitySource.VIDEO, 7);
+        recorder.addActiveMinutes(profileId, monday.minusYears(2), ActivitySource.TIMER, 3);
+        recorder.overwriteSteps(profileId, monday.plusDays(1), 8000);
+        jdbc.update(
+                "insert into activity_daily (id, profile_id, activity_date, source, steps, active_minutes, recorded_at) values (?, ?, ?, 'MANUAL', 0, 40, ?)",
+                UUID.randomUUID(),
+                profileId,
+                monday.plusDays(3),
+                Instant.parse("2026-09-10T00:00:00Z"));
+
+        assertThat(query.verifiedDays(profileId, monday, monday.plusDays(6)))
+                .containsExactly(new DailyMinutes(monday, 15), new DailyMinutes(monday.plusDays(2), 7));
+        assertThat(query.verifiedDays(profileId, monday.plusDays(1), monday.plusDays(1)))
+                .isEmpty();
+        assertThat(query.verifiedSummary(profileId)).isEqualTo(new VerifiedSummary(3, 25));
+        assertThat(query.verifiedSummary(UUID.randomUUID())).isEqualTo(new VerifiedSummary(0, 0));
+        assertThatThrownBy(() -> query.verifiedDays(profileId, monday, monday.minusDays(1)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

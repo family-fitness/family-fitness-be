@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
+import kr.ac.kookmin.familyfitness.activity.api.DailyMinutes;
+import kr.ac.kookmin.familyfitness.activity.api.VerifiedSummary;
 import kr.ac.kookmin.familyfitness.activity.application.port.ActivityDailyRepository;
 import kr.ac.kookmin.familyfitness.activity.domain.DailyActivityRecord;
 import org.jspecify.annotations.Nullable;
@@ -66,6 +68,19 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
     public boolean anyActiveOn(Collection<UUID> profileIds, LocalDate activityDate) {
         if (profileIds.isEmpty()) return false;
         return jpa.existsByProfileIdInAndActivityDateAndActiveMinutesGreaterThan(profileIds, activityDate, 0);
+    }
+
+    @Override
+    public List<DailyMinutes> verifiedDays(UUID profileId, LocalDate from, LocalDate to) {
+        return jpa.sumByDay(profileId, from, to, verifiedSources).stream()
+                .map(it -> new DailyMinutes(it.date(), it.minutes().intValue()))
+                .toList();
+    }
+
+    @Override
+    public VerifiedSummary verifiedSummary(UUID profileId) {
+        return new VerifiedSummary((int) jpa.countActiveDays(profileId, verifiedSources), (int)
+                jpa.sumMinutes(profileId, verifiedSources));
     }
 
     private static long orZero(@Nullable Long value) {
