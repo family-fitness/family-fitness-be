@@ -436,7 +436,16 @@ class FamilyTest {
     /** 아직 계정이 붙지 않은 부모 자리(초대 전 아빠). */
     private Profile addParentSeat(Family family) {
         return family.addMember(
-                parentUserId, "아빠", LocalDate.of(1986, 1, 1), Sex.M, ProfileRole.PARENT, null, consentedAt, today);
+                parentUserId,
+                "아빠",
+                LocalDate.of(1986, 1, 1),
+                Sex.M,
+                ProfileRole.PARENT,
+                null,
+                null,
+                null,
+                consentedAt,
+                today);
     }
 
     private Profile addChild(Family family, String name) {

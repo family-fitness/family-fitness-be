@@ -507,6 +507,8 @@ class IdentityServicesTest {
                             LocalDate.of(1986, 1, 1),
                             Sex.M,
                             ProfileRole.PARENT,
+                            null,
+                            null,
                             null)
                     .profileId();
 
