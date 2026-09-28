@@ -24,4 +24,7 @@ public interface ActivityDailyJpaRepository extends JpaRepository<ActivityDailyE
     @Query(
             "select coalesce(sum(a.activeMinutes), 0) from ActivityDailyEntity a where a.profileId = :profileId and a.activityDate = :date")
     long sumActiveMinutesOn(UUID profileId, LocalDate date);
+
+    boolean existsByProfileIdInAndActivityDateAndActiveMinutesGreaterThan(
+            Collection<UUID> profileIds, LocalDate activityDate, int activeMinutes);
 }

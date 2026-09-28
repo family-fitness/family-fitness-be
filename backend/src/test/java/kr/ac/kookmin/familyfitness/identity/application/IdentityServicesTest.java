@@ -7,10 +7,19 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
+import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
+import kr.ac.kookmin.familyfitness.identity.api.CheerSent;
+import kr.ac.kookmin.familyfitness.identity.api.CheerView;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
+import kr.ac.kookmin.familyfitness.identity.api.MissionLookup;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
@@ -19,7 +28,11 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyClaimedException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyMemberException;
+import kr.ac.kookmin.familyfitness.identity.domain.AlreadyThankedException;
 import kr.ac.kookmin.familyfitness.identity.domain.Cheer;
+import kr.ac.kookmin.familyfitness.identity.domain.CheerKindNotAllowedException;
+import kr.ac.kookmin.familyfitness.identity.domain.CheerMissionNotFoundException;
+import kr.ac.kookmin.familyfitness.identity.domain.CheerNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCodeExpiredException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCodeNotFoundException;
@@ -27,6 +40,8 @@ import kr.ac.kookmin.familyfitness.identity.domain.ConsentRecord;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyAccessDeniedException;
 import kr.ac.kookmin.familyfitness.identity.domain.GuardianConsent;
 import kr.ac.kookmin.familyfitness.identity.domain.GuardianConsentRequiredException;
+import kr.ac.kookmin.familyfitness.identity.domain.InvalidCheerException;
+import kr.ac.kookmin.familyfitness.identity.domain.NotAReplyTargetException;
 import kr.ac.kookmin.familyfitness.identity.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.identity.domain.NotOwnProfileException;
 import kr.ac.kookmin.familyfitness.identity.domain.SelfCheerException;
@@ -60,7 +75,14 @@ class IdentityServicesTest {
     private final InviteService inviteService = new InviteService(families, props, identityClock);
     private final ProfileSettingsService settingsService =
             new ProfileSettingsService(families, summaries, identityClock);
-    private final CheerService cheerService = new CheerService(families, cheers, identityClock);
+    /** 미션 id → 가족 id. coaching 이 구현하는 {@link MissionLookup} 의 가짜. */
+    private final Map<UUID, UUID> missionFamilies = new HashMap<>();
+
+    private final MissionLookup missionLookup =
+            (familyId, missionId) -> familyId.equals(missionFamilies.get(missionId));
+    private final List<Object> published = new ArrayList<>();
+    private final CheerService cheerService =
+            new CheerService(families, cheers, missionLookup, published::add, identityClock);
 
     private final UUID parentUser = UUID.randomUUID();
     private final LocalDate today = LocalDate.of(2026, 9, 8);
@@ -85,6 +107,13 @@ class IdentityServicesTest {
             UUID familyId, @Nullable GuardianConsent consent, LocalDate birthDate, String name) {
         return familyService.addMember(
                 parentUser, familyId, name, birthDate, Sex.M, ProfileRole.CHILD, null, null, consent);
+    }
+
+    /** kind 없이 보낸다(서버가 역할 · 스티커로 정한다). */
+    private Cheer send(
+            UUID userId, UUID familyId, UUID from, UUID to, @Nullable String message, @Nullable String stickerId) {
+        return cheerService.cheer(
+                userId, familyId, new SendCheerCommand(from, to, null, message, stickerId, null, null));
     }
 
     @Nested
@@ -468,29 +497,25 @@ class IdentityServicesTest {
             UUID owner = family.ownerProfile().profileId();
             UUID child = addChild(family.familyId()).profileId();
 
-            Cheer cheer = cheerService.cheer(parentUser, family.familyId(), owner, child, "힘내!", null, null);
+            Cheer cheer = send(parentUser, family.familyId(), owner, child, "힘내!", null);
 
             assertThat(cheer.familyId()).isEqualTo(family.familyId());
             assertThat(cheer.message()).isEqualTo("힘내!");
-            assertThat(cheer.emoji()).isNull();
+            assertThat(cheer.stickerId()).isNull();
             assertThat(cheer.createdAt()).isEqualTo(clock.instant());
             assertThat(cheers.cheers).hasSize(1);
 
-            assertThrows(
-                    SelfCheerException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), owner, owner, "나", null, null));
+            assertThrows(SelfCheerException.class, () -> send(parentUser, family.familyId(), owner, owner, "나", null));
             assertThrows(
                     NotFamilyMemberException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), owner, UUID.randomUUID(), "?", null, null));
+                    () -> send(parentUser, family.familyId(), owner, UUID.randomUUID(), "?", null));
             assertThrows(
                     FamilyAccessDeniedException.class,
-                    () -> cheerService.cheer(UUID.randomUUID(), family.familyId(), owner, child, "?", null, null));
+                    () -> send(UUID.randomUUID(), family.familyId(), owner, child, "?", null));
             assertThrows(
-                    FamilyNotFoundException.class,
-                    () -> cheerService.cheer(parentUser, UUID.randomUUID(), owner, child, "?", null, null));
+                    FamilyNotFoundException.class, () -> send(parentUser, UUID.randomUUID(), owner, child, "?", null));
             assertThrows(
-                    IllegalArgumentException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), owner, child, " ", null, null));
+                    IllegalArgumentException.class, () -> send(parentUser, family.familyId(), owner, child, " ", null));
         }
 
         @Test
@@ -499,34 +524,23 @@ class IdentityServicesTest {
             CreatedFamily family = createFamily();
             UUID owner = family.ownerProfile().profileId();
             UUID child = addChild(family.familyId()).profileId();
-            UUID dadSeat = familyService
-                    .addMember(
-                            parentUser,
-                            family.familyId(),
-                            "아빠",
-                            LocalDate.of(1986, 1, 1),
-                            Sex.M,
-                            ProfileRole.PARENT,
-                            null,
-                            null,
-                            null)
-                    .profileId();
+            UUID dadSeat = addParentSeat(family.familyId());
 
-            Cheer thanks = cheerService.cheer(parentUser, family.familyId(), child, owner, "고마워요", null, null);
+            Cheer done = send(parentUser, family.familyId(), child, owner, "다 했어요", null);
 
-            assertThat(thanks.fromProfileId()).isEqualTo(child);
-            assertThat(thanks.toProfileId()).isEqualTo(owner);
+            assertThat(done.fromProfileId()).isEqualTo(child);
+            assertThat(done.toProfileId()).isEqualTo(owner);
             assertThat(cheers.cheers).hasSize(1);
             assertThrows(
                     CannotActAsProfileException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), dadSeat, child, "?", null, null));
+                    () -> send(parentUser, family.familyId(), dadSeat, child, "?", null));
 
             UUID childUser = UUID.randomUUID();
             families.attachUserIfUnclaimed(child, childUser, clock.instant());
             assertThrows(
                     CannotActAsProfileException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), child, owner, "?", null, null));
-            cheerService.cheer(childUser, family.familyId(), child, owner, "다 했어요", null, null);
+                    () -> send(parentUser, family.familyId(), child, owner, "?", null));
+            send(childUser, family.familyId(), child, owner, "다 했어요", null);
             assertThat(cheers.cheers).hasSize(2);
         }
 
@@ -537,16 +551,230 @@ class IdentityServicesTest {
             UUID owner = family.ownerProfile().profileId();
             UUID child = addChild(family.familyId()).profileId();
             for (int i = 0; i < 5; i++) {
-                cheerService.cheer(parentUser, family.familyId(), owner, child, null, "👍", null);
+                send(parentUser, family.familyId(), owner, child, null, "star");
             }
 
             assertThrows(
                     TooManyCheersException.class,
-                    () -> cheerService.cheer(parentUser, family.familyId(), owner, child, null, "👍", null));
+                    () -> send(parentUser, family.familyId(), owner, child, null, "star"));
 
             clock.setInstant(clock.instant().plus(Duration.ofMinutes(1)));
-            cheerService.cheer(parentUser, family.familyId(), owner, child, null, "👍", null);
+            send(parentUser, family.familyId(), owner, child, null, "star");
             assertThat(cheers.cheers).hasSize(6);
+        }
+
+        @Test
+        @DisplayName("kind 가 없으면 부모가 보내거나 아이가 받으면 PRAISE, 아이→부모는 스티커가 있으면 THANKS 없으면 DONE")
+        void kind_가_없으면_역할과_스티커로_정한다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+
+            assertThat(send(parentUser, family.familyId(), owner, child, "최고야", "star")
+                            .kind())
+                    .isEqualTo(CheerKind.PRAISE);
+            assertThat(send(parentUser, family.familyId(), owner, child, "힘내", null)
+                            .kind())
+                    .isEqualTo(CheerKind.PRAISE);
+            assertThat(send(parentUser, family.familyId(), child, owner, "운동 다 했어요!", null)
+                            .kind())
+                    .isEqualTo(CheerKind.DONE);
+            // 전환 기간: 답할 스티커(replyToCheerId) 없이 온 옛 고마워요도 받는다
+            Cheer oldThanks = send(parentUser, family.familyId(), child, owner, "고마워요 · 사랑해", "heart");
+            assertThat(oldThanks.kind()).isEqualTo(CheerKind.THANKS);
+            assertThat(oldThanks.replyToCheerId()).isNull();
+        }
+
+        @Test
+        @DisplayName("칭찬은 보호자만 아이에게 보내고, 다 했어요 · 고마워요는 아이가 보호자에게만 보낸다")
+        void 칭찬은_보호자만_아이에게_보내고_다_했어요_고마워요는_아이가_보호자에게만_보낸다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            UUID second = addChild(family.familyId(), new GuardianConsent(true, true), LocalDate.of(2020, 1, 1), "둘째")
+                    .profileId();
+            UUID dadSeat = addParentSeat(family.familyId());
+            UUID family1 = family.familyId();
+
+            assertThrows(NotAParentException.class, () -> sendAs(child, owner, CheerKind.PRAISE, "star", null));
+            // kind 없이 아이가 아이에게 보내면 PRAISE 로 읽혀 막힌다
+            assertThrows(NotAParentException.class, () -> send(parentUser, family1, child, second, "잘했어", "star"));
+            assertThrows(
+                    CheerKindNotAllowedException.class, () -> sendAs(owner, dadSeat, CheerKind.PRAISE, "star", null));
+            assertThrows(CheerKindNotAllowedException.class, () -> sendAs(owner, child, CheerKind.DONE, null, null));
+            assertThrows(CheerKindNotAllowedException.class, () -> sendAs(child, second, CheerKind.DONE, null, null));
+            assertThat(cheers.cheers).isEmpty();
+        }
+
+        @Test
+        @DisplayName("고마워요는 내가 받은 칭찬 스티커 하나에 한 번, 보낸 사람에게만 돌려보낸다")
+        void 고마워요는_내가_받은_칭찬_스티커_하나에_한_번_보낸_사람에게만_돌려보낸다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            UUID dadSeat = addParentSeat(family.familyId());
+            UUID sticker = sendAs(owner, child, CheerKind.PRAISE, "star", null).id();
+            UUID words = sendAs(owner, child, CheerKind.PRAISE, null, null).id();
+            UUID done = sendAs(child, owner, CheerKind.DONE, null, null).id();
+
+            assertThrows(InvalidCheerException.class, () -> sendAs(child, owner, CheerKind.THANKS, "heart", null));
+            assertThrows(InvalidCheerException.class, () -> sendAs(child, owner, CheerKind.THANKS, null, sticker));
+            assertThrows(InvalidCheerException.class, () -> sendAs(child, owner, CheerKind.DONE, null, sticker));
+            assertThrows(
+                    CheerNotFoundException.class,
+                    () -> sendAs(child, owner, CheerKind.THANKS, "heart", UUID.randomUUID()));
+            assertThrows(NotAReplyTargetException.class, () -> sendAs(child, owner, CheerKind.THANKS, "heart", done));
+            assertThrows(NotAReplyTargetException.class, () -> sendAs(child, owner, CheerKind.THANKS, "heart", words));
+            assertThrows(
+                    NotAReplyTargetException.class, () -> sendAs(child, dadSeat, CheerKind.THANKS, "heart", sticker));
+
+            Cheer thanks = sendAs(child, owner, CheerKind.THANKS, "heart", sticker);
+
+            assertThat(thanks.kind()).isEqualTo(CheerKind.THANKS);
+            assertThat(thanks.replyToCheerId()).isEqualTo(sticker);
+            assertThrows(AlreadyThankedException.class, () -> sendAs(child, owner, CheerKind.THANKS, "clap", sticker));
+            // kind 를 안 보내도 replyToCheerId 가 있으면 같은 규칙을 탄다
+            assertThrows(
+                    AlreadyThankedException.class,
+                    () -> cheerService.cheer(
+                            parentUser,
+                            family.familyId(),
+                            new SendCheerCommand(child, owner, null, null, "clap", null, sticker)));
+        }
+
+        @Test
+        @DisplayName("missionId 는 이 가족의 미션이어야 한다 — 없는 미션 · 다른 가족 미션은 MISSION_NOT_FOUND")
+        void missionId_는_이_가족의_미션이어야_한다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            UUID ours = UUID.randomUUID();
+            UUID theirs = UUID.randomUUID();
+            missionFamilies.put(ours, family.familyId());
+            missionFamilies.put(theirs, UUID.randomUUID());
+
+            Cheer done = cheerService.cheer(
+                    parentUser,
+                    family.familyId(),
+                    new SendCheerCommand(child, owner, CheerKind.DONE, "다 했어요", null, ours, null));
+
+            assertThat(done.missionId()).isEqualTo(ours);
+            for (UUID missionId : List.of(theirs, UUID.randomUUID())) {
+                assertThrows(
+                        CheerMissionNotFoundException.class,
+                        () -> cheerService.cheer(
+                                parentUser,
+                                family.familyId(),
+                                new SendCheerCommand(owner, child, CheerKind.PRAISE, null, "star", missionId, null)));
+            }
+            assertThat(cheers.cheers).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("저장한 응원마다 CheerSent 를 한 번 발행하고, 막힌 응원은 발행하지 않는다")
+        void 저장한_응원마다_CheerSent_를_한_번_발행한다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            Cheer praise = sendAs(owner, child, CheerKind.PRAISE, "star", null);
+            Cheer thanks = sendAs(child, owner, CheerKind.THANKS, "heart", praise.id());
+            assertThrows(
+                    AlreadyThankedException.class, () -> sendAs(child, owner, CheerKind.THANKS, "clap", praise.id()));
+
+            assertThat(published)
+                    .containsExactly(
+                            new CheerSent(
+                                    praise.id(),
+                                    family.familyId(),
+                                    owner,
+                                    child,
+                                    CheerKind.PRAISE,
+                                    "star",
+                                    null,
+                                    null,
+                                    praise.createdAt()),
+                            new CheerSent(
+                                    thanks.id(),
+                                    family.familyId(),
+                                    child,
+                                    owner,
+                                    CheerKind.THANKS,
+                                    "heart",
+                                    null,
+                                    praise.id(),
+                                    thanks.createdAt()));
+        }
+
+        @Test
+        @DisplayName("받은 응원 목록은 최근 것부터 size 건이고 받은 사람 · 보낸 사람 · 미션으로 거른다")
+        void 받은_응원_목록은_최근_것부터_size_건이고_받은_사람_보낸_사람_미션으로_거른다() {
+            CreatedFamily family = createFamily();
+            UUID familyId = family.familyId();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(familyId).profileId();
+            UUID mission = UUID.randomUUID();
+            missionFamilies.put(mission, familyId);
+            Cheer done = cheerService.cheer(
+                    parentUser, familyId, new SendCheerCommand(child, owner, null, "다 했어요", null, mission, null));
+            clock.setInstant(clock.instant().plusSeconds(1));
+            Cheer praise = cheerService.cheer(
+                    parentUser, familyId, new SendCheerCommand(owner, child, null, "최고야", "star", mission, null));
+            clock.setInstant(clock.instant().plusSeconds(1));
+            Cheer other = send(parentUser, familyId, owner, child, "힘내", null);
+
+            List<CheerView> all = cheerService.list(parentUser, familyId, null, null, null, 20);
+
+            assertThat(all).extracting(CheerView::cheerId).containsExactly(other.id(), praise.id(), done.id());
+            CheerView praiseView = all.get(1);
+            assertThat(praiseView.fromName()).isEqualTo("엄마");
+            assertThat(praiseView.kind()).isEqualTo(CheerKind.PRAISE);
+            assertThat(praiseView.stickerId()).isEqualTo("star");
+            assertThat(praiseView.missionId()).isEqualTo(mission);
+            assertThat(cheerService.list(parentUser, familyId, child, null, null, 20))
+                    .extracting(CheerView::cheerId)
+                    .containsExactly(other.id(), praise.id());
+            assertThat(cheerService.list(parentUser, familyId, null, child, null, 20))
+                    .extracting(CheerView::cheerId)
+                    .containsExactly(done.id());
+            assertThat(cheerService.list(parentUser, familyId, null, null, mission, 20))
+                    .extracting(CheerView::cheerId)
+                    .containsExactly(praise.id(), done.id());
+            assertThat(cheerService.list(parentUser, familyId, null, null, null, 1))
+                    .extracting(CheerView::cheerId)
+                    .containsExactly(other.id());
+            assertThat(cheerService.list(parentUser, familyId, UUID.randomUUID(), null, null, 20))
+                    .isEmpty();
+            assertThrows(
+                    IllegalArgumentException.class, () -> cheerService.list(parentUser, familyId, null, null, null, 0));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> cheerService.list(parentUser, familyId, null, null, null, CheerService.MAX_LIST_SIZE + 1));
+            assertThrows(
+                    FamilyAccessDeniedException.class,
+                    () -> cheerService.list(UUID.randomUUID(), familyId, null, null, null, 20));
+        }
+
+        private Cheer sendAs(
+                UUID from, UUID to, CheerKind kind, @Nullable String stickerId, @Nullable UUID replyToCheerId) {
+            UUID familyId =
+                    Objects.requireNonNull(families.findByProfileId(from)).getId();
+            return cheerService.cheer(
+                    parentUser, familyId, new SendCheerCommand(from, to, kind, "한마디", stickerId, null, replyToCheerId));
+        }
+
+        private UUID addParentSeat(UUID familyId) {
+            return familyService
+                    .addMember(
+                            parentUser,
+                            familyId,
+                            "아빠",
+                            LocalDate.of(1986, 1, 1),
+                            Sex.M,
+                            ProfileRole.PARENT,
+                            null,
+                            null,
+                            null)
+                    .profileId();
         }
     }
 
@@ -554,7 +782,7 @@ class IdentityServicesTest {
     class Queries {
         private final ProfileQueryService profileQuery = new ProfileQueryService(families, summaries);
         private final FamilyAccessService access = new FamilyAccessService(families, summaries);
-        private final CheerQueryService cheerQuery = new CheerQueryService(cheers);
+        private final CheerQueryService cheerQuery = new CheerQueryService(cheers, families);
 
         @Test
         @DisplayName("ProfileQuery 는 요약과 상세를 준다")
@@ -646,9 +874,9 @@ class IdentityServicesTest {
             UUID owner = family.ownerProfile().profileId();
             UUID child = addChild(family.familyId()).profileId();
             Instant start = clock.instant();
-            cheerService.cheer(parentUser, family.familyId(), owner, child, "a", null, null);
+            send(parentUser, family.familyId(), owner, child, "a", null);
             clock.setInstant(start.plus(Duration.ofDays(1)));
-            cheerService.cheer(parentUser, family.familyId(), owner, child, "b", null, null);
+            send(parentUser, family.familyId(), owner, child, "b", null);
 
             assertThat(cheerQuery.countCheers(family.familyId(), start, start.plus(Duration.ofDays(1))))
                     .isEqualTo(1);
@@ -656,6 +884,30 @@ class IdentityServicesTest {
                     .isEqualTo(2);
             assertThat(cheerQuery.countCheers(UUID.randomUUID(), start, start.plus(Duration.ofDays(2))))
                     .isZero();
+        }
+
+        @Test
+        @DisplayName("CheerQuery 는 한 사람이 구간 안에 받은 응원을 kind · 보낸 사람 이름과 함께 오래된 것부터 준다")
+        void CheerQuery_는_한_사람이_구간_안에_받은_응원을_준다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            UUID child = addChild(family.familyId()).profileId();
+            Instant start = clock.instant();
+            Cheer star = send(parentUser, family.familyId(), owner, child, "최고야", "star");
+            send(parentUser, family.familyId(), child, owner, "다 했어요", null);
+            clock.setInstant(start.plus(Duration.ofDays(1)));
+            Cheer words = send(parentUser, family.familyId(), owner, child, "힘내", null);
+            clock.setInstant(start.plus(Duration.ofDays(2)));
+            send(parentUser, family.familyId(), owner, child, "내일", null);
+
+            List<CheerView> received = cheerQuery.received(child, start, start.plus(Duration.ofDays(2)));
+
+            assertThat(received).extracting(CheerView::cheerId).containsExactly(star.id(), words.id());
+            assertThat(received.getFirst().fromName()).isEqualTo("엄마");
+            assertThat(received.getFirst().kind()).isEqualTo(CheerKind.PRAISE);
+            assertThat(received.getFirst().stickerId()).isEqualTo("star");
+            assertThat(cheerQuery.received(UUID.randomUUID(), start, start.plus(Duration.ofDays(2))))
+                    .isEmpty();
         }
     }
 }

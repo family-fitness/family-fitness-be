@@ -24,14 +24,21 @@ public class CheerEntity {
     @Column(name = "to_profile_id", nullable = false)
     private UUID toProfileId;
 
+    /** CheerKind 이름(DONE · PRAISE · THANKS). */
+    @Column(name = "kind", nullable = false, length = 10)
+    private String kind;
+
     @Column(name = "mission_id")
     private @Nullable UUID missionId;
 
-    @Column(name = "emoji", length = 20)
-    private @Nullable String emoji;
+    @Column(name = "sticker_id", length = 20)
+    private @Nullable String stickerId;
 
     @Column(name = "message", length = 200)
     private @Nullable String message;
+
+    @Column(name = "reply_to_cheer_id")
+    private @Nullable UUID replyToCheerId;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -43,17 +50,21 @@ public class CheerEntity {
             UUID familyId,
             UUID fromProfileId,
             UUID toProfileId,
+            String kind,
             @Nullable UUID missionId,
-            @Nullable String emoji,
+            @Nullable String stickerId,
             @Nullable String message,
+            @Nullable UUID replyToCheerId,
             Instant createdAt) {
         this.id = id;
         this.familyId = familyId;
         this.fromProfileId = fromProfileId;
         this.toProfileId = toProfileId;
+        this.kind = kind;
         this.missionId = missionId;
-        this.emoji = emoji;
+        this.stickerId = stickerId;
         this.message = message;
+        this.replyToCheerId = replyToCheerId;
         this.createdAt = createdAt;
     }
 
@@ -73,16 +84,24 @@ public class CheerEntity {
         return toProfileId;
     }
 
+    public String getKind() {
+        return kind;
+    }
+
     public @Nullable UUID getMissionId() {
         return missionId;
     }
 
-    public @Nullable String getEmoji() {
-        return emoji;
+    public @Nullable String getStickerId() {
+        return stickerId;
     }
 
     public @Nullable String getMessage() {
         return message;
+    }
+
+    public @Nullable UUID getReplyToCheerId() {
+        return replyToCheerId;
     }
 
     public Instant getCreatedAt() {
