@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.ConfirmParticipantView;
@@ -10,10 +11,12 @@ import kr.ac.kookmin.familyfitness.coaching.application.MissionCreatedView;
 import kr.ac.kookmin.familyfitness.coaching.application.MissionListView;
 import kr.ac.kookmin.familyfitness.coaching.application.MissionScope;
 import kr.ac.kookmin.familyfitness.coaching.application.MissionService;
+import kr.ac.kookmin.familyfitness.coaching.application.MissionView;
 import kr.ac.kookmin.familyfitness.coaching.application.RecordStepsCommand;
 import kr.ac.kookmin.familyfitness.coaching.application.RecordTimerCommand;
 import kr.ac.kookmin.familyfitness.coaching.application.StepsRecordedView;
 import kr.ac.kookmin.familyfitness.coaching.application.TimerRecordedView;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionStatus;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.jspecify.annotations.Nullable;
@@ -27,7 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 미션 직접 만들기(보호자) · 목록 · 보호자 확인 · 미션 경로의 활동 기록(걸음수·타이머). */
+/** 미션 직접 만들기(보호자) · 목록 · 단건 · 보호자 확인 · 미션 경로의 활동 기록(걸음수·타이머). */
 @RestController
 @RequestMapping("/api/v1")
 public class MissionController {
@@ -56,7 +59,8 @@ public class MissionController {
                         Objects.requireNonNull(body.targetMetric()),
                         Objects.requireNonNull(body.targetValue()),
                         body.videoId(),
-                        body.participantProfileIds()));
+                        body.participantProfileIds(),
+                        sessionsOf(body)));
     }
 
     @GetMapping("/families/{familyId}/missions")
@@ -66,6 +70,11 @@ public class MissionController {
             @RequestParam(defaultValue = "ALL") MissionScope scope,
             @RequestParam(required = false) @Nullable MissionStatus status) {
         return missions.list(user.userId(), familyId, scope, status);
+    }
+
+    @GetMapping("/missions/{missionId}")
+    public MissionView get(CurrentUser user, @PathVariable UUID missionId) {
+        return missions.get(user.userId(), missionId);
     }
 
     @PostMapping("/missions/{missionId}/participants/{profileId}/confirm")
@@ -97,5 +106,12 @@ public class MissionController {
                         Objects.requireNonNull(body.startedAt()),
                         Objects.requireNonNull(body.endedAt()),
                         Objects.requireNonNull(body.activeMinutes())));
+    }
+
+    private static List<MissionSession> sessionsOf(CreateMissionRequest body) {
+        List<MissionSessionRequest> sessions = body.sessions();
+        return sessions == null
+                ? List.of()
+                : sessions.stream().map(MissionSessionRequest::toDomain).toList();
     }
 }

@@ -6,7 +6,10 @@ import java.util.List;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import org.jspecify.annotations.Nullable;
 
-/** 운동 영상 카탈로그 항목. 식별자는 YouTube 영상 id. 읽기 전용(수집 배치가 채운다). */
+/**
+ * 운동 영상 카탈로그 항목. 식별자는 YouTube 영상 id. 읽기 전용(AI 영상은 V132 적재 마이그레이션이 채운다).
+ * AI 영상은 영상 단위 길이 · 공간 · 소음 · 준비물 자료가 없어 그 칸이 null 이다.
+ */
 public class ExerciseVideo {
     public static final String BADGE_QUIET = "조용함";
     public static final String BADGE_SMALL_ROOM = "좁은 공간 OK";

@@ -1,8 +1,6 @@
--- 로컬·테스트 전용 샘플 영상 라벨. 국민체력100 유튜브 채널의 공개 영상 ID 예시이며 라벨 값은 데모용 임의값이다 (labeled_by = 'SEED').
+-- 로컬·테스트 전용 가짜 영상 4편(labeled_by = 'SEED'). id 는 실제 YouTube 영상이 아니고 라벨 값도 데모용 임의값이다.
+-- 실제 AI 영상 48편(IdpXx2gm90o 포함)은 db/migration 의 V132 가 모든 프로필에 넣는다. 여기는 시험·데모용 행만 둔다.
 -- 프로필 상호작용·미션이 참조할 수 있으므로 삭제하지 않고, 없는 행만 넣는다.
-insert into exercise_videos (video_id, title, channel_name, channel_type, duration_sec, age_from, age_to, factors, intensity, space, noise, equipment, labeled_by, label_model, collected_at)
-select 'IdpXx2gm90o', '초등학생의 기초체력향상과 운동능력발달을 위한 운동', '국민체력100', 'PUBLIC', 600, 7, 12, '유연성,근지구력', 'LOW', 'SMALL_ROOM', 'QUIET', null, 'SEED', null, timestamp with time zone '2026-09-01 00:00:00+09'
-where not exists (select 1 from exercise_videos where video_id = 'IdpXx2gm90o');
 insert into exercise_videos (video_id, title, channel_name, channel_type, duration_sec, age_from, age_to, factors, intensity, space, noise, equipment, labeled_by, label_model, collected_at)
 select 'sample00002', '가족이 함께하는 거실 5분 스트레칭', '국민체력100', 'PUBLIC', 300, 4, 64, '유연성', 'LOW', 'SMALL_ROOM', 'QUIET', null, 'SEED', null, timestamp with time zone '2026-09-01 00:00:00+09'
 where not exists (select 1 from exercise_videos where video_id = 'sample00002');
