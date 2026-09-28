@@ -42,6 +42,12 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
     }
 
     @Override
+    public @Nullable FitnessTest findEarliestByProfileId(UUID profileId) {
+        FitnessTestEntity entity = jpa.findFirstByProfileIdOrderByTestedOnAsc(profileId);
+        return entity == null ? null : toDomain(entity);
+    }
+
+    @Override
     public List<FitnessTest> findRecentByProfileId(UUID profileId, int limit) {
         return jpa.findByProfileIdOrderByTestedOnDesc(profileId, Limit.of(limit)).stream()
                 .map(FitnessTestRepositoryAdapter::toDomain)
