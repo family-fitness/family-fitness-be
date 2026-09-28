@@ -38,7 +38,14 @@ public class DevAutoLoginFilter extends OncePerRequestFilter {
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
         if ((authorization == null || authorization.isBlank())
                 && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UUID userId = headerUserId(request.getHeader(DEV_USER_HEADER));
+            UUID userId;
+            try {
+                userId = headerUserId(request.getHeader(DEV_USER_HEADER));
+            } catch (IllegalArgumentException e) {
+                // UUID 가 아닌 헤더는 호출자 잘못이다. sendError 는 /error 로 넘어가 400 BAD_REQUEST 봉투로 나간다.
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
             Jwt jwt = Jwt.withTokenValue("dev-auto-login")
                     .header("alg", "none")
                     .subject(userId.toString())

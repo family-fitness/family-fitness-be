@@ -216,7 +216,7 @@ class VideoServiceTest {
                                         new VideoProgressCommand(
                                                 family.parent.profileId(), 1.0, 600, mission.missionId())))
                         .getCode())
-                .isEqualTo("NOT_PARTICIPANT");
+                .isEqualTo("NOT_A_PARTICIPANT");
     }
 
     private static List<String> videoIds(VideoListView view) {
