@@ -2,7 +2,9 @@ package kr.ac.kookmin.familyfitness.coaching.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,5 +67,65 @@ class MissionSpanTest {
         MissionSpan partly = new MissionSpan(
                 today.minusDays(6), today.minusDays(3), TargetMetric.TIMER_MINUTES, true, Set.of(today.minusDays(5)));
         assertThat(partly.standingDays(today)).containsExactly(today.minusDays(5));
+    }
+
+    @Test
+    @DisplayName("캘린더에 싣는 날은 잡힌 날과 같은 규칙이고, 걸음수 미션도 싣는다(목 dayLogFor 는 지표로 거르지 않는다)")
+    void 캘린더는_걸음수도_싣는다() {
+        MissionSpan steps =
+                new MissionSpan(today.minusDays(1), today.minusDays(1), TargetMetric.STEPS, false, Set.of());
+        assertThat(steps.calendarDays(today)).containsExactly(today.minusDays(1));
+        assertThat(steps.standingDays(today)).isEmpty();
+
+        MissionSpan multi = new MissionSpan(
+                today.minusDays(6), today.plusDays(1), TargetMetric.TIMER_MINUTES, true, Set.of(today.minusDays(4)));
+        assertThat(multi.calendarDays(today)).containsExactlyElementsOf(multi.standingDays(today));
+    }
+
+    @Test
+    @DisplayName("of — 칸 끝 기록이 없는 옛 미션을 완료했으면 완료 시각의 KST 날짜를 끝낸 날로 본다, 기록이 있으면 기록만")
+    void of_는_옛_완료를_끝낸_날로_본다() {
+        ZoneId kst = ZoneId.of("Asia/Seoul");
+        // 2026-09-21 23:30 KST = 2026-09-21T14:30Z
+        Instant verifiedAt = Instant.parse("2026-09-21T14:30:00Z");
+        MissionSpan legacy = MissionSpan.of(
+                today.minusDays(6),
+                today.minusDays(1),
+                TargetMetric.TIMER_MINUTES,
+                true,
+                true,
+                verifiedAt,
+                Set.of(),
+                kst);
+        assertThat(legacy.doneOn()).containsExactly(LocalDate.of(2026, 9, 21));
+        assertThat(legacy.started()).isTrue();
+
+        MissionSpan recorded = MissionSpan.of(
+                today.minusDays(6),
+                today.minusDays(1),
+                TargetMetric.TIMER_MINUTES,
+                true,
+                true,
+                verifiedAt,
+                Set.of(today.minusDays(5)),
+                kst);
+        assertThat(recorded.doneOn()).containsExactly(today.minusDays(5));
+
+        MissionSpan untouched = MissionSpan.of(
+                today.minusDays(6), today.minusDays(1), TargetMetric.TIMER_MINUTES, false, false, null, Set.of(), kst);
+        assertThat(untouched.started()).isFalse();
+        assertThat(untouched.lastDoneOn()).isNull();
+    }
+
+    @Test
+    @DisplayName("lastDoneOn — 칸을 끝낸 날 가운데 가장 늦은 날")
+    void 마지막으로_끝낸_날() {
+        MissionSpan span = new MissionSpan(
+                today.minusDays(6),
+                today,
+                TargetMetric.TIMER_MINUTES,
+                true,
+                Set.of(today.minusDays(5), today.minusDays(2), today.minusDays(4)));
+        assertThat(span.lastDoneOn()).isEqualTo(today.minusDays(2));
     }
 }

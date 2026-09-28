@@ -160,10 +160,7 @@ public class MissionPersistenceAdapter implements MissionRepository {
                 .toList();
     }
 
-    /**
-     * 참여 행 하나 + 그 사람이 칸을 끝낸 날 → 그 사람 입장의 미션 기간 · 진행. 칸 끝 기록이 없는 옛 미션을 완료했으면 완료
-     * 시각(verifiedAt)의 KST 날짜 하나를 끝낸 날로 본다.
-     */
+    /** 참여 행 하나 + 그 사람이 칸을 끝낸 날 → 그 사람 입장의 미션 기간 · 진행({@link MissionSpan#of}). */
     private MissionSpan span(
             LocalDate startsOn,
             LocalDate endsOn,
@@ -172,17 +169,15 @@ public class MissionPersistenceAdapter implements MissionRepository {
             BigDecimal progress,
             @Nullable Instant verifiedAt,
             Set<LocalDate> doneOn) {
-        boolean completed = ParticipantStatus.valueOf(status) == ParticipantStatus.COMPLETED;
-        Set<LocalDate> days = doneOn;
-        if (days.isEmpty() && completed && verifiedAt != null) {
-            days = Set.of(LocalDate.ofInstant(verifiedAt, zone));
-        }
-        return new MissionSpan(
+        return MissionSpan.of(
                 startsOn,
                 endsOn,
                 TargetMetric.valueOf(targetMetric),
-                !days.isEmpty() || completed || progress.signum() > 0,
-                days);
+                ParticipantStatus.valueOf(status) == ParticipantStatus.COMPLETED,
+                progress.signum() > 0,
+                verifiedAt,
+                doneOn,
+                zone);
     }
 
     /** 참여자 · 칸을 missionId IN 으로 한 번씩만 읽는다(미션마다 따로 읽지 않는다). */
