@@ -21,4 +21,14 @@ public interface MissionParticipantJpaRepository extends JpaRepository<MissionPa
               and m.startsOn <= :to and m.endsOn >= :from
             """)
     List<MissionSpanRow> findSpans(UUID profileId, LocalDate from, LocalDate to);
+
+    /** {@link #findSpans} 를 여러 프로필에 한 번에. 미션을 만든 시각을 같이 읽는다(리그 달성률의 잡힌 날). */
+    @Query("""
+            select new kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence.ParticipantSpanRow(
+                p.id.profileId, m.startsOn, m.endsOn, m.targetMetric, p.status, p.progress, p.verifiedAt, m.createdAt)
+            from MissionParticipantEntity p, MissionEntity m
+            where m.id = p.id.missionId and p.id.profileId in :profileIds
+              and m.startsOn <= :to and m.endsOn >= :from
+            """)
+    List<ParticipantSpanRow> findParticipantSpans(Collection<UUID> profileIds, LocalDate from, LocalDate to);
 }

@@ -2,8 +2,11 @@ package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.activity.application.port.RestCardRepository;
 import kr.ac.kookmin.familyfitness.activity.domain.RestCard;
 import kr.ac.kookmin.familyfitness.shared.persistence.SqlErrors;
@@ -54,6 +57,14 @@ public class RestCardPersistenceAdapter implements RestCardRepository {
     @Override
     public List<LocalDate> restDatesBetween(UUID familyId, LocalDate from, LocalDate to) {
         return jpa.restDatesBetween(familyId, from, to);
+    }
+
+    @Override
+    public Map<UUID, List<LocalDate>> restDatesOf(Collection<UUID> familyIds, LocalDate from, LocalDate to) {
+        return jpa.findByFamiliesBetween(familyIds, from, to).stream()
+                .collect(Collectors.groupingBy(
+                        RestCardEntity::getFamilyId,
+                        Collectors.mapping(RestCardEntity::getRestDate, Collectors.toUnmodifiableList())));
     }
 
     private static RestCard toDomain(RestCardEntity entity) {

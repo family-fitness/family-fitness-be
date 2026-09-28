@@ -353,4 +353,35 @@ class RestCardWebTest {
         assertThat(restDays.restDaysBetween(familyId, lastMonth.atDay(20), thisMonth.atDay(3)))
                 .containsExactly(lastMonth.atEndOfMonth(), thisMonth.atDay(2));
     }
+
+    @Test
+    @DisplayName("RestDayQuery 는 여러 가족의 쉬는 날을 한 번에 준다 — 가족마다 오름차순, 쉬는 날이 없는 가족은 빈 목록")
+    void RestDayQuery는_여러_가족을_한_번에_준다() {
+        UUID neighbor = rows.family("이웃");
+        UUID neighborParent = rows.profile(neighbor, LocalDate.of(1985, 1, 1), Sex.M, ProfileRole.PARENT, "아빠");
+        UUID quiet = rows.family("쉬는 날 없는 집");
+        YearMonth lastMonth = thisMonth.minusMonths(1);
+        storeCard(thisMonth.atDay(2), 1);
+        storeCard(lastMonth.atDay(28), 1);
+        jdbc.update(
+                "insert into rest_cards (id, family_id, rest_date, rest_month, card_no, created_by, created_at)"
+                        + " values (?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(),
+                neighbor,
+                thisMonth.atDay(1),
+                thisMonth.atDay(1),
+                1,
+                neighborParent,
+                Instant.now());
+
+        Map<UUID, List<LocalDate>> days = restDays.restDaysOfFamilies(
+                List.of(familyId, neighbor, quiet), lastMonth.atDay(20), thisMonth.atDay(3));
+
+        assertThat(days).containsOnlyKeys(familyId, neighbor, quiet);
+        assertThat(days.get(familyId))
+                .containsExactlyElementsOf(restDays.restDaysBetween(familyId, lastMonth.atDay(20), thisMonth.atDay(3)))
+                .containsExactly(lastMonth.atDay(28), thisMonth.atDay(2));
+        assertThat(days.get(neighbor)).containsExactly(thisMonth.atDay(1));
+        assertThat(days.get(quiet)).isEmpty();
+    }
 }

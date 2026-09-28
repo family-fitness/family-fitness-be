@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.outbound.persistence;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -11,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProfileJpaRepository extends JpaRepository<ProfileEntity, UUID> {
     List<ProfileEntity> findByFamilyIdOrderByCreatedAtAscIdAsc(UUID familyId);
+
+    List<ProfileEntity> findByFamilyIdInOrderByCreatedAtAscIdAsc(Collection<UUID> familyIds);
 
     List<ProfileEntity> findByUserIdOrderByCreatedAtAscIdAsc(UUID userId);
 

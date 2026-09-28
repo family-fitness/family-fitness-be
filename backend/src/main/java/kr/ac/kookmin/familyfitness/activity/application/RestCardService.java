@@ -5,7 +5,11 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.RestDayQuery;
 import kr.ac.kookmin.familyfitness.activity.application.port.ActivityDailyRepository;
@@ -96,10 +100,25 @@ public class RestCardService implements RestDayQuery {
     @Override
     @Transactional(readOnly = true)
     public List<LocalDate> restDaysBetween(UUID familyId, LocalDate from, LocalDate to) {
+        requireRange(from, to);
+        return cards.restDatesBetween(familyId, from, to);
+    }
+
+    /** 쿼리 한 번(IN)으로 읽는다. */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, List<LocalDate>> restDaysOfFamilies(Collection<UUID> familyIds, LocalDate from, LocalDate to) {
+        requireRange(from, to);
+        Map<UUID, List<LocalDate>> out = new LinkedHashMap<>();
+        familyIds.forEach(it -> out.put(it, List.of()));
+        if (!familyIds.isEmpty()) out.putAll(cards.restDatesOf(familyIds, from, to));
+        return Collections.unmodifiableMap(out);
+    }
+
+    private static void requireRange(LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {
             throw new IllegalArgumentException("기간의 끝이 시작보다 앞섭니다: " + from + " ~ " + to);
         }
-        return cards.restDatesBetween(familyId, from, to);
     }
 
     /** 한 번 써 본다. 다른 요청에 자리를 뺏겼으면 이 트랜잭션을 되돌리고 null — 다음 시도가 새로 읽는다. */

@@ -1,7 +1,11 @@
 package kr.ac.kookmin.familyfitness.activity.api;
 
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface ActivityQuery {
@@ -19,4 +23,14 @@ public interface ActivityQuery {
 
     /** 지금까지 서버가 잰 분이 있는 날 수와 분 합. 기간 제한이 없다 — 줄지 않는 값(FE 요청서 7장)이다. */
     VerifiedSummary verifiedSummary(UUID profileId);
+
+    /**
+     * 여러 프로필의 {@link #verifiedDays} 를 한 번에 읽는다(리그 방처럼 여러 아이를 같이 셀 때). 요청한 프로필마다 한 줄이고,
+     * 움직인 날이 없으면 빈 목록이다. 기본 구현은 프로필마다 {@link #verifiedDays} 를 부른다.
+     */
+    default Map<UUID, List<DailyMinutes>> verifiedDaysOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        Map<UUID, List<DailyMinutes>> out = new LinkedHashMap<>();
+        for (UUID profileId : profileIds) out.put(profileId, verifiedDays(profileId, from, to));
+        return Collections.unmodifiableMap(out);
+    }
 }

@@ -1,8 +1,10 @@
 package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +16,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
@@ -91,16 +94,43 @@ public class MissionPersistenceAdapter implements MissionRepository {
     @Override
     public List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to) {
         return participants.findSpans(profileId, from, to).stream()
-                .map(it -> {
-                    boolean completed = ParticipantStatus.valueOf(it.status()) == ParticipantStatus.COMPLETED;
-                    return new MissionSpan(
-                            it.startsOn(),
-                            it.endsOn(),
-                            TargetMetric.valueOf(it.targetMetric()),
-                            completed || it.progress().signum() > 0,
-                            completed ? it.verifiedAt() : null);
-                })
+                .map(it -> span(
+                        it.startsOn(), it.endsOn(), it.targetMetric(), it.status(), it.progress(), it.verifiedAt()))
                 .toList();
+    }
+
+    @Override
+    public List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (profileIds.isEmpty()) return List.of();
+        return participants.findParticipantSpans(profileIds, from, to).stream()
+                .map(it -> new ParticipantSpan(
+                        it.profileId(),
+                        span(
+                                it.startsOn(),
+                                it.endsOn(),
+                                it.targetMetric(),
+                                it.status(),
+                                it.progress(),
+                                it.verifiedAt()),
+                        it.missionCreatedAt()))
+                .toList();
+    }
+
+    /** 참여 행 하나 → 그 사람 입장의 미션 기간 · 진행. 한 번이라도 진행했으면 started, 완료됐으면 그 시각. */
+    private static MissionSpan span(
+            LocalDate startsOn,
+            LocalDate endsOn,
+            String targetMetric,
+            String status,
+            BigDecimal progress,
+            @Nullable Instant verifiedAt) {
+        boolean completed = ParticipantStatus.valueOf(status) == ParticipantStatus.COMPLETED;
+        return new MissionSpan(
+                startsOn,
+                endsOn,
+                TargetMetric.valueOf(targetMetric),
+                completed || progress.signum() > 0,
+                completed ? verifiedAt : null);
     }
 
     /** 참여자 · 칸을 missionId IN 으로 한 번씩만 읽는다(미션마다 따로 읽지 않는다). */

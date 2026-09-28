@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.coaching.support;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -8,6 +9,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
+import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantSpan;
 import org.jspecify.annotations.Nullable;
 
 public class InMemoryMissionRepository implements MissionRepository {
@@ -60,6 +62,25 @@ public class InMemoryMissionRepository implements MissionRepository {
                             me.isCompleted() || me.getProgress() > 0,
                             me.isCompleted() ? me.getVerifiedAt() : null);
                 })
+                .toList();
+    }
+
+    @Override
+    public List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        return profileIds.stream()
+                .distinct()
+                .flatMap(profileId -> missions.values().stream()
+                        .filter(it -> it.isParticipant(profileId) && it.overlaps(from, to))
+                        .map(it -> {
+                            MissionParticipant me = it.participantOf(profileId);
+                            MissionSpan span = new MissionSpan(
+                                    it.getStartsOn(),
+                                    it.getEndsOn(),
+                                    it.getTargetMetric(),
+                                    me.isCompleted() || me.getProgress() > 0,
+                                    me.isCompleted() ? me.getVerifiedAt() : null);
+                            return new ParticipantSpan(profileId, span, it.getCreatedAt());
+                        }))
                 .toList();
     }
 }
