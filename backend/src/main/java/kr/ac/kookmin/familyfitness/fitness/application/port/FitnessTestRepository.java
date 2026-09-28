@@ -17,6 +17,10 @@ public interface FitnessTestRepository {
     @Nullable
     FitnessTest findLatestByProfileId(UUID profileId);
 
+    /** testedOn 이 가장 이른 회차. */
+    @Nullable
+    FitnessTest findEarliestByProfileId(UUID profileId);
+
     /** testedOn 이 늦은 회차부터 최대 limit 개. 없으면 빈 목록. */
     List<FitnessTest> findRecentByProfileId(UUID profileId, int limit);
 

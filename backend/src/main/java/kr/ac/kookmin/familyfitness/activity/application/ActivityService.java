@@ -3,12 +3,15 @@ package kr.ac.kookmin.familyfitness.activity.application;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityRecorder;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
+import kr.ac.kookmin.familyfitness.activity.api.DailyMinutes;
+import kr.ac.kookmin.familyfitness.activity.api.VerifiedSummary;
 import kr.ac.kookmin.familyfitness.activity.application.port.ActivityDailyRepository;
 import kr.ac.kookmin.familyfitness.activity.domain.DailyActivityRecord;
 import org.springframework.stereotype.Service;
@@ -72,5 +75,20 @@ public class ActivityService implements ActivityRecorder, ActivityQuery {
     @Transactional(readOnly = true)
     public int activeMinutesOn(UUID profileId, LocalDate activityDate) {
         return repository.activeMinutesOn(profileId, activityDate);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DailyMinutes> verifiedDays(UUID profileId, LocalDate from, LocalDate to) {
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("기간의 끝이 시작보다 앞섭니다: " + from + " ~ " + to);
+        }
+        return repository.verifiedDays(profileId, from, to);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public VerifiedSummary verifiedSummary(UUID profileId) {
+        return repository.verifiedSummary(profileId);
     }
 }
