@@ -240,8 +240,13 @@ public class Mission {
         }
     }
 
-    /** 승인된 제안 항목의 복사. 제안에 기간이 없으면 실행의 주(월~일)를 쓴다. */
+    /**
+     * 승인된 제안 항목의 복사. 제안에 기간이 없으면 실행의 주(월~일)를 쓴다.
+     * 칸은 제안의 차례 그대로 옮긴다(결정 16) — 칸 없는 제안은 칸 없는 미션이다. 칸 분의 합 = 목표 분 규칙은 직접 만들기와 같다.
+     */
     public static Mission fromProposal(UUID id, CoachRun run, CoachProposalItem item, UUID createdBy, Instant at) {
+        TargetMetric targetMetric = TargetMetric.valueOf(item.targetMetric());
+        requireSessionTarget(targetMetric, item.targetValue(), item.sessions());
         Set<UUID> seen = new LinkedHashSet<>();
         List<MissionParticipant> participants = new ArrayList<>();
         for (ProposalParticipant participant : item.participants()) {
@@ -257,7 +262,7 @@ public class Mission {
                 item.title(),
                 item.description(),
                 MissionOrigin.COACH,
-                TargetMetric.valueOf(item.targetMetric()),
+                targetMetric,
                 item.targetValue(),
                 video == null ? null : new MissionVideo(video.videoId(), video.startSec()),
                 item.rationale(),
@@ -266,7 +271,7 @@ public class Mission {
                 createdBy,
                 at,
                 participants,
-                List.of());
+                item.sessions());
     }
 
     public static Mission reconstitute(

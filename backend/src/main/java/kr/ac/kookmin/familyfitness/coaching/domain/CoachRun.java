@@ -51,6 +51,10 @@ public class CoachRun {
     private @Nullable String failureReason;
     private boolean aiRefused;
     private @Nullable String aiRefusalReason;
+
+    /** FAILED 의 까닭(화면용 코드). FAILED 가 아니면 null. failureReason 은 같은 실패의 개발자용 원문이다. */
+    private @Nullable CoachRunFailureCode failureCode;
+
     private Instant updatedAt;
 
     private CoachRun(
@@ -79,6 +83,7 @@ public class CoachRun {
             @Nullable String failureReason,
             boolean aiRefused,
             @Nullable String aiRefusalReason,
+            @Nullable CoachRunFailureCode failureCode,
             Instant updatedAt) {
         this.id = id;
         this.familyId = familyId;
@@ -105,6 +110,7 @@ public class CoachRun {
         this.failureReason = failureReason;
         this.aiRefused = aiRefused;
         this.aiRefusalReason = aiRefusalReason;
+        this.failureCode = failureCode;
         this.updatedAt = updatedAt;
     }
 
@@ -229,6 +235,10 @@ public class CoachRun {
         return aiRefusalReason;
     }
 
+    public @Nullable CoachRunFailureCode getFailureCode() {
+        return failureCode;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }
@@ -295,15 +305,24 @@ public class CoachRun {
         updatedAt = at;
     }
 
-    public void fail(String reason, Instant at) {
-        fail(reason, at, this.steps, false, null);
+    public void fail(CoachRunFailureCode code, String reason, Instant at) {
+        fail(code, reason, at, this.steps, false, null);
     }
 
-    /** AI 거부·실패·타임아웃·예외. 사유만 남기고 끝낸다. 같은 (프로필, 날짜)로 새 실행을 다시 시작할 수 있다. */
+    /**
+     * AI 거부 · 대체 편성도 못 한 실패 · 예외. 까닭 코드와 개발자용 원문을 남기고 끝낸다.
+     * 같은 (프로필, 날짜)로 새 실행을 다시 시작할 수 있다.
+     */
     public void fail(
-            String reason, Instant at, List<CoachStep> steps, boolean refused, @Nullable String refusalReason) {
+            CoachRunFailureCode code,
+            String reason,
+            Instant at,
+            List<CoachStep> steps,
+            boolean refused,
+            @Nullable String refusalReason) {
         requireRunning();
         this.steps = steps;
+        failureCode = code;
         failureReason = take(reason, MAX_REASON);
         aiRefused = refused;
         aiRefusalReason = refusalReason == null ? null : take(refusalReason, MAX_REFUSAL_REASON);
@@ -366,6 +385,7 @@ public class CoachRun {
                 null,
                 false,
                 null,
+                null,
                 at);
     }
 
@@ -410,6 +430,7 @@ public class CoachRun {
                 null,
                 false,
                 null,
+                null,
                 at);
     }
 
@@ -440,6 +461,7 @@ public class CoachRun {
             @Nullable String failureReason,
             boolean aiRefused,
             @Nullable String aiRefusalReason,
+            @Nullable CoachRunFailureCode failureCode,
             Instant updatedAt) {
         return new CoachRun(
                 id,
@@ -467,6 +489,7 @@ public class CoachRun {
                 failureReason,
                 aiRefused,
                 aiRefusalReason,
+                failureCode,
                 updatedAt);
     }
 }

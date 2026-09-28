@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.closeTo;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -22,7 +23,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -33,6 +33,7 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
 import kr.ac.kookmin.familyfitness.activity.api.DailyActivity;
 import kr.ac.kookmin.familyfitness.coaching.application.AppTime;
+import kr.ac.kookmin.familyfitness.coaching.application.CoachRunExecutorConfig;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunPipeline;
 import kr.ac.kookmin.familyfitness.coaching.application.StaleCoachRunSweeper;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
@@ -63,16 +64,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.scheduling.annotation.AsyncConfigurer;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -83,20 +83,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * H2 + Flyway(시드) 위에서 코치 실행 → 승인 → 미션 → 활동 → 영상 → 대화 → 주간 요약의 전체 흐름.
  * identity·fitness·activity 는 이 워크트리에 구현이 없으므로 공개 포트를 {@link MockitoBean} 으로 대신하고,
- * 비동기 실행기는 동기 {@link SyncTaskExecutor} 로 바꿔 커밋 직후(AFTER_COMMIT) 결정적으로 끝나게 한다.
+ * 편성 전용 스레드 풀은 동기 {@link SyncTaskExecutor} 로 바꿔 커밋 직후(AFTER_COMMIT) 결정적으로 끝나게 한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(CoachingFlowWebTest.SyncAsync.class)
 @TestPropertySource(properties = {"app.coach.poll-interval-ms=0", "app.coach.max-polls=3"})
 class CoachingFlowWebTest {
-    @TestConfiguration(proxyBeanMethods = false)
-    static class SyncAsync implements AsyncConfigurer {
-        @Override
-        public Executor getAsyncExecutor() {
-            return new SyncTaskExecutor();
-        }
+    @TestBean(name = CoachRunExecutorConfig.EXECUTOR, methodName = "syncCoachRunExecutor")
+    TaskExecutor coachRunTaskExecutor;
+
+    static TaskExecutor syncCoachRunExecutor() {
+        return new SyncTaskExecutor();
     }
 
     @Autowired
@@ -255,10 +253,13 @@ class CoachingFlowWebTest {
                 .andReturn();
         String runId = extract("\"coachRunId\":\"([^\"]+)\"", startResult);
 
-        // 조회: 부모는 승인 가능, 그 아이의 그날 하루짜리 제안 하나, 참여자는 아이 + 요청한 보호자(동반자), 영상 제목은 V132 값
+        // 조회: 부모는 승인 가능, 그 아이의 그날 하루짜리 제안 하나, 참여자는 아이 + 요청한 보호자(동반자), 영상 제목은 V132 값.
+        // 칸은 스텁의 20분 = 준비 2 · 본 4 · 정리 1 클립, 분은 1 · 1 · 5 · 4 · 4 · 4 · 1, 구간 제목은 V132 클립 표 값
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.failureCode").value(nullValue()))
+                .andExpect(jsonPath("$.notices", hasSize(0)))
                 .andExpect(jsonPath("$.canApprove").value(true))
                 .andExpect(jsonPath("$.missionCount").value(0))
                 .andExpect(jsonPath("$.weekStart").value(time.thisWeekStart().toString()))
@@ -272,10 +273,9 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.proposals[0].endDate").value(today.toString()))
                 .andExpect(jsonPath("$.proposals[0].targetMetric").value("TIMER_MINUTES"))
                 .andExpect(jsonPath("$.proposals[0].targetValue").value(20))
-                .andExpect(jsonPath("$.proposals[0].video.videoId").value("IdpXx2gm90o"))
-                .andExpect(jsonPath("$.proposals[0].video.title")
-                        .value("초등학생의 기초체력향상과 운동능력발달을 위한 운동! 같이해봐요! #국민체력100 #유소년 #어린이운동"))
-                .andExpect(jsonPath("$.proposals[0].video.startSec").value(96))
+                .andExpect(jsonPath("$.proposals[0].video.videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].video.title").value("[👦🏻유소년] 성장기 학생들을 위한 근력 운동 프로그램 (30min)"))
+                .andExpect(jsonPath("$.proposals[0].video.startSec").value(144))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].participants[0].profileId")
                         .value(childId().toString()))
@@ -283,7 +283,25 @@ class CoachingFlowWebTest {
                         .value(parentId().toString()))
                 .andExpect(jsonPath("$.proposals[0].participants[1].coachRole").value("동반자"))
                 .andExpect(jsonPath("$.proposals[0].citations", hasSize(2)))
-                .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:IdpXx2gm90o"));
+                .andExpect(jsonPath("$.proposals[0].citations[1].chunkId").value("video:Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].sessions", hasSize(7)))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].position").value(contains(1, 2, 3, 4, 5, 6, 7)))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].phase")
+                        .value(contains("WARMUP", "WARMUP", "MAIN", "MAIN", "MAIN", "MAIN", "COOLDOWN")))
+                .andExpect(jsonPath("$.proposals[0].sessions[*].minutes").value(contains(1, 1, 5, 4, 4, 4, 1)))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].factor").value("유연성"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.startSec").value(144))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.endSec").value(182))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].completed").doesNotExist());
+        assertThat(jdbc.sql(
+                                "select count(*) from coach_run_proposal_sessions where coach_run_id = ? and item_position = 0")
+                        .param(UUID.fromString(runId))
+                        .query(Integer.class)
+                        .single())
+                .isEqualTo(7);
         mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.canApprove").value(false));
@@ -315,7 +333,12 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].serverVerifiable").value(true))
                 // AI 자료에 영상 길이가 없어 V132 는 길이를 비워 둔다
                 .andExpect(jsonPath("$.missions[0].video.durationSec", nullValue()))
-                .andExpect(jsonPath("$.missions[0].sessions", hasSize(0)))
+                // 승인은 제안 칸을 차례 그대로 복사한다
+                .andExpect(jsonPath("$.missions[0].targetValue").value(20))
+                .andExpect(jsonPath("$.missions[0].sessions", hasSize(7)))
+                .andExpect(jsonPath("$.missions[0].sessions[*].minutes").value(contains(1, 1, 5, 4, 4, 4, 1)))
+                .andExpect(jsonPath("$.missions[0].sessions[0].clip.title").value("넙다리 안쪽 늘리기 (나비자세)"))
+                .andExpect(jsonPath("$.missions[0].sessions[6].phase").value("COOLDOWN"))
                 .andExpect(jsonPath("$.missions[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.missions[0].participants[?(@.profileId=='" + childId() + "')].name")
                         .value("민준"))
@@ -568,6 +591,18 @@ class CoachingFlowWebTest {
                         .query(String.class)
                         .single())
                 .startsWith("stale: 15초");
+        assertThat(jdbc.sql("select failure_code from coach_runs where id in (?, ?)")
+                        .param(stuckToday.getId())
+                        .param(stuckTomorrow.getId())
+                        .query(String.class)
+                        .list())
+                .containsExactly("STALE", "STALE");
+        mockMvc.perform(get("/api/v1/coach/runs/" + stuckTomorrow.getId())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(family.parentUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"))
+                .andExpect(jsonPath("$.failureCode").value("STALE"))
+                .andExpect(jsonPath("$.notices", hasSize(0)));
         assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ? and lock_key is not null")
                         .param(familyId())
                         .query(Integer.class)

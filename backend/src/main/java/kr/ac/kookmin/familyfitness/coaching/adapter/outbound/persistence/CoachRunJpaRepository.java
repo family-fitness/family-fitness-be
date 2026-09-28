@@ -13,22 +13,26 @@ import org.springframework.transaction.annotation.Transactional;
 public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUID> {
     boolean existsByLockKey(String lockKey);
 
-    /** 멈춘 RUNNING 정리. 스케줄 스레드에서 트랜잭션 없이 불리므로 이 문장이 스스로 트랜잭션을 연다. 잠금도 푼다. */
+    /**
+     * 멈춘 RUNNING 정리(까닭 코드 STALE). 스케줄 스레드에서 트랜잭션 없이 불리므로 이 문장이 스스로 트랜잭션을 연다. 잠금도 푼다.
+     */
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update CoachRunEntity r
-               set r.status = 'FAILED', r.failureReason = :reason, r.lockKey = null, r.updatedAt = :at
+               set r.status = 'FAILED', r.failureCode = 'STALE', r.failureReason = :reason, r.lockKey = null,
+                   r.updatedAt = :at
              where r.status = 'RUNNING' and r.createdAt < :before
             """)
     int failRunningCreatedBefore(
             @Param("before") Instant before, @Param("reason") String reason, @Param("at") Instant at);
 
-    /** 한 (프로필, 날짜) 잠금을 잡은 멈춘 RUNNING 만 정리한다. 편성 시작 트랜잭션 안에서 부른다. */
+    /** 한 (프로필, 날짜) 잠금을 잡은 멈춘 RUNNING 만 정리한다(까닭 코드 STALE). 편성 시작 트랜잭션 안에서 부른다. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update CoachRunEntity r
-               set r.status = 'FAILED', r.failureReason = :reason, r.lockKey = null, r.updatedAt = :at
+               set r.status = 'FAILED', r.failureCode = 'STALE', r.failureReason = :reason, r.lockKey = null,
+                   r.updatedAt = :at
              where r.lockKey = :lockKey and r.status = 'RUNNING' and r.createdAt < :before
             """)
     int failStaleLock(
@@ -67,8 +71,9 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
     @Query("""
             update CoachRunEntity r
                set r.status = :status, r.summary = :summary, r.stepsJson = :stepsJson,
-                   r.proposalJson = :proposalJson, r.modelName = :modelName, r.failureReason = :failureReason,
-                   r.aiRefused = :aiRefused, r.aiRefusalReason = :aiRefusalReason, r.lockKey = null, r.updatedAt = :at
+                   r.proposalJson = :proposalJson, r.modelName = :modelName, r.failureCode = :failureCode,
+                   r.failureReason = :failureReason, r.aiRefused = :aiRefused, r.aiRefusalReason = :aiRefusalReason,
+                   r.lockKey = null, r.updatedAt = :at
              where r.id = :id and r.status = 'RUNNING'
             """)
     int finishIfRunning(
@@ -78,6 +83,7 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
             @Param("stepsJson") @Nullable String stepsJson,
             @Param("proposalJson") @Nullable String proposalJson,
             @Param("modelName") @Nullable String modelName,
+            @Param("failureCode") @Nullable String failureCode,
             @Param("failureReason") @Nullable String failureReason,
             @Param("aiRefused") boolean aiRefused,
             @Param("aiRefusalReason") @Nullable String aiRefusalReason,

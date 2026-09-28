@@ -16,6 +16,9 @@ public class FakeActivity implements ActivityRecorder, ActivityQuery {
 
     public final Map<Key, DailyActivity> rows = new LinkedHashMap<>();
 
+    /** 합계 조회 횟수 — 미션 진행도를 몇 번 다시 셌는지 본다. */
+    public int totalsCalls = 0;
+
     @Override
     public DailyActivity overwriteSteps(UUID profileId, LocalDate activityDate, int steps) {
         DailyActivity row = new DailyActivity(profileId, activityDate, ActivitySource.MANUAL, steps, 0);
@@ -35,6 +38,7 @@ public class FakeActivity implements ActivityRecorder, ActivityQuery {
 
     @Override
     public ActivityTotals totals(UUID profileId, LocalDate from, LocalDate to) {
+        totalsCalls++;
         var inRange = rows.values().stream()
                 .filter(it -> it.profileId().equals(profileId)
                         && !it.activityDate().isBefore(from)

@@ -13,7 +13,9 @@ import javax.crypto.spec.SecretKeySpec;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleAuthFailedException;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentity;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentityProvider;
+import kr.ac.kookmin.familyfitness.identity.domain.RefreshToken;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
+import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.security.InvalidRefreshTokenException;
@@ -61,9 +63,17 @@ class AuthServiceTest {
     }
 
     private final FakeGoogle google = new FakeGoogle();
+    private final InMemoryRefreshTokenRepository refreshTokens = new InMemoryRefreshTokenRepository();
 
-    private final AuthService service =
-            new AuthService(new UserRegistrationService(users), google, users, families, summaries, tokenIssuer);
+    private final AuthService service = new AuthService(
+            new UserRegistrationService(users),
+            google,
+            users,
+            families,
+            summaries,
+            tokenIssuer,
+            refreshTokens,
+            identityClock);
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
 
     @Test
@@ -140,6 +150,114 @@ class AuthServiceTest {
 
         String orphan = tokenIssuer.issue(UUID.randomUUID()).refreshToken();
         assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(orphan));
+        // 서명은 맞지만 발급 기록이 없는 토큰(이 표가 생기기 전에 받은 토큰 등)도 거부한다.
+        String unrecorded = tokenIssuer.issue(login.session().userId()).refreshToken();
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(unrecorded));
+    }
+
+    private UUID jti(String refreshToken) {
+        return tokenIssuer.readRefreshToken(refreshToken).tokenId();
+    }
+
+    @Test
+    @DisplayName("리프레시는 새 리프레시 토큰을 주고, 받은 토큰은 폐기하며 다음 토큰을 같은 묶음에 기록한다")
+    void 리프레시는_새_리프레시_토큰을_주고_받은_토큰은_폐기하며_다음_토큰을_같은_묶음에_기록한다() {
+        AuthResult login = service.devLogin("dev-parent", null, null);
+        String first = login.tokens().refreshToken();
+        assertThat(refreshTokens.tokens).containsOnlyKeys(jti(first));
+
+        String second = service.refresh(first).tokens().refreshToken();
+
+        assertThat(second).isNotEqualTo(first);
+        RefreshToken old = refreshTokens.tokens.get(jti(first));
+        RefreshToken next = refreshTokens.tokens.get(jti(second));
+        assertThat(old.revokedAt()).isEqualTo(clock.instant());
+        assertThat(old.replacedBy()).isEqualTo(jti(second));
+        assertThat(next.familyId()).isEqualTo(old.familyId());
+        assertThat(next.userId()).isEqualTo(login.session().userId());
+        assertThat(next.revoked()).isFalse();
+        assertThat(next.expiresAt()).isEqualTo(clock.instant().plus(Duration.ofDays(30)));
+        assertThat(service.refresh(second).session().userId())
+                .isEqualTo(login.session().userId());
+    }
+
+    @Test
+    @DisplayName("폐기된 리프레시 토큰이 다시 오면 그 묶음을 모두 폐기하고, 다른 로그인의 묶음은 그대로 둔다")
+    void 폐기된_리프레시_토큰이_다시_오면_그_묶음을_모두_폐기하고_다른_로그인의_묶음은_그대로_둔다() {
+        AuthResult phone = service.devLogin("dev-parent", null, null);
+        AuthResult tablet = service.devLogin("dev-parent", null, null);
+        String stolen = phone.tokens().refreshToken();
+        String current = service.refresh(stolen).tokens().refreshToken();
+
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(stolen));
+
+        assertThat(refreshTokens.tokens.get(jti(current)).revoked()).isTrue();
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(current));
+        assertThat(service.refresh(tablet.tokens().refreshToken()).session().userId())
+                .isEqualTo(tablet.session().userId());
+    }
+
+    @Test
+    @DisplayName("같은 토큰으로 온 두 요청 중 회전에 늦은 쪽은 재사용으로 보고 그 묶음을 폐기한다")
+    void 같은_토큰으로_온_두_요청_중_회전에_늦은_쪽은_재사용으로_보고_그_묶음을_폐기한다() {
+        String token = service.devLogin("dev-parent", null, null).tokens().refreshToken();
+        String[] winner = new String[1];
+        // 이 요청이 기록을 읽은 뒤 · 옛 토큰을 폐기하기 전에 다른 요청이 같은 토큰으로 회전을 끝낸다.
+        refreshTokens.beforeRotate =
+                () -> winner[0] = service.refresh(token).tokens().refreshToken();
+
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(token));
+
+        assertThat(winner[0]).isNotNull();
+        assertThat(refreshTokens.tokens.get(jti(winner[0])).revoked()).isTrue();
+        assertThat(refreshTokens.tokens).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("로그아웃은 그 묶음만 폐기하고, 토큰이 없거나 모르는 토큰이면 아무것도 하지 않는다")
+    void 로그아웃은_그_묶음만_폐기하고_토큰이_없거나_모르는_토큰이면_아무것도_하지_않는다() {
+        AuthResult phone = service.devLogin("dev-parent", null, null);
+        AuthResult tablet = service.devLogin("dev-parent", null, null);
+        String rotated = service.refresh(phone.tokens().refreshToken()).tokens().refreshToken();
+
+        service.logout(rotated);
+
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(rotated));
+        service.logout(rotated);
+        service.logout(null);
+        service.logout(" ");
+        service.logout("not-a-token");
+        service.logout(phone.tokens().accessToken());
+        service.logout(tokenIssuer.issue(phone.session().userId()).refreshToken());
+        assertThat(refreshTokens.tokens.get(jti(tablet.tokens().refreshToken())).revoked())
+                .isFalse();
+        assertThat(service.refresh(tablet.tokens().refreshToken()).session().userId())
+                .isEqualTo(tablet.session().userId());
+    }
+
+    @Test
+    @DisplayName("쓸 수 없는 계정(INACTIVE)은 리프레시하지 못하고 그 묶음도 폐기된다")
+    void 쓸_수_없는_계정은_리프레시하지_못하고_그_묶음도_폐기된다() {
+        AuthResult login = service.devLogin("dev-parent", null, null);
+        User user = users.users.get(login.session().userId());
+        users.save(new User(user.id(), user.provider(), user.providerUserId(), user.email(), UserStatus.INACTIVE));
+
+        assertThrows(
+                InvalidRefreshTokenException.class,
+                () -> service.refresh(login.tokens().refreshToken()));
+
+        assertThat(refreshTokens.tokens.get(jti(login.tokens().refreshToken())).revoked())
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("만료된 리프레시 토큰은 기록이 살아 있어도 거부한다")
+    void 만료된_리프레시_토큰은_기록이_살아_있어도_거부한다() {
+        String token = service.devLogin("dev-parent", null, null).tokens().refreshToken();
+
+        clock.setInstant(clock.instant().plus(Duration.ofDays(30)).plusSeconds(1));
+
+        assertThrows(InvalidRefreshTokenException.class, () -> service.refresh(token));
     }
 
     @Test

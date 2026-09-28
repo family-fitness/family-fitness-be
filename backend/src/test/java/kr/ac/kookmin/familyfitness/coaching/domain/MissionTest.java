@@ -64,6 +64,41 @@ class MissionTest {
     }
 
     @Test
+    @DisplayName("진행도는 저장 정밀도(소수 셋째 자리 버림)로 비교한다 — DB 에서 읽은 0.333 과 다시 센 1/3 은 같은 값이라 바뀌지 않는다")
+    void 진행도는_저장_정밀도로_비교한다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30);
+        m.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at);
+        MissionParticipant p = m.participantOf(childId);
+        assertThat(p.getProgress()).isEqualTo(0.333);
+
+        Mission reloaded = Mission.reconstitute(
+                m.getId(),
+                familyId,
+                null,
+                m.getTitle(),
+                null,
+                MissionOrigin.MANUAL,
+                TargetMetric.TIMER_MINUTES,
+                30,
+                null,
+                null,
+                monday,
+                monday.plusDays(6),
+                parentId,
+                at,
+                List.of(MissionParticipant.reconstitute(
+                        childId, null, 0.333, ParticipantStatus.PENDING, null, null, null, at)),
+                List.of());
+
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isFalse();
+        assertThat(reloaded.participantOf(childId).getUpdatedAt()).isEqualTo(at);
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(11, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isTrue();
+        assertThat(reloaded.participantOf(childId).getProgress()).isEqualTo(0.366);
+    }
+
+    @Test
     @DisplayName("타이머 미션은 목표 분에 닿으면 즉시 완료되고 근거는 TIMER 다")
     void 타이머_미션은_목표_분에_닿으면_즉시_완료되고_근거는_TIMER_다() {
         Mission m = mission(TargetMetric.TIMER_MINUTES, 45);
@@ -267,5 +302,66 @@ class MissionTest {
                 .isEqualTo("주행자");
         assertThat(mission.getRationale()).isEqualTo("부모용 문구");
         assertThat(mission.getSessions()).isEmpty();
+    }
+
+    private CoachProposalItem itemWithSessions(int targetValue, String targetMetric, List<MissionSession> sessions) {
+        return new CoachProposalItem(
+                0,
+                "유연성 키우기 7분",
+                targetMetric,
+                targetValue,
+                null,
+                null,
+                monday,
+                monday,
+                List.of(new ProposalParticipant(childId, ProfileRole.CHILD, "주행자")),
+                null,
+                List.of(),
+                null,
+                null,
+                sessions);
+    }
+
+    @Test
+    @DisplayName("승인된 제안의 칸은 차례 그대로 미션 칸이 된다")
+    void 승인된_제안의_칸은_차례_그대로_미션_칸이_된다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(
+                        1, SessionPhase.WARMUP, "나비자세", FitnessFactor.FLEXIBILITY, 1, new SessionClip("v", 1, 2, "나비")),
+                new MissionSession(2, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(3, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+        CoachRun run = CoachRun.awaitingApproval(
+                UUID.randomUUID(),
+                familyId,
+                List.of(itemWithSessions(7, "TIMER_MINUTES", sessions)),
+                monday,
+                List.of(),
+                null,
+                3,
+                15,
+                Instant.EPOCH);
+        run.approve(new CoachApprover(parentId, familyId, true), at);
+
+        Mission mission = Mission.fromProposal(
+                UUID.randomUUID(), run, run.proposalsForMissionCreation().getFirst(), parentId, at);
+
+        assertThat(mission.getSessions()).isEqualTo(sessions);
+        assertThat(mission.getTargetValue()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("칸이 있는 제안 항목은 목표가 분이고 칸 분의 합과 같아야 한다 — 직접 만들기와 같은 규칙")
+    void 칸이_있는_제안_항목은_목표가_분이고_칸_분의_합과_같아야_한다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(1, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(2, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(20, "TIMER_MINUTES", sessions));
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(6, "STEPS", sessions));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> itemWithSessions(6, "TIMER_MINUTES", List.of(sessions.getLast(), sessions.getLast())));
+        assertThat(itemWithSessions(6, "TIMER_MINUTES", sessions.reversed()).sessions())
+                .isEqualTo(sessions);
     }
 }

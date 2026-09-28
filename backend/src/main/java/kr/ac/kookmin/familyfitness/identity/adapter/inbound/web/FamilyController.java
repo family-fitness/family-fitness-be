@@ -8,13 +8,16 @@ import kr.ac.kookmin.familyfitness.identity.application.CheerService;
 import kr.ac.kookmin.familyfitness.identity.application.CreatedFamily;
 import kr.ac.kookmin.familyfitness.identity.application.FamilyProfiles;
 import kr.ac.kookmin.familyfitness.identity.application.FamilyService;
+import kr.ac.kookmin.familyfitness.identity.application.SendCheerCommand;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -74,10 +77,28 @@ public class FamilyController {
         return CheerResponse.of(cheers.cheer(
                 user.userId(),
                 familyId,
-                Objects.requireNonNull(request.fromProfileId()),
-                Objects.requireNonNull(request.toProfileId()),
-                request.message(),
-                request.emoji(),
-                request.missionId()));
+                new SendCheerCommand(
+                        Objects.requireNonNull(request.fromProfileId()),
+                        Objects.requireNonNull(request.toProfileId()),
+                        request.kind(),
+                        request.message(),
+                        request.effectiveStickerId(),
+                        request.missionId(),
+                        request.replyToCheerId())));
+    }
+
+    /**
+     * 받은 응원. 최근 것부터 size 건(기본 20 · 1~100). 거르기 값은 모두 선택이다.
+     * 「벌써 알렸나 · 칭찬했나」 는 missionId 로, 「고마워요 보냈나」 는 fromProfileId 와 응답의 replyToCheerId 로 좁혀 읽는다.
+     */
+    @GetMapping("/{familyId}/cheers")
+    public CheerListResponse cheers(
+            CurrentUser user,
+            @PathVariable UUID familyId,
+            @RequestParam(required = false) @Nullable UUID toProfileId,
+            @RequestParam(required = false) @Nullable UUID fromProfileId,
+            @RequestParam(required = false) @Nullable UUID missionId,
+            @RequestParam(defaultValue = "20") int size) {
+        return new CheerListResponse(cheers.list(user.userId(), familyId, toProfileId, fromProfileId, missionId, size));
     }
 }

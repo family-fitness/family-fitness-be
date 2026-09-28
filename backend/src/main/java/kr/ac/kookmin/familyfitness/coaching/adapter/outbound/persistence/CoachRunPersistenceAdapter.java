@@ -2,8 +2,11 @@ package kr.ac.kookmin.familyfitness.coaching.adapter.outbound.persistence;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
@@ -11,11 +14,15 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
@@ -36,12 +43,17 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
 
     private final CoachRunJpaRepository runs;
     private final CoachRunProposalItemJpaRepository items;
+    private final CoachRunProposalSessionJpaRepository sessions;
     private final JsonMapper jsonMapper;
 
     public CoachRunPersistenceAdapter(
-            CoachRunJpaRepository runs, CoachRunProposalItemJpaRepository items, JsonMapper jsonMapper) {
+            CoachRunJpaRepository runs,
+            CoachRunProposalItemJpaRepository items,
+            CoachRunProposalSessionJpaRepository sessions,
+            JsonMapper jsonMapper) {
         this.runs = runs;
         this.items = items;
+        this.sessions = sessions;
         this.jsonMapper = jsonMapper;
     }
 
@@ -76,6 +88,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                         stepsJson(run),
                         run.getProposalJson(),
                         run.getModelName(),
+                        codeName(run.getFailureCode()),
                         run.getFailureReason(),
                         run.isAiRefused(),
                         run.getAiRefusalReason(),
@@ -85,11 +98,17 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
         return finished;
     }
 
+    /** 칸이 항목을 FK 로 가리키므로 지울 때는 칸 → 항목, 쓸 때는 항목(flush) → 칸 차례다. */
     private void replaceItems(CoachRun run) {
         if (run.getProposals().isEmpty()) return;
+        sessions.deleteByCoachRunId(run.getId());
         items.deleteByIdCoachRunId(run.getId());
         items.flush();
         items.saveAll(run.getProposals().stream().map(it -> toEntity(it, run)).toList());
+        items.flush();
+        sessions.saveAll(run.getProposals().stream()
+                .flatMap(item -> item.sessions().stream().map(it -> toEntity(it, run.getId(), item.position())))
+                .toList());
     }
 
     /**
@@ -110,8 +129,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
 
     @Override
     public @Nullable CoachRun findById(UUID id) {
-        CoachRunEntity entity = runs.findById(id).orElse(null);
-        return entity == null ? null : toDomain(entity, items.findByIdCoachRunIdOrderByIdPosition(id));
+        return withItems(runs.findById(id).orElse(null));
     }
 
     @Override
@@ -159,8 +177,15 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
         return withItems(runs.findFirstByFamilyIdAndSubjectProfileIdOrderByCreatedAtDesc(familyId, subjectProfileId));
     }
 
+    /** 실행 · 항목 · 칸을 표마다 한 번씩(세 번) 읽는다. 항목 수만큼 칸을 따로 읽지 않는다. */
     private @Nullable CoachRun withItems(@Nullable CoachRunEntity entity) {
-        return entity == null ? null : toDomain(entity, items.findByIdCoachRunIdOrderByIdPosition(entity.getId()));
+        if (entity == null) return null;
+        UUID runId = entity.getId();
+        Map<Integer, List<MissionSession>> sessionsByItem = new HashMap<>();
+        sessions.findByIdCoachRunIdOrderByIdItemPositionAscIdPositionAsc(runId).forEach(it -> sessionsByItem
+                .computeIfAbsent(it.getId().getItemPosition(), key -> new ArrayList<>())
+                .add(toSession(it)));
+        return toDomain(entity, items.findByIdCoachRunIdOrderByIdPosition(runId), sessionsByItem);
     }
 
     @Override
@@ -224,7 +249,22 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                         : conditions.focusFactor().name(),
                 conditions == null ? null : conditions.withParent());
         entity.setLockKey(run.lockKey());
+        entity.setFailureCode(codeName(run.getFailureCode()));
         return entity;
+    }
+
+    private static @Nullable String codeName(@Nullable CoachRunFailureCode code) {
+        return code == null ? null : code.name();
+    }
+
+    /** 모르는 값(다른 버전이 쓴 코드)은 응답이 깨지지 않게 ERROR 로 읽는다. */
+    private static @Nullable CoachRunFailureCode codeOf(@Nullable String name) {
+        if (name == null) return null;
+        try {
+            return CoachRunFailureCode.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return CoachRunFailureCode.ERROR;
+        }
     }
 
     private @Nullable String stepsJson(CoachRun run) {
@@ -250,7 +290,40 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 jsonMapper.writeValueAsString(item.citations()));
     }
 
-    private CoachRun toDomain(CoachRunEntity e, List<CoachRunProposalItemEntity> itemEntities) {
+    private static CoachRunProposalSessionEntity toEntity(MissionSession session, UUID runId, int itemPosition) {
+        SessionClip clip = session.clip();
+        FitnessFactor factor = session.factor();
+        return new CoachRunProposalSessionEntity(
+                new ProposalSessionId(runId, itemPosition, session.position()),
+                session.phase().name(),
+                session.title(),
+                factor == null ? null : factor.getLabel(),
+                session.minutes(),
+                clip == null ? null : clip.videoId(),
+                clip == null ? null : clip.startSec(),
+                clip == null ? null : clip.endSec(),
+                clip == null ? null : clip.title());
+    }
+
+    private static MissionSession toSession(CoachRunProposalSessionEntity e) {
+        String videoId = e.getVideoId();
+        Integer startSec = e.getStartSec();
+        String factor = e.getFactor();
+        return new MissionSession(
+                e.getId().getPosition(),
+                SessionPhase.valueOf(e.getPhase()),
+                e.getTitle(),
+                factor == null ? null : FitnessFactor.fromLabel(factor),
+                e.getMinutes(),
+                videoId == null || startSec == null
+                        ? null
+                        : new SessionClip(videoId, startSec, e.getEndSec(), e.getClipTitle()));
+    }
+
+    private CoachRun toDomain(
+            CoachRunEntity e,
+            List<CoachRunProposalItemEntity> itemEntities,
+            Map<Integer, List<MissionSession>> sessionsByItem) {
         String stepsJson = e.getStepsJson();
         return CoachRun.reconstitute(
                 e.getId(),
@@ -265,7 +338,10 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getRunDate(),
                 conditionsOf(e),
                 CoachRunStatus.valueOf(e.getStatus()),
-                itemEntities.stream().map(this::toDomain).toList(),
+                itemEntities.stream()
+                        .map(it -> toDomain(
+                                it, sessionsByItem.getOrDefault(it.getId().getPosition(), List.of())))
+                        .toList(),
                 stepsJson == null ? List.of() : jsonMapper.readValue(stepsJson, STEPS),
                 e.getSummary(),
                 e.getProposalJson(),
@@ -278,6 +354,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getFailureReason(),
                 e.isAiRefused(),
                 e.getAiRefusalReason(),
+                codeOf(e.getFailureCode()),
                 e.getUpdatedAt());
     }
 
@@ -294,7 +371,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 Boolean.TRUE.equals(e.getWithParent()));
     }
 
-    private CoachProposalItem toDomain(CoachRunProposalItemEntity e) {
+    private CoachProposalItem toDomain(CoachRunProposalItemEntity e, List<MissionSession> itemSessions) {
         String videoId = e.getVideoId();
         return new CoachProposalItem(
                 e.getId().getPosition(),
@@ -309,6 +386,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 videoId == null ? null : new ProposalVideo(videoId, e.getVideoStartSec()),
                 jsonMapper.readValue(e.getCitationsJson(), CITATIONS),
                 e.getCopyChild(),
-                e.getCopyParent());
+                e.getCopyParent(),
+                itemSessions);
     }
 }

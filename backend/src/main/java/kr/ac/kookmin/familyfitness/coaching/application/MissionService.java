@@ -89,36 +89,35 @@ public class MissionService {
     }
 
     /**
-     * 가족 미션 목록. 읽을 때 미완료 참여자의 진행도를 다시 계산해 바뀐 것만 저장한다(write-through).
-     * `MINE` = 호출 계정의 이 가족 프로필이 참여자 · `FAMILY` = 참여자 2명 이상.
+     * 가족 미션 목록. `MINE` = 호출 계정의 이 가족 프로필이 참여자 · `FAMILY` = 참여자 2명 이상.
+     * 차례: scope 로 먼저 거른다(진행도와 상관없다) → 남은 것 중 기간 안 미션의 미완료 참여자만 다시 계산해 바뀐 것만 저장한다
+     * (기간이 끝난 미션 · 완료된 참여자는 저장된 값 그대로) → status 로 거른다(DONE 여부가 다시 계산한 진행도에 달려 있다).
      */
     @Transactional
     public MissionListView list(UUID userId, UUID familyId, MissionScope scope, @Nullable MissionStatus status) {
         ProfileSummary caller = familyAccess.requireMember(userId, familyId);
         LocalDate today = time.today();
         Instant now = time.now();
-        List<Mission> all = missions.findByFamily(familyId).stream()
-                .map(it -> policy.refreshAll(it, now))
-                .toList();
-        List<Mission> filtered = all.stream()
+        List<Mission> filtered = missions.findByFamily(familyId).stream()
                 .filter(it -> switch (scope) {
                     case ALL -> true;
                     case MINE -> it.isParticipant(caller.profileId());
                     case FAMILY -> it.getParticipants().size() >= 2;
                 })
+                .map(it -> policy.refreshAll(it, today, now))
                 .filter(it -> status == null || it.statusOn(today) == status)
                 .sorted(Comparator.comparing(Mission::getStartsOn).reversed().thenComparing(Mission::getCreatedAt))
                 .toList();
         return new MissionListView(toViews(filtered, namesOf(familyId)));
     }
 
-    /** 미션 한 건. 목록과 같은 모양 · 같은 권한(가족 구성원)이다. 없으면 404 `MISSION_NOT_FOUND`. */
+    /** 미션 한 건. 목록과 같은 모양 · 같은 권한(가족 구성원) · 같은 다시 계산 규칙이다. 없으면 404 `MISSION_NOT_FOUND`. */
     @Transactional
     public MissionView get(UUID userId, UUID missionId) {
         Mission mission = missions.findById(missionId);
         if (mission == null) throw new MissionNotFoundException(missionId);
         familyAccess.requireMember(userId, mission.getFamilyId());
-        Mission refreshed = policy.refreshAll(mission, time.now());
+        Mission refreshed = policy.refreshAll(mission, time.today(), time.now());
         return toViews(List.of(refreshed), namesOf(refreshed.getFamilyId())).getFirst();
     }
 

@@ -2,6 +2,7 @@ package kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence;
 
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
@@ -59,6 +60,12 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
     @Override
     public int activeMinutesOn(UUID profileId, LocalDate activityDate) {
         return (int) jpa.sumActiveMinutesOn(profileId, activityDate);
+    }
+
+    @Override
+    public boolean anyActiveOn(Collection<UUID> profileIds, LocalDate activityDate) {
+        if (profileIds.isEmpty()) return false;
+        return jpa.existsByProfileIdInAndActivityDateAndActiveMinutesGreaterThan(profileIds, activityDate, 0);
     }
 
     private static long orZero(@Nullable Long value) {
