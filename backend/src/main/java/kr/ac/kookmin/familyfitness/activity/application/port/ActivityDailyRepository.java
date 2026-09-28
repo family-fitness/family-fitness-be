@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.activity.application.port;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -17,4 +18,7 @@ public interface ActivityDailyRepository {
     ActivityTotals totals(UUID profileId, LocalDate from, LocalDate to);
 
     int activeMinutesOn(UUID profileId, LocalDate activityDate);
+
+    /** 이 프로필들 중 누구라도 그날 운동한 분(TIMER · VIDEO)이 있는가. MANUAL(걸음수) 행은 분이 늘 0 이라 세지 않는다. */
+    boolean anyActiveOn(Collection<UUID> profileIds, LocalDate activityDate);
 }
