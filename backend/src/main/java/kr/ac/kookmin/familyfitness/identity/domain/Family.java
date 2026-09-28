@@ -5,11 +5,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
 import kr.ac.kookmin.familyfitness.identity.api.CannotActAsProfileException;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
+import kr.ac.kookmin.familyfitness.shared.domain.Ages;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
@@ -17,12 +19,15 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * 가족 애그리게잇 루트. 프로필의 생성·초대·동의·참여 수준 변경은 전부 여기를 거친다.
- * 불변식: PARENT 가 최소 한 명(만든 사람이 owner PARENT). 권한 판단은 HTTP 요청 값이 아니라 저장된 프로필로 한다.
+ * 불변식: PARENT 가 최소 한 명(만든 사람이 owner PARENT). PARENT 는 만 14세 이상이다(새로 만들거나 고칠 때 본다).
+ * 권한 판단은 HTTP 요청 값이 아니라 저장된 프로필로 한다.
+ * 동의를 바꿀 때마다 {@link ConsentEvent} 를 하나씩 모아 두고, 저장소가 저장할 때 {@link #drainConsentEvents} 로 꺼내 이력에 넣는다.
  */
 public class Family {
     private final UUID id;
     private final String name;
     private final List<Profile> members;
+    private final List<ConsentEvent> pendingConsentEvents = new ArrayList<>();
 
     private Family(UUID id, String name, List<Profile> members) {
         if (name.isBlank()) throw new IllegalArgumentException("가족 이름은 비어 있을 수 없다");
@@ -121,6 +126,7 @@ public class Family {
     /**
      * 구성원 추가 — PARENT 만. 만 14세 미만이면 {@code guardianConsent} 가 둘 다 true 여야 하고,
      * 동의 시각·동의자는 서버(여기)가 채운다. 만 4세 미만도 프로필은 만든다(측정만 불가).
+     * 만 14세 미만을 PARENT 로 넣지 못한다. 동의를 기록하면 이력(GRANTED)도 하나 남긴다.
      * 키·몸무게는 가입 때 적은 값이고 없으면 null 이다. 범위는 요청 검증이 본다.
      */
     public Profile addMember(
@@ -134,10 +140,12 @@ public class Family {
             @Nullable GuardianConsent guardianConsent,
             Instant consentedAt,
             LocalDate today) {
-        requireParent(actorUserId);
+        Profile actor = requireParent(actorUserId);
         if (birthDate.isAfter(today)) throw new IllegalArgumentException("생년월일은 미래일 수 없다");
+        if (role == ProfileRole.PARENT) requireGuardianAge(birthDate, today);
         ConsentRecord consent;
         if (guardianConsent != null && guardianConsent.isComplete()) {
+            requireGuardianAge(actor.getBirthDate(), today);
             consent = ConsentRecord.granted(consentedAt, actorUserId);
         } else if (GuardianConsent.isRequired(birthDate, today)) {
             throw new GuardianConsentRequiredException();
@@ -161,6 +169,10 @@ public class Family {
                 null,
                 consent);
         members.add(profile);
+        if (consent.isGiven()) {
+            pendingConsentEvents.add(ConsentEvent.of(
+                    profile.getId(), actorUserId, Objects.requireNonNull(guardianConsent), consentedAt));
+        }
         return profile;
     }
 
@@ -210,12 +222,50 @@ public class Family {
         return profile;
     }
 
-    /** 동의 변경 — 이 가족의 PARENT 만. */
-    public Profile updateConsent(UUID actorUserId, UUID profileId, GuardianConsent decision, Instant at) {
+    /**
+     * 동의 변경 — 이 가족의 PARENT 만. 판정 순서: 구성원 · 보호자 → 대상 있음 → 자기 프로필 아님 → 행위자 만 14세 이상.
+     * 부여든 철회든 한 번에 이력 한 줄을 남긴다. 재동의는 지금 상태의 철회 시각을 걷지만 이력의 철회 줄은 그대로다.
+     */
+    public Profile updateConsent(
+            UUID actorUserId, UUID profileId, GuardianConsent decision, Instant at, LocalDate today) {
+        Profile actor = requireParent(actorUserId);
+        Profile profile = profile(profileId);
+        if (actor.getId().equals(profile.getId())) throw new SelfConsentException();
+        requireGuardianAge(actor.getBirthDate(), today);
+        profile.recordConsent(decision, actorUserId, at);
+        pendingConsentEvents.add(ConsentEvent.of(profileId, actorUserId, decision, at));
+        return profile;
+    }
+
+    /**
+     * 이름 · 생년월일 · 성별 고치기 — 이 가족의 PARENT 만. 고칠 수 있는 프로필은 계정 없는 프로필과 행위자 자기 프로필이다
+     * (계정이 붙은 다른 사람의 이름 · 생일은 그 사람 것이라 대신 고치지 않는다).
+     * 판정 순서: 구성원 · 보호자 → 대상 있음 → 고칠 수 있는 프로필 → 생년월일이 미래 아님 → PARENT 는 만 14세 이상.
+     * 생일을 고쳐 만 14세 미만이 되면 동의가 필요한 상태가 되고, 동의 기록이 없으면 바로 막힌다(consentGiven=false).
+     */
+    public Profile editProfile(UUID actorUserId, UUID profileId, ProfileEdit edit, LocalDate today) {
         requireParent(actorUserId);
         Profile profile = profile(profileId);
-        profile.recordConsent(decision, actorUserId, at);
+        if (profile.hasAccount() && !actorUserId.equals(profile.getUserId())) {
+            throw new NotOwnProfileException("계정이 붙은 다른 사람의 프로필은 고칠 수 없습니다");
+        }
+        LocalDate birthDate = edit.birthDate() != null ? edit.birthDate() : profile.getBirthDate();
+        if (birthDate.isAfter(today)) throw new IllegalArgumentException("생년월일은 미래일 수 없다");
+        if (profile.isParent()) requireGuardianAge(birthDate, today);
+        profile.edit(edit);
         return profile;
+    }
+
+    /** 모아 둔 동의 이력을 꺼내고 비운다. 저장소가 저장할 때 한 번 부른다. */
+    public List<ConsentEvent> drainConsentEvents() {
+        List<ConsentEvent> drained = List.copyOf(pendingConsentEvents);
+        pendingConsentEvents.clear();
+        return drained;
+    }
+
+    /** 만 14세 미만은 보호자 자리에 서거나 보호자 동의를 하지 못한다. */
+    private static void requireGuardianAge(LocalDate birthDate, LocalDate today) {
+        if (Ages.requiresGuardianConsent(birthDate, today)) throw new Under14NotAllowedException();
     }
 
     /**
@@ -231,9 +281,14 @@ public class Family {
         if (profileOrNull(toProfileId) == null) throw new NotFamilyMemberException();
     }
 
-    /** 가족 생성. 만든 사람은 항상 owner PARENT 이고 본인 계정에 바로 연결된다. */
+    /**
+     * 가족 생성. 만든 사람은 항상 owner PARENT 이고 본인 계정에 바로 연결된다.
+     * 생년월일이 미래면 거절하고, 만 14세 미만이면 가족을 만들지 못한다(아이 혼자 가입 불가).
+     */
     public static Family createWithParent(
-            UUID parentUserId, String familyName, String parentName, LocalDate birthDate, Sex sex) {
+            UUID parentUserId, String familyName, String parentName, LocalDate birthDate, Sex sex, LocalDate today) {
+        if (birthDate.isAfter(today)) throw new IllegalArgumentException("생년월일은 미래일 수 없다");
+        requireGuardianAge(birthDate, today);
         UUID familyId = UUID.randomUUID();
         Profile owner = new Profile(
                 UUID.randomUUID(),

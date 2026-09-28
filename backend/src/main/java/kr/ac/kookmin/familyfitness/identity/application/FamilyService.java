@@ -30,11 +30,14 @@ public class FamilyService {
         this.clock = clock;
     }
 
-    /** 만든 사람은 항상 owner PARENT. 가족과 프로필 두 INSERT 는 한 트랜잭션. */
+    /**
+     * 만든 사람은 항상 owner PARENT. 가족과 프로필 두 INSERT 는 한 트랜잭션.
+     * 생년월일이 미래면 400, 만 14세 미만이면 422 UNDER_14_NOT_ALLOWED(도메인이 본다).
+     */
     public CreatedFamily createFamily(UUID userId, String familyName, String ownerName, LocalDate birthDate, Sex sex) {
         if (!families.profilesOfUser(userId).isEmpty()) throw new AlreadyInFamilyException();
-        if (birthDate.isAfter(clock.today())) throw new IllegalArgumentException("생년월일은 미래일 수 없다");
-        Family family = families.save(Family.createWithParent(userId, familyName, ownerName, birthDate, sex));
+        Family family =
+                families.save(Family.createWithParent(userId, familyName, ownerName, birthDate, sex, clock.today()));
         return new CreatedFamily(family.getId(), family.getName(), summaries.summary(single(family.getProfiles())));
     }
 

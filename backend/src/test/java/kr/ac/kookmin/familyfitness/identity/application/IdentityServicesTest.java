@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.math.BigDecimal;
@@ -36,6 +37,7 @@ import kr.ac.kookmin.familyfitness.identity.domain.CheerNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCodeExpiredException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCodeNotFoundException;
+import kr.ac.kookmin.familyfitness.identity.domain.ConsentEvent;
 import kr.ac.kookmin.familyfitness.identity.domain.ConsentRecord;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyAccessDeniedException;
 import kr.ac.kookmin.familyfitness.identity.domain.GuardianConsent;
@@ -44,10 +46,13 @@ import kr.ac.kookmin.familyfitness.identity.domain.InvalidCheerException;
 import kr.ac.kookmin.familyfitness.identity.domain.NotAReplyTargetException;
 import kr.ac.kookmin.familyfitness.identity.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.identity.domain.NotOwnProfileException;
+import kr.ac.kookmin.familyfitness.identity.domain.ProfileEdit;
 import kr.ac.kookmin.familyfitness.identity.domain.SelfCheerException;
+import kr.ac.kookmin.familyfitness.identity.domain.SelfConsentException;
 import kr.ac.kookmin.familyfitness.identity.domain.SupportModeNotApplicableException;
 import kr.ac.kookmin.familyfitness.identity.domain.TooManyCheersException;
 import kr.ac.kookmin.familyfitness.identity.domain.TooManyClaimAttemptsException;
+import kr.ac.kookmin.familyfitness.identity.domain.Under14NotAllowedException;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -156,6 +161,19 @@ class IdentityServicesTest {
                     IllegalArgumentException.class,
                     () -> familyService.createFamily(parentUser, "우리 가족", "엄마", today.plusDays(1), Sex.F));
         }
+
+        @Test
+        @DisplayName("만 14세 미만은 가족을 만들지 못한다 — UNDER_14_NOT_ALLOWED, 아무것도 저장하지 않는다")
+        void 만_14세_미만은_가족을_만들지_못한다() {
+            assertThrows(
+                    Under14NotAllowedException.class,
+                    () -> familyService.createFamily(
+                            parentUser, "우리 가족", "아이", today.minusYears(14).plusDays(1), Sex.F));
+            assertThat(families.families).isEmpty();
+
+            CreatedFamily created = familyService.createFamily(parentUser, "우리 가족", "큰애", today.minusYears(14), Sex.F);
+            assertThat(created.ownerProfile().role()).isEqualTo(ProfileRole.PARENT);
+        }
     }
 
     @Nested
@@ -211,6 +229,32 @@ class IdentityServicesTest {
                     GuardianConsentRequiredException.class,
                     () -> addChild(family.familyId(), new GuardianConsent(true, false)));
             assertThat(families.findById(family.familyId()).getProfiles()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("만 14세 미만을 PARENT 로 넣으면 UNDER_14_NOT_ALLOWED. 넣으면서 준 동의는 이력에 한 줄 남는다")
+        void 만_14세_미만을_PARENT_로_넣으면_UNDER_14_NOT_ALLOWED() {
+            CreatedFamily family = createFamily();
+
+            assertThrows(
+                    Under14NotAllowedException.class,
+                    () -> familyService.addMember(
+                            parentUser,
+                            family.familyId(),
+                            "어린 보호자",
+                            today.minusYears(13),
+                            Sex.M,
+                            ProfileRole.PARENT,
+                            null,
+                            null,
+                            new GuardianConsent(true, true)));
+            assertThat(families.findById(family.familyId()).getProfiles()).hasSize(1);
+            assertThat(families.consentEvents).isEmpty();
+
+            ProfileSummary child = addChild(family.familyId());
+            assertThat(families.consentEvents)
+                    .containsExactly(new ConsentEvent(
+                            child.profileId(), parentUser, ConsentEvent.Kind.GRANTED, true, true, clock.instant()));
         }
 
         @Test
@@ -634,6 +678,119 @@ class IdentityServicesTest {
                     FamilyAccessDeniedException.class,
                     () -> settingsService.updateConsent(
                             UUID.randomUUID(), child.profileId(), new GuardianConsent(true, true)));
+
+            // 재동의가 지금 상태의 철회 시각을 걷어도 이력의 철회 줄은 남는다
+            assertThat(families.consentEvents)
+                    .extracting(ConsentEvent::kind, ConsentEvent::occurredAt)
+                    .containsExactly(
+                            tuple(ConsentEvent.Kind.GRANTED, grantedAt),
+                            tuple(ConsentEvent.Kind.REVOKED, grantedAt.plusSeconds(60)),
+                            tuple(ConsentEvent.Kind.GRANTED, grantedAt.plusSeconds(120)));
+        }
+
+        @Test
+        @DisplayName("자기 프로필의 동의는 SELF_CONSENT 로 막는다")
+        void 자기_프로필의_동의는_SELF_CONSENT_로_막는다() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+
+            assertThrows(
+                    SelfConsentException.class,
+                    () -> settingsService.updateConsent(parentUser, owner, new GuardianConsent(true, true)));
+            assertThrows(
+                    SelfConsentException.class,
+                    () -> settingsService.updateConsent(parentUser, owner, new GuardianConsent(false, false)));
+            assertThat(families.consentEvents).isEmpty();
+        }
+
+        @Test
+        @DisplayName("거둔 동의는 만 14세 생일이 지나도 막힌 채고, 보호자가 다시 동의하면 풀린다")
+        void 거둔_동의는_만_14세_생일이_지나도_막힌_채다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child =
+                    addChild(family.familyId(), today.minusYears(14).plusDays(1));
+            settingsService.updateConsent(parentUser, child.profileId(), new GuardianConsent(false, false));
+
+            clock.setInstant(clock.instant().plus(Duration.ofDays(2)));
+            ProfileSummary afterBirthday = summaryOf(child.profileId());
+            assertThat(afterBirthday.consentRequired()).isTrue();
+            assertThat(afterBirthday.consentGiven()).isFalse();
+            assertThat(afterBirthday.measurable()).isFalse();
+
+            ConsentState regranted =
+                    settingsService.updateConsent(parentUser, child.profileId(), new GuardianConsent(true, true));
+            assertThat(regranted.consentGiven()).isTrue();
+            assertThat(regranted.measurable()).isTrue();
+            assertThat(summaryOf(child.profileId()).consentRequired()).isFalse();
+        }
+
+        @Test
+        @DisplayName("프로필 고치기 — 응답은 고친 뒤 요약이고, 생일을 고쳐 만 14세 미만이 되면 동의가 필요한 상태로 바로 바뀐다")
+        void 프로필_고치기_응답은_고친_뒤_요약이다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary teen = familyService.addMember(
+                    parentUser,
+                    family.familyId(),
+                    "큰애",
+                    LocalDate.of(2006, 3, 2),
+                    Sex.F,
+                    ProfileRole.CHILD,
+                    null,
+                    null,
+                    null);
+            assertThat(teen.ageGroup()).isEqualTo(AgeGroup.ADULT);
+            assertThat(teen.consentRequired()).isFalse();
+            assertThat(teen.measurable()).isTrue();
+
+            ProfileSummary edited = settingsService.editProfile(
+                    parentUser, teen.profileId(), new ProfileEdit("서연", LocalDate.of(2016, 3, 2), Sex.M));
+
+            assertThat(edited.name()).isEqualTo("서연");
+            assertThat(edited.sex()).isEqualTo(Sex.M);
+            assertThat(edited.ageGroup()).isEqualTo(AgeGroup.YOUTH);
+            assertThat(edited.consentRequired()).isTrue();
+            assertThat(edited.consentGiven()).isFalse();
+            assertThat(edited.measurable()).isFalse();
+            assertThat(families.findByProfileId(teen.profileId())
+                            .profile(teen.profileId())
+                            .getBirthDate())
+                    .isEqualTo(LocalDate.of(2016, 3, 2));
+            // 고치기는 동의를 바꾸지 않으므로 이력이 없다
+            assertThat(families.consentEvents).isEmpty();
+        }
+
+        @Test
+        @DisplayName("프로필 고치기 — 보호자만, 계정이 붙은 다른 사람은 못 고치고, PARENT 를 만 14세 미만으로 못 고친다")
+        void 프로필_고치기_권한과_나이() {
+            CreatedFamily family = createFamily();
+            UUID owner = family.ownerProfile().profileId();
+            ProfileSummary child = addChild(family.familyId());
+            UUID childUser = UUID.randomUUID();
+            families.attachUserIfUnclaimed(child.profileId(), childUser, clock.instant());
+            ProfileEdit rename = new ProfileEdit("새 이름", null, null);
+
+            assertThrows(
+                    NotAParentException.class, () -> settingsService.editProfile(childUser, child.profileId(), rename));
+            assertThrows(
+                    NotOwnProfileException.class,
+                    () -> settingsService.editProfile(parentUser, child.profileId(), rename));
+            assertThrows(
+                    FamilyAccessDeniedException.class,
+                    () -> settingsService.editProfile(UUID.randomUUID(), owner, rename));
+            assertThrows(
+                    ProfileNotFoundException.class,
+                    () -> settingsService.editProfile(parentUser, UUID.randomUUID(), rename));
+            assertThrows(
+                    Under14NotAllowedException.class,
+                    () -> settingsService.editProfile(
+                            parentUser, owner, new ProfileEdit(null, today.minusYears(13), null)));
+
+            assertThat(settingsService.editProfile(parentUser, owner, rename).name())
+                    .isEqualTo("새 이름");
+        }
+
+        private ProfileSummary summaryOf(UUID profileId) {
+            return summaries.summary(families.findByProfileId(profileId).profile(profileId));
         }
     }
 

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.ConsentEvent;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
 import kr.ac.kookmin.familyfitness.identity.domain.Profile;
 import org.jspecify.annotations.Nullable;
@@ -19,6 +20,9 @@ class InMemoryFamilyRepository implements FamilyRepository {
     boolean attachSucceeds = true;
 
     final List<AttachCall> attachCalls = new ArrayList<>();
+
+    /** 저장할 때 가족에서 꺼낸 동의 이력. consent_events 표 대신이다. */
+    final List<ConsentEvent> consentEvents = new ArrayList<>();
 
     record AttachCall(UUID profileId, UUID userId, Instant at) {}
 
@@ -65,6 +69,7 @@ class InMemoryFamilyRepository implements FamilyRepository {
     @Override
     public Family save(Family family) {
         families.put(family.getId(), family);
+        consentEvents.addAll(family.drainConsentEvents());
         return family;
     }
 
