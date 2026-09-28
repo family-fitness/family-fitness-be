@@ -1,7 +1,8 @@
 package kr.ac.kookmin.familyfitness.support;
 
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
@@ -10,7 +11,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * identity 를 거치지 않고 `families`·`profiles` 행만 꽂는다. fitness·activity 테이블이 profiles 를 FK 로 참조하므로
- * identity 를 목으로 바꾼 모듈 테스트에서도 실제 행이 있어야 한다.
+ * identity 를 목으로 바꾼 모듈 테스트에서도 실제 행이 있어야 한다. 시각은 {@link OffsetDateTime} 으로 넘긴다 — PostgreSQL JDBC 는
+ * {@code Instant} 의 SQL 타입을 알아내지 못한다(H2 는 받는다).
  */
 @Component
 public class ProfileRows {
@@ -26,7 +28,7 @@ public class ProfileRows {
 
     public UUID family(String name) {
         UUID id = UUID.randomUUID();
-        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        OffsetDateTime now = OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
         jdbc.update("insert into families (id, name, created_at, updated_at) values (?, ?, ?, ?)", id, name, now, now);
         return id;
     }
@@ -45,7 +47,7 @@ public class ProfileRows {
 
     public UUID profile(UUID familyId, LocalDate birthDate, Sex sex, ProfileRole role, String name) {
         UUID id = UUID.randomUUID();
-        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        OffsetDateTime now = OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
         jdbc.update("""
                 insert into profiles (id, family_id, display_name, birth_date, sex, role, is_owner, created_at, updated_at)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?)\
