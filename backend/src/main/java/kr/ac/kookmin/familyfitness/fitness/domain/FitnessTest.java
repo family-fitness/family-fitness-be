@@ -18,7 +18,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * 측정 회차 애그리거트. 항목과 함께 통째로 저장되고, 저장 뒤에는 바뀌지 않는다.
- * 규칙: 항목 0개 저장 안 함 · 005/006 거부 · 카탈로그 밖 코드 거부 · 연령대 항목만 허용 · 한 요청에 같은 항목 두 번 금지.
+ * 규칙: 항목 0개 저장 안 함 · 005/006 거부 · 카탈로그 밖 코드 거부 · 연령대 항목만 허용 · 한 요청에 같은 항목 두 번 금지 ·
+ * 항목 범위({@link ValueRange}) 밖 값 거부.
  */
 public class FitnessTest {
     public static final int STRENGTHEN_ABOVE = 75;
@@ -185,6 +186,9 @@ public class FitnessTest {
                     FitnessItem item = FitnessItem.resolve(m.itemCode());
                     if (!seen.add(item)) throw new DuplicateItemException(item.getCode());
                     if (!item.isFor(ageGroup)) throw new ItemNotForAgeGroupException(item.getCode(), ageGroup);
+                    if (!item.getRange().contains(m.value())) {
+                        throw new ItemOutOfRangeException(item.getCode(), m.value(), item.getRange());
+                    }
                     return new FitnessTestItem(item, m.value(), ItemScore.ofPercentile(scorer.apply(item, m.value())));
                 })
                 .toList();

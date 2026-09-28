@@ -26,7 +26,7 @@ public record FitnessMapResponse(UUID familyId, @Nullable String familyName, Lis
             boolean measurable,
             boolean consentRequired,
             boolean consentGiven,
-            /** 예: `유소년 상위 37%`. 측정이 없으면 null → "첫 측정을 등록하면 지도가 그려져요" */
+            /** 예: `유소년 상위 37%`. 측정이 없으면 null → "첫 측정을 등록하면 지도가 그려져요". 호출 계정이 CHILD 면 null */
             @Nullable String headline,
             @Nullable Latest latest) {}
 
@@ -34,9 +34,10 @@ public record FitnessMapResponse(UUID familyId, @Nullable String familyName, Lis
             UUID fitnessTestId,
             LocalDate testedOn,
             @Nullable Integer overallPercentile,
+            /** 아래 셋은 부모만 볼 값이다. 호출 계정이 CHILD 면 null(overallPercentile 은 준다). */
             @Nullable FactorPoint weakest,
             @Nullable FactorPoint strongest,
-            CoachDirection coachDirection) {}
+            @Nullable CoachDirection coachDirection) {}
 
     public static FitnessMapResponse of(FitnessMap map) {
         return new FitnessMapResponse(

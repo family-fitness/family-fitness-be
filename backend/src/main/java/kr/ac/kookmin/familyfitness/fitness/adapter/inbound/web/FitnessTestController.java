@@ -16,7 +16,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 측정 회차 등록·이력·최신 조회 — 로그인(같은 가족). actor 는 토큰의 계정, 대상은 경로의 profileId. */
+/**
+ * 측정 회차 등록·이력·최신 조회. actor 는 토큰의 계정, 대상은 경로의 profileId.
+ * 등록은 그 가족의 보호자만(403 NOT_A_PARENT), 조회는 같은 가족이면 되고 자녀 계정에는 부모만 볼 값을 비운다.
+ */
 @RestController
 @RequestMapping("/api/v1/profiles/{profileId}/fitness-tests")
 public class FitnessTestController {
