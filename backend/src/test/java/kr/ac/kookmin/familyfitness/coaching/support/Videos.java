@@ -46,7 +46,7 @@ public final class Videos {
                 Fixed.NOW);
     }
 
-    /** 시드와 같은 다섯 편. */
+    /** 메모리 저장소용 다섯 편. 옛 시드 값이다 — DB 의 IdpXx2gm90o 는 이제 V132 가 AI 값으로 넣는다. */
     public static List<ExerciseVideo> seed() {
         return List.of(
                 video("IdpXx2gm90o", 7, 12, "유연성,근지구력", 600),
