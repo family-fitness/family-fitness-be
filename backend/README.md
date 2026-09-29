@@ -33,6 +33,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 
 - 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
+  `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
 - 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
 - 정해진 시각에 도는 일(모두 KST)은 설정으로 바꾼다: 리프레시 토큰 정리 `app.auth.refresh-token-cleanup.cron`(매일 04:00) · 알림 `app.notification.mission-ready-cron`(07:30) · `app.notification.remeasure-cron`(09:00) · 리그 정산 `app.league.settle-cron`(매월 1일 00:10). 표는 [docs/api-contract.md](../docs/api-contract.md) 0장.

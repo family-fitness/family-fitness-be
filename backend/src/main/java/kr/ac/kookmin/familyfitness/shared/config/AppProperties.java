@@ -13,8 +13,19 @@ public record AppProperties(
         @DefaultValue Cors cors,
         @DefaultValue Auth auth,
         @DefaultValue Ai ai) {
+    /**
+     * frontendBaseUrl 은 초대 링크(shareUrl)의 앞머리다. http(s):// 로 시작하지 않으면 기동을 멈춘다 — prod 는 기본값 없이
+     * APP_FRONTEND_BASE_URL 을 요구하므로(application-prod.properties) 빠뜨리면 빈 값이 들어와 여기서 멈춘다.
+     */
     @ConstructorBinding
-    public AppProperties {}
+    public AppProperties {
+        String url = frontendBaseUrl.strip();
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw new IllegalArgumentException(
+                    "app.frontend-base-url 은 http(s):// 로 시작하는 FE 주소여야 한다 (APP_FRONTEND_BASE_URL): '" + frontendBaseUrl
+                            + "'");
+        }
+    }
 
     public AppProperties() {
         this("Asia/Seoul", "http://localhost:5173", new Cors(), new Auth(), new Ai());

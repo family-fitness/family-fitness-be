@@ -410,7 +410,7 @@ local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보
 ### POST /api/v1/profiles/{profileId}/invite — 보호자
 본문 없음. 응답 201 `{claimCode(6자리, 0/O·1/I 제외 대문자+숫자), expiresAt(+7일), shareUrl("{app.frontend-base-url}/claim?code=XXXXXX")}`.
 - 살아 있는 코드(만료 전 · 안 씀)가 있으면 새로 만들지 않고 그 코드와 만료 시각을 그대로 준다(이때도 201). 없을 때만 새로 만들고, 발급한 보호자를 남긴다(`V143`).
-- local · compose 의 `app.frontend-base-url` 기본값은 FE 개발 서버 `http://localhost:3000` 이다.
+- local · compose 의 `app.frontend-base-url` 기본값은 FE 개발 서버 `http://localhost:3000` 이다. prod 는 기본값이 없어 `APP_FRONTEND_BASE_URL` 을 빠뜨리면 기동이 멈춘다(localhost 링크가 나가지 않게).
 판정 차례: 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 409 `ALREADY_CLAIMED`(이미 계정이 붙은 프로필) → 409 `CONFLICT`.
 
 ### GET /api/v1/invites/{claimCode} — 로그인
