@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.shared.ai;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -226,9 +227,13 @@ public class HttpAiGateway implements AiGateway {
         return b.build();
     }
 
-    /** JDK HttpClient. 연결 1초, 읽기는 엔드포인트별. */
+    /**
+     * JDK HttpClient. 연결 1초, 읽기는 엔드포인트별. HTTP/1.1 로 고정한다 — 기본(HTTP/2)이면 평문 http 주소에도 「Upgrade: h2c」 를 붙여
+     * 보내는데, AI(uvicorn)는 h2c 를 받지 않아 부를 때마다 「Unsupported upgrade request」 경고를 남겼다.
+     */
     public static ClientHttpRequestFactory jdkFactory(Duration readTimeout) {
         return ClientHttpRequestFactoryBuilder.jdk()
+                .withHttpClientCustomizer(client -> client.version(HttpClient.Version.HTTP_1_1))
                 .build(HttpClientSettings.defaults().withTimeouts(CONNECT_TIMEOUT, readTimeout));
     }
 
