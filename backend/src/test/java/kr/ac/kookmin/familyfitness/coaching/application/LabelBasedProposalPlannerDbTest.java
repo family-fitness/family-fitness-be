@@ -87,6 +87,23 @@ class LabelBasedProposalPlannerDbTest {
     }
 
     @Test
+    @DisplayName("어르신 근력 편성의 본운동은 근력 클립이다 — 연령대보다 요인이 먼저다(ai:video/catalog.py _age_rank)")
+    void 어르신_근력_편성은_본운동에_근력_클립을_고른다() {
+        CoachRunResult result = planner.plan(
+                subject(LocalDate.of(1956, 3, 1)),
+                TODAY,
+                new CoachRunConditions(20, false, null, FitnessFactor.STRENGTH, false),
+                TODAY,
+                "시험");
+
+        assertThat(result).isNotNull();
+        assertThat(sessionsOf(result))
+                .filteredOn(it -> it.phase().equals("본운동"))
+                .isNotEmpty()
+                .allSatisfy(it -> assertThat(it.fitnessFactor()).isEqualTo("근력"));
+    }
+
+    @Test
     @DisplayName("유소년 순발력 편성은 본운동에 공단 영상 클립을 고를 수 있고, 준비 · 정리는 유튜브 구간으로 채운다")
     void 유소년_순발력_편성은_공단_영상과_유튜브_구간을_함께_쓴다() {
         CoachRunResult result = planner.plan(

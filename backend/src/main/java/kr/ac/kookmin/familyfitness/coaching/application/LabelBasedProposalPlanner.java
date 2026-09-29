@@ -195,8 +195,9 @@ public class LabelBasedProposalPlanner {
     /**
      * 한 회분 클립(ai:video/catalog.py {@code routine} 을 옮김, 처방 동작 가산점은 뺐다 — 대체 편성은 처방 검색을 하지 않는다).
      * 후보: 지금 판의 운동 클립(유튜브 구간 + 공단 영상 한 편 클립) 중 대상 연령대에 맞고({@link ExerciseClip#suits}, 어르신은 성인 클립도) 조건에 맞는 것(조용히 → quiet,
-     * 집 → home_ok, 늘 도구 없음 — AI 요청과 같다). 단계마다 대상과 연령대가 같은 것 → 요인이 같은 것 → 처방 어휘 이름이 있는 것 →
-     * 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼. 같은 이름은 두 번 넣지 않는다
+     * 집 → home_ok, 늘 도구 없음 — AI 요청과 같다). 단계마다 점수(요인이 같으면 −2, 처방 어휘 이름이 있으면 −1)가 작은 것 →
+     * 같은 점수면 대상과 연령대가 같은 것 → 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼(AI {@code _age_rank} 와 같다 — 연령대를
+     * 요인보다 앞에 두면 어르신은 어르신 영상만 보다가 요인을 놓친다). 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
      */
     List<ExerciseClip> routine(AgeGroup ageGroup, @Nullable FitnessFactor factor, CoachRunConditions conditions) {
@@ -206,8 +207,9 @@ public class LabelBasedProposalPlanner {
                 .filter(it -> fits(it, conditions))
                 .toList();
         SessionClipCounts want = SessionClipCounts.of(conditions.minutes());
-        Comparator<ExerciseClip> rank = Comparator.comparing((ExerciseClip it) -> it.ageGroup() != ageGroup)
-                .thenComparingInt(it -> score(it, factor))
+        // ai:video/catalog.py _age_rank 와 같은 차례: 점수(요인 · 처방 어휘) → 제 연령대 → 세트 길이. 연령대는 같은 점수 안에서만 가른다.
+        Comparator<ExerciseClip> rank = Comparator.comparingInt((ExerciseClip it) -> score(it, factor))
+                .thenComparing(it -> it.ageGroup() != ageGroup)
                 .thenComparingInt(it -> Math.abs(it.endSec() - it.startSec() - SET_SECONDS));
         Set<String> used = new HashSet<>();
         List<ExerciseClip> picked = new ArrayList<>();
