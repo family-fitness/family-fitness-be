@@ -11,6 +11,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FutureTestDateException;
+import kr.ac.kookmin.familyfitness.fitness.domain.GradeTable;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
 import kr.ac.kookmin.familyfitness.fitness.domain.PercentileCalculator;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
@@ -47,6 +48,7 @@ public class FitnessTestService {
 
     private final FitnessTestRepository tests;
     private final NormCatalog norms;
+    private final GradeCatalog grades;
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
     private final ApplicationEventPublisher events;
@@ -56,6 +58,7 @@ public class FitnessTestService {
     public FitnessTestService(
             FitnessTestRepository tests,
             NormCatalog norms,
+            GradeCatalog grades,
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
             ApplicationEventPublisher events,
@@ -63,6 +66,7 @@ public class FitnessTestService {
             ZoneId zone) {
         this.tests = tests;
         this.norms = norms;
+        this.grades = grades;
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
         this.events = events;
@@ -86,6 +90,7 @@ public class FitnessTestService {
 
         FitnessTest earliestBefore = tests.findEarliestByProfileId(profileId);
         PercentileCalculator calculator = norms.calculator();
+        GradeTable gradeTable = grades.table();
         FitnessTest test = FitnessTest.register(
                 UUID.randomUUID(),
                 profileId,
@@ -97,6 +102,7 @@ public class FitnessTestService {
                 command.measurements(),
                 (item, value) ->
                         calculator.percentile(item, details.sex(), ageAtTest, value.doubleValue(), ageMonthsAtTest),
+                (item, value) -> gradeTable.grade(item, details.sex(), ageAtTest, ageMonthsAtTest, value),
                 clock.instant());
         FitnessTest saved = tests.save(test);
         events.publishEvent(new FitnessTestRegistered(

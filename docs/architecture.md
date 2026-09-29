@@ -158,11 +158,11 @@ flowchart LR
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V153`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
-  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 31개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V154`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 32개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.
-- 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 규준표는 국민체력100 공공데이터 산출물(V3, `kspo_norms_to_sql.py`),
+- 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 규준표는 국민체력100 공공데이터 산출물(V3, `kspo_norms_to_sql.py`), 등급 기준표는 AI 의 공식 기준표 산출물(V154, `grade_thresholds_to_sql.py`),
   운동 영상 48편과 구간 695개는 AI 클립 릴리스(V132, `ai_clips_to_sql.py`)다. AI 새 판은 새 V 파일로 넣고, 판에서 빠진 구간은 `active=false` 로 남긴다.
 - 영상은 유튜브 videoId 로만 가리킨다. 제안 · 미션의 `video_id` 에는 `exercise_videos` FK 가 없고(V134),
   제안 칸(`coach_run_proposal_sessions`) · 미션 칸(`mission_sessions`)은 영상 구간의 사본(videoId · startSec · endSec · 제목)을 든다.
@@ -172,7 +172,7 @@ flowchart LR
 | 모듈 | 표 |
 |---|---|
 | identity | `users` · `families` · `profiles` · `consent_events` · `cheers` · `profile_availability_slots` · `refresh_tokens` |
-| fitness | `fitness_norms` · `fitness_tests` · `fitness_test_items` |
+| fitness | `fitness_norms` · `fitness_grade_thresholds` · `fitness_tests` · `fitness_test_items` |
 | activity | `activity_daily` · `rest_cards` |
 | progress | `progress_xp_events` · `progress_achievements` |
 | coaching | `exercise_videos` · `video_exercises` · `video_interactions` · `exercise_favorites` · `coach_runs` · `coach_run_proposal_items` · `coach_run_proposal_sessions` · `missions` · `mission_participants` · `mission_sessions` · `mission_session_completions` · `mission_feedback` · `coach_messages` · `coach_message_citations` |

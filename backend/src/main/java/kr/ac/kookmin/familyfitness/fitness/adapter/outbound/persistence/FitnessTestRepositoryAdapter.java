@@ -107,7 +107,8 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
                 entity.getHeightCm(),
                 entity.getWeightKg(),
                 entity.getItems().stream()
-                        .map(it -> new FitnessTest.StoredItem(it.getItemCode(), it.getRawValue(), it.getPercentile()))
+                        .map(it -> new FitnessTest.StoredItem(
+                                it.getItemCode(), it.getRawValue(), it.getPercentile(), it.getGrade()))
                         .toList(),
                 entity.getCreatedAt());
     }

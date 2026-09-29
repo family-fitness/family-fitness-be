@@ -1,6 +1,7 @@
 package kr.ac.kookmin.familyfitness.fitness.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import kr.ac.kookmin.familyfitness.shared.domain.Band;
 import org.junit.jupiter.api.DisplayName;
@@ -8,35 +9,34 @@ import org.junit.jupiter.api.Test;
 
 class GradeTest {
     @Test
-    @DisplayName("등급은 85·65·40 으로 나뉜다 — 1등급 ≥ 85 · 2등급 ≥ 65 · 3등급 ≥ 40 · 그 외 참가")
-    void 등급은_85_65_40_으로_나뉜다() {
-        assertThat(Grade.ofPercentile(99)).isEqualTo(Grade.FIRST);
-        assertThat(Grade.ofPercentile(85)).isEqualTo(Grade.FIRST);
-        assertThat(Grade.ofPercentile(84)).isEqualTo(Grade.SECOND);
-        assertThat(Grade.ofPercentile(65)).isEqualTo(Grade.SECOND);
-        assertThat(Grade.ofPercentile(64)).isEqualTo(Grade.THIRD);
-        assertThat(Grade.ofPercentile(40)).isEqualTo(Grade.THIRD);
-        assertThat(Grade.ofPercentile(39)).isEqualTo(Grade.PARTICIPATION);
-        assertThat(Grade.ofPercentile(1)).isEqualTo(Grade.PARTICIPATION);
+    @DisplayName("등급 와이어 값은 1등급 · 2등급 · 3등급 · 참가 넷뿐이다(FE Grade 타입과 같다)")
+    void 등급_와이어_값은_넷뿐이다() {
+        assertThat(Grade.values()).extracting(Grade::getLabel).containsExactly("1등급", "2등급", "3등급", "참가");
+        assertThat(Grade.fromLabel("참가")).isEqualTo(Grade.PARTICIPATION);
+        assertThat(Grade.fromLabel("2등급")).isEqualTo(Grade.SECOND);
+        assertThatThrownBy(() -> Grade.fromLabel("4등급")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    @DisplayName("백분위 하나에서 등급·구간·상위 문구가 함께 파생된다")
-    void 백분위_하나에서_등급_구간_상위_문구가_함께_파생된다() {
-        ItemScore score = ItemScore.ofPercentile(24);
-        assertThat(score.grade()).isEqualTo(Grade.PARTICIPATION);
+    @DisplayName("구간 · 상위 문구는 백분위에서, 등급은 공식 기준표에서 따로 온다")
+    void 구간_상위_문구는_백분위에서_등급은_기준표에서_따로_온다() {
+        ItemScore score = ItemScore.of(24, Grade.THIRD);
+        assertThat(score.grade()).isEqualTo(Grade.THIRD);
         assertThat(score.band()).isEqualTo(Band.GROWTH);
         assertThat(score.topPercentText()).isEqualTo("상위 76%");
 
-        ItemScore strong = ItemScore.ofPercentile(75);
-        assertThat(strong.grade()).isEqualTo(Grade.SECOND);
+        // 백분위가 높아도 기준표에 못 미치면 참가다(예전 85/65/40 규칙이면 2등급)
+        ItemScore strong = ItemScore.of(75, Grade.PARTICIPATION);
+        assertThat(strong.grade()).isEqualTo(Grade.PARTICIPATION);
         assertThat(strong.band()).isEqualTo(Band.STRENGTH);
         assertThat(strong.topPercentText()).isEqualTo("상위 25%");
     }
 
     @Test
-    @DisplayName("규준이 없으면 전부 null")
-    void 규준이_없으면_전부_null() {
-        assertThat(ItemScore.ofPercentile(null)).isEqualTo(new ItemScore(null, null, null, null));
+    @DisplayName("규준이 없으면 백분위 · 구간 · 문구는 null 이고 등급은 기준표대로 남는다")
+    void 규준이_없으면_백분위_쪽만_null() {
+        assertThat(ItemScore.of(null, Grade.SECOND)).isEqualTo(new ItemScore(null, Grade.SECOND, null, null));
+        assertThat(ItemScore.of(null, null)).isEqualTo(ItemScore.NONE);
+        assertThat(ItemScore.of(50, null)).isEqualTo(new ItemScore(50, null, Band.STEADY, "상위 50%"));
     }
 }

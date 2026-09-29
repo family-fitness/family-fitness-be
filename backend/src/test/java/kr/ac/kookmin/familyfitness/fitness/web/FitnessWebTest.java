@@ -199,13 +199,16 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(48)))
-                // 등급 기준 85·65·40 — 백분위 48 은 3등급(옛 기준 90·75·50 이면 참가)
-                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
+                // 등급은 국민체력100 공식 기준표(여아 만 11세 012: 1등급 ≥ 10.9 · 2등급 ≥ 6.5 · 3등급 ≥ 3.0) — 백분위와 따로다
+                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("2등급")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 52%")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(35)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].grade", contains("3등급")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(63)))
+                // 022 는 3등급 줄이 없다 — 2등급(≥ 146)에 못 미치면 백분위 63 이어도 참가
+                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].grade", contains("참가")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].percentile", contains(10)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].unit", contains("%")))
@@ -215,6 +218,38 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.strongest.itemCode").value("022"))
                 .andExpect(jsonPath("$.strongest.percentile").value(63))
                 .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER));
+    }
+
+    @Test
+    @DisplayName("항목 등급은 V154 공식 기준표로 굳는다 — 여아 만 11세 1 · 2 · 3등급 · 참가, latest 도 같은 등급")
+    void 항목_등급은_공식_기준표로_굳는다() throws Exception {
+        // 여아 만 11세 기준: 020 ≥ 62 · 028 ≥ 44.4 · 009 2등급 ≥ 26 · 012 3등급 ≥ 3.0 · 043 2등급 ≥ 30(3등급 줄 없음) · 022 ≥ 165
+        register(
+                        testedOn,
+                        "135.5",
+                        "31.2",
+                        new Item("020", "62"),
+                        new Item("028", "44.4"),
+                        new Item("009", "26"),
+                        new Item("012", "3"),
+                        new Item("043", "29"),
+                        new Item("022", "165"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].grade", contains("1등급")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("1등급")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='009')].grade", contains("2등급")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='043')].grade", contains("참가")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].grade", contains("1등급")));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='043')].grade", contains("참가")))
+                .andExpect(jsonPath("$.items[*].grade", containsInAnyOrder("1등급", "1등급", "2등급", "3등급", "참가", "1등급")));
+        assertThat(jdbc.queryForObject("select count(*) from fitness_grade_thresholds", Integer.class))
+                .isEqualTo(1122);
     }
 
     @Test
@@ -333,7 +368,7 @@ class FitnessWebTest {
     @Test
     @DisplayName("043 반복옆뛰기를 재면 레이더 민첩성 꼭지점에 백분위가 들어간다")
     void 반복옆뛰기_043_을_재면_레이더_민첩성_꼭지점에_백분위가_들어간다() throws Exception {
-        // 여아 만 11세 규준에서 35회는 85번째 백분위 — 새 기준 1등급(옛 기준이면 2등급)
+        // 여아 만 11세 규준에서 35회는 85번째 백분위, 공식 기준표로는 1등급(≥ 32회)
         register(testedOn, "135.5", "31.2", new Item("043", "35"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.items[0].percentile").value(85))

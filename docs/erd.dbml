@@ -580,6 +580,29 @@ Table notifications {
   Note: '''(kind in ('KID_DONE', 'KID_THANKS', 'PRAISE', 'MISSION_READY', 'ACHIEVEMENT', 'REMEASURE'))'''
 }
 
+Table fitness_grade_thresholds {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age_unit varchar(4) [not null]
+  age_from smallint [not null]
+  age_to smallint [not null]
+  grade varchar(10) [not null]
+  item_code varchar(3) [not null]
+  op varchar(10) [not null]
+  cutoff numeric(8,3) [not null]
+  cutoff_upper numeric(8,3)
+  indexes {
+    (age_group, sex, age_unit, age_from, age_to, grade, item_code) [unique, name: 'uq_fitness_grade_threshold']
+  }
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))
+(age_from <= age_to)
+(grade in ('1등급', '2등급', '3등급'))
+(op in ('>=', '<=', '<', 'between'))
+((op = 'between' and cutoff_upper is not null) or (op <> 'between' and cutoff_upper is null))'''
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id

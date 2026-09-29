@@ -30,11 +30,14 @@ import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestItem;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
 import kr.ac.kookmin.familyfitness.fitness.domain.FutureTestDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Grade;
+import kr.ac.kookmin.familyfitness.fitness.domain.GradeThreshold;
 import kr.ac.kookmin.familyfitness.fitness.domain.ItemNotForAgeGroupException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Measurement;
 import kr.ac.kookmin.familyfitness.fitness.domain.NoItemsException;
+import kr.ac.kookmin.familyfitness.fitness.domain.NormAgeUnit;
 import kr.ac.kookmin.familyfitness.fitness.domain.NormPoint;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
+import kr.ac.kookmin.familyfitness.fitness.domain.ThresholdOp;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
@@ -61,9 +64,30 @@ class FitnessTestServiceTest {
     private final FamilyAccess familyAccess = mock(FamilyAccess.class);
     private final ProfileQuery profileQuery = mock(ProfileQuery.class);
     private final NormCatalog norms = normCatalog();
+    private final GradeCatalog grades = gradeCatalog();
     private final List<Object> published = new ArrayList<>();
     private final FitnessTestService service =
-            new FitnessTestService(tests, norms, familyAccess, profileQuery, published::add, clock, zone);
+            new FitnessTestService(tests, norms, grades, familyAccess, profileQuery, published::add, clock, zone);
+
+    /** 여아 기준 몇 줄. 유소년 028 은 7~12세 한 구간, 유아기 020 은 개월 구간 둘(48~53 · 54~59)이다. */
+    private static GradeCatalog gradeCatalog() {
+        List<GradeThreshold> rows = List.of(
+                threshold(AgeGroup.YOUTH, NormAgeUnit.YEARS, 7, 12, Grade.FIRST, "028", "45"),
+                threshold(AgeGroup.YOUTH, NormAgeUnit.YEARS, 7, 12, Grade.SECOND, "028", "40"),
+                threshold(AgeGroup.YOUTH, NormAgeUnit.YEARS, 7, 12, Grade.THIRD, "028", "35"),
+                threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 48, 53, Grade.FIRST, "020", "48"),
+                threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 54, 59, Grade.FIRST, "020", "59"),
+                threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 54, 59, Grade.SECOND, "020", "44"));
+        GradeCatalog catalog = new GradeCatalog(() -> rows);
+        catalog.refresh();
+        return catalog;
+    }
+
+    private static GradeThreshold threshold(
+            AgeGroup ageGroup, NormAgeUnit unit, int from, int to, Grade grade, String itemCode, String cutoff) {
+        return new GradeThreshold(
+                ageGroup, Sex.F, unit, from, to, grade, itemCode, ThresholdOp.AT_LEAST, new BigDecimal(cutoff), null);
+    }
 
     private static NormCatalog normCatalog() {
         List<NormPoint> points = new ArrayList<>(norms(
@@ -139,8 +163,8 @@ class FitnessTestServiceTest {
     }
 
     @Test
-    @DisplayName("등록하면 백분위가 규준으로 계산돼 굳고 등급·구간이 붙는다")
-    void 등록하면_백분위가_규준으로_계산돼_굳고_등급_구간이_붙는다() {
+    @DisplayName("등록하면 백분위가 규준으로, 등급이 공식 기준표로 계산돼 굳고 구간이 붙는다")
+    void 등록하면_백분위가_규준으로_등급이_기준표로_계산돼_굳고_구간이_붙는다() {
         childProfile();
         FitnessTest test =
                 service.register(actorId, profileId, command(new ItemPair("028", 42), new ItemPair("012", 9)));
@@ -152,6 +176,8 @@ class FitnessTestServiceTest {
         assertThat(grip.score().grade()).isEqualTo(Grade.SECOND);
         assertThat(grip.score().band()).isEqualTo(Band.STRENGTH);
         assertThat(itemOf(test, "012").percentile()).isEqualTo(50);
+        // 012 는 이 기준표에 줄이 없어 등급이 null 이다(백분위와 따로다)
+        assertThat(itemOf(test, "012").score().grade()).isNull();
         assertThat(test.getWeakest().itemCode()).isEqualTo("012");
         assertThat(test.getStrongest().itemCode()).isEqualTo("028");
         assertThat(tests.saved).containsKey(test.getId());
@@ -361,6 +387,21 @@ class FitnessTestServiceTest {
         assertThatThrownBy(() -> service.register(
                         actorId, profileId, command(LocalDate.of(2026, 9, 3), new ItemPair("010", 30))))
                 .isInstanceOf(ItemNotForAgeGroupException.class);
+    }
+
+    @Test
+    @DisplayName("유아기 등급은 측정일 기준 개월로 기준 구간을 고른다 — 같은 만 4세라도 53개월과 54개월은 다른 줄")
+    void 유아기_등급은_측정일_기준_개월로_기준_구간을_고른다() {
+        // 2022-03-01 생 — 2026-08-15 는 53개월, 2026-09-01 은 54개월(둘 다 만 4세)
+        childProfile(LocalDate.of(2022, 3, 1));
+        FitnessTest at53 =
+                service.register(actorId, profileId, command(LocalDate.of(2026, 8, 15), new ItemPair("020", 50)));
+        FitnessTest at54 =
+                service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("020", 50)));
+
+        assertThat(at53.getAgeGroup()).isEqualTo(AgeGroup.TODDLER);
+        assertThat(itemOf(at53, "020").score().grade()).isEqualTo(Grade.FIRST);
+        assertThat(itemOf(at54, "020").score().grade()).isEqualTo(Grade.SECOND);
     }
 
     @Test
