@@ -126,7 +126,7 @@ class ReviewLoginLimiterTest {
     }
 
     @Test
-    @DisplayName("막힌 요청은 세지 않는다 — 처음 통과한 때로부터 한 시간이 지나면 다시 된다")
+    @DisplayName("막힌 요청은 세지 않는다 — 처음 통과하고 한 시간이 지나면 다시 된다")
     void 한_시간이_지나면_풀린다() {
         Instant start = clock.instant();
         for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1");

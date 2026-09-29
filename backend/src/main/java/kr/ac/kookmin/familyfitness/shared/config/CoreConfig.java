@@ -15,7 +15,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 public class CoreConfig {
     /**
-     * 모든 "지금"은 이 Clock 을 통해 얻는다. 테스트에서 고정 시각으로 바꾼다. 개발용 시간 이동을 켜면(local · compose)
+     * 모든 "지금"은 이 Clock 에서 얻는다. 테스트에서 고정 시각으로 바꾼다. 개발용 시간 이동을 켜면(local · compose)
      * {@link kr.ac.kookmin.familyfitness.shared.dev.DevClockConfig} 의 옮길 수 있는 시계가 대신 선다.
      */
     @Bean
