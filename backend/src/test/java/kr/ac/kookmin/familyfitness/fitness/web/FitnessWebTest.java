@@ -168,9 +168,18 @@ class FitnessWebTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ageGroup").value("유소년"))
-                .andExpect(jsonPath("$.items", hasSize(6)))
-                .andExpect(
-                        jsonPath("$.items[*].itemCode", containsInAnyOrder("009", "012", "028", "020", "022", "043")))
+                .andExpect(jsonPath("$.items", hasSize(7)))
+                .andExpect(jsonPath(
+                        "$.items[*].itemCode", containsInAnyOrder("009", "012", "028", "020", "022", "043", "044")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].itemLabel", contains("눈-손협응력(벽패스)")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].unit", contains("회")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].factor", contains("협응력")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].higherIsBetter", contains(true)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].inputGroup", contains("EQUIPMENT")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].optional", contains(true)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].equipment", contains("벽·공")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].range.min", contains(0)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].range.max", contains(60)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].factor", contains("심폐지구력")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].inputGroup", contains("EQUIPMENT")))
@@ -366,6 +375,44 @@ class FitnessWebTest {
     }
 
     @Test
+    @DisplayName("044 벽패스는 V155 규준 백분위와 V154 공식 기준 등급을 받고, 레이더에는 들어가지 않는다")
+    void 벽패스_044_는_규준_백분위와_공식_기준_등급을_받고_레이더에는_들어가지_않는다() throws Exception {
+        // 여아 만 11세: 규준 1~30 백분위가 0회(몰린 값은 가운데 16), 80 백분위 5회 · 99 백분위 12회. 기준은 1등급 ≥ 19 · 2등급 ≥ 13
+        register(testedOn, "135.5", "31.2", new Item("044", "0"), new Item("028", "30"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].itemLabel", contains("눈-손협응력(벽패스)")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].unit", contains("회")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].percentile", contains(16)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].band", contains("growth")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].topPercentText", contains("상위 84%")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].grade", contains("참가")))
+                // 028 30% 는 백분위 10 — 벽패스 0회(16)보다 낮아 가장 낮은 항목은 여전히 근력이다
+                .andExpect(jsonPath("$.weakest.itemCode").value("028"))
+                .andExpect(jsonPath("$.strongest.itemCode").value("044"))
+                .andExpect(jsonPath("$.strongest.factor").value("협응력"));
+
+        register(testedOn.minusDays(1), "135.5", "31.2", new Item("044", "13"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[0].percentile").value(99))
+                .andExpect(jsonPath("$.items[0].grade").value("2등급"));
+        register(testedOn.minusDays(2), "135.5", "31.2", new Item("044", "5"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.items[0].percentile").value(80))
+                // 또래 80번째여도 공식 2등급(≥ 13회)에 못 미치면 참가다
+                .andExpect(jsonPath("$.items[0].grade").value("참가"));
+        register(testedOn.minusDays(3), "135.5", "31.2", new Item("044", "61"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("ITEM_OUT_OF_RANGE"));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.radar", hasSize(6)))
+                .andExpect(jsonPath("$.radar[*].factor", contains("근력", "근지구력", "유연성", "심폐지구력", "순발력", "민첩성")))
+                .andExpect(jsonPath("$.radar[0].percentile").value(10));
+    }
+
+    @Test
     @DisplayName("043 반복옆뛰기를 재면 레이더 민첩성 꼭지점에 백분위가 들어간다")
     void 반복옆뛰기_043_을_재면_레이더_민첩성_꼭지점에_백분위가_들어간다() throws Exception {
         // 여아 만 11세 규준에서 35회는 85번째 백분위, 공식 기준표로는 1등급(≥ 32회)
@@ -503,8 +550,8 @@ class FitnessWebTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ageGroup").value("유소년"))
-                .andExpect(
-                        jsonPath("$.items[*].itemCode", containsInAnyOrder("009", "012", "028", "020", "022", "043")))
+                .andExpect(jsonPath(
+                        "$.items[*].itemCode", containsInAnyOrder("009", "012", "028", "020", "022", "043", "044")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")));
 
         // testedOn 이 없으면 오늘. ageGroup 을 같이 보내도 profileId 가 이긴다

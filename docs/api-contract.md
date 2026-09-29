@@ -137,7 +137,7 @@
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
-  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`).
+  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -272,20 +272,22 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 | 040 | 반응시간 | 초 | ↓ | 민첩성 |
 | 041 | 성인체공시간 | 초 | ↑ | 순발력 |
 | 043 | 반복옆뛰기 | 회 | ↑ | 민첩성 |
+| 044 | 눈-손협응력(벽패스) | 회 | ↑ | 협응력 |
 | 050 | 5m4회왕복달리기 | 초 | ↓ | 민첩성 |
 | 051 | 3x3버튼누르기 | 초 | ↓ | 협응력 |
-- 입력 금지: 005 이완기혈압 · 006 수축기혈압 → 400 `ITEM_NOT_ALLOWED`. 신체조성(003·004·018·042)은 점수화하지 않고 받지도 않는다(400 `UNKNOWN_ITEM`). 044 는 점수 산출 제외.
+- 입력 금지: 005 이완기혈압 · 006 수축기혈압 → 400 `ITEM_NOT_ALLOWED`. 신체조성(003·004·018·042)은 점수화하지 않고 받지도 않는다(400 `UNKNOWN_ITEM`). 044 는 유소년의 벽패스(벽에 공을 던지고 받은 횟수)로, 청소년 017(초)과 다른 협응력 시험이다(AI `common/items.py` 와 같다).
 - 연령대별 항목 (AI 팀 기준표 열 매핑 `CRITERIA_COLUMNS` 기준):
   - 유아기(4~6): 020(10m 왕복오래달리기) · 028 · 009 · 012 · 050 · 022 · 051
-  - 유소년(7~12): 020(15m 왕복 오래달리기) · 028 · 009 · 012 · 043 · 022
+  - 유소년(7~12): 020(15m 왕복 오래달리기) · 028 · 009 · 012 · 043 · 022 · 044(벽패스) — AI `AGE_GROUP_ITEMS` 유소년과 같다
   - 청소년(13~18): 020(20m 왕복 오래달리기) · 035/037 · 028 · 009 · 010 · 012 · 013 · 014 · 017
   - 성인(19~64): 020(20m) · 035/037 · 028 · 019 · 012 · 021 · 040 · 022 · 041
   - 어르신(65+): ▲ 기준항목 미정 — 012 · 028 · 019 만 잠정
-- `inputGroup`: EASY = 009 · 010 · 012 · 014 · 019 · 041 · 043 (장비 없이 집에서). EQUIPMENT = 028(악력계) · 020 · 022 · 050 · 021 · 013 (공간) · 035 · 037 · 040 · 017 · 051 (장비).
-- `range`: 009 0~120 · 010 0~120 · 012 -30~40 · 013 5~60 · 014 0~2 · 017 0~120 · 019 0~120 · 020 0~150 · 021 5~60 · 022 0~350 · 028 0~150 · 035/037 10~90 · 040 0~5 · 041 0~2 · 043 0~120 · 050 5~60 · 051 0~60. 서버도 이 범위로 검사한다(밖이면 400 `ITEM_OUT_OF_RANGE`).
+- `inputGroup`: EASY = 009 · 010 · 012 · 014 · 019 · 041 · 043 (장비 없이 집에서). EQUIPMENT = 028(악력계) · 020 · 022 · 050 · 021 · 013 (공간) · 035 · 037 · 040 · 017 · 051 (장비) · 044(벽·공).
+- `range`: 009 0~120 · 010 0~120 · 012 -30~40 · 013 5~60 · 014 0~2 · 017 0~120 · 019 0~120 · 020 0~150 · 021 5~60 · 022 0~350 · 028 0~150 · 035/037 10~90 · 040 0~5 · 041 0~2 · 043 0~120 · 044 0~60 · 050 5~60 · 051 0~60. 서버도 이 범위로 검사한다(밖이면 400 `ITEM_OUT_OF_RANGE`).
 
 ### 백분위·등급 계산 (`PercentileCalculator` · `GradeTable`)
 - `fitness_norms(item_code, sex, age_unit, age_from, age_to, percentile, norm_value, source_year)` 를 부팅 시 메모리 적재. 유아기 구간은 개월 단위. 데이터 출처는 국민체력100 공공데이터 2024-07~2026-07 전수(AI 팀 분위수 산출물). 만 7~10세는 측정이 없어 백분위 `null`. 측정값을 같은 (item, sex, 나이 구간) 규준의 percentile 포인트 사이에서 선형 보간, 표 밖은 끝점으로 자름. ↓ 항목은 방향 반전.
+  값이 여러 포인트와 같으면(같은 값이 몰린 항목 — 044 벽패스는 여아 11세의 1~30 백분위가 모두 0회) 그 포인트들 백분위의 가운데다(0회 → 16). AI `percentile_of` 가 아래쪽 · 위쪽 자리의 가운데를 쓰는 것과 같은 생각이다. 044 규준은 AI `value_quantiles.csv` 의 11 · 12세를 `V155` 로 더했다.
 - 결과 백분위는 정수 1~99 로 잘라 저장(0·100 금지). 규준 없으면 `null`.
 - 백분위는 저장 시점 값으로 굳힌다(규준 연도 · 프로필 생일이 바뀌어도 과거 불변). `band` · `topPercentText` 는 응답 때 굳힌 백분위에서 다시 셈한다(계산은 한 군데).
 - **등급(`grade`)은 백분위에서 셈하지 않는다.** 국민체력100 공식 항목별 기준표 `fitness_grade_thresholds`(`V154`, AI `data/release/grade_thresholds.csv` 1,122줄 — AI 인증 등급 `certify()` 와 같은 표)로 정하고, 백분위처럼 저장 시점에 굳힌다(`fitness_test_items.grade`).
@@ -462,7 +464,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 이력이 없어도 **404 가 아니라 200** 이다: `fitnessTestId · testedOn · heightCm · weightKg` 는 null, `radar` 6요인 percentile null, `items:[]`, `coachDirection` 은 부모 계정이면 `"GROWTH"` · 아이 계정이면 null.
 - `heightCm` · `weightKg`: 그 회차에 같이 적은 값만. 없으면 null 이고, 프로필(가입 때) 값으로 채우지 않는다.
 - `radar`: 근력 · 근지구력 · 유연성 · 심폐지구력 · 순발력 · 민첩성 차례의 `{factor, percentile|null}` 6개(요인에 항목 여럿이면 평균). 협응력 · 평형성은 싣지 않는다.
-- `items[]`: `{itemCode, itemLabel, unit, value, percentile, grade, band, topPercentText}`. `weakest/strongest`: `{factor, itemCode, percentile}`. `coachDirection`: weakest 백분위 > 75 → `STRENGTHEN`, 아니면 `GROWTH`.
+- `items[]`: `{itemCode, itemLabel, unit, value, percentile, grade, band, topPercentText}`. `weakest/strongest`: `{factor, itemCode, percentile}` — 레이더 밖 요인(협응력: 017 · 044 · 051)도 될 수 있다. `coachDirection`: weakest 백분위 > 75 → `STRENGTHEN`, 아니면 `GROWTH`.
 - 아이 계정이면 `weightKg` · `radar[].percentile` · 항목의 `percentile · grade · band · topPercentText` · `weakest` · `strongest` · `coachDirection` 이 null 이다.
 - 「가장 최근」 은 testedOn 이 가장 늦은 회차다. 지난 날짜로 측정을 적으면 방금 적은 회차가 아니라 더 늦은 회차가 나온다.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.

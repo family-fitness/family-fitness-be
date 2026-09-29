@@ -100,6 +100,59 @@ class PercentileCalculatorTest {
     }
 
     @Test
+    @DisplayName("같은 값이 여러 포인트에 몰리면 그 백분위들의 가운데다 — AI percentile_of 처럼(벽패스 0회가 1이 되지 않게)")
+    void 같은_값이_여러_포인트에_몰리면_그_백분위들의_가운데다() {
+        // 유소년 여 11세 044 규준(V155)의 앞부분 — 1~30 백분위가 모두 0회, 35~50 이 1회
+        List<NormPoint> wallPass = points(
+                FitnessItem.WALL_PASS,
+                Sex.F,
+                11,
+                11,
+                new Pair(1, 0.0),
+                new Pair(5, 0.0),
+                new Pair(10, 0.0),
+                new Pair(15, 0.0),
+                new Pair(20, 0.0),
+                new Pair(25, 0.0),
+                new Pair(30, 0.0),
+                new Pair(35, 1.0),
+                new Pair(40, 1.0),
+                new Pair(45, 1.0),
+                new Pair(50, 1.0),
+                new Pair(55, 2.0),
+                new Pair(95, 9.0),
+                new Pair(99, 12.0));
+        PercentileCalculator calc = new PercentileCalculator(NormTable.of(wallPass));
+        assertThat(calc.percentile(FitnessItem.WALL_PASS, Sex.F, 11, 0.0)).isEqualTo(16); // (1 + 30) / 2
+        assertThat(calc.percentile(FitnessItem.WALL_PASS, Sex.F, 11, 1.0)).isEqualTo(43); // (35 + 50) / 2
+        // 몰린 값 사이는 전처럼 선형 보간한다: 0 과 1 사이 → 30 ~ 35
+        assertThat(calc.percentile(FitnessItem.WALL_PASS, Sex.F, 11, 0.5)).isEqualTo(33);
+        assertThat(calc.percentile(FitnessItem.WALL_PASS, Sex.F, 11, 2.0)).isEqualTo(55);
+        assertThat(calc.percentile(FitnessItem.WALL_PASS, Sex.F, 11, 12.0)).isEqualTo(99);
+
+        // 윗끝에 몰려도 같다(윗몸말아올리기 95 · 99 가 모두 80회)
+        List<NormPoint> capped =
+                points(FitnessItem.SIT_UP, Sex.M, 11, 11, new Pair(50, 24.0), new Pair(95, 80.0), new Pair(99, 80.0));
+        PercentileCalculator cappedCalc = new PercentileCalculator(NormTable.of(capped));
+        assertThat(cappedCalc.percentile(FitnessItem.SIT_UP, Sex.M, 11, 80.0)).isEqualTo(97);
+        assertThat(cappedCalc.percentile(FitnessItem.SIT_UP, Sex.M, 11, 81.0)).isEqualTo(99);
+
+        // 낮을수록 좋은 항목도 뒤집은 뒤 같은 규칙이다
+        List<NormPoint> slow = points(
+                FitnessItem.SHUTTLE_RUN_5M_X4,
+                Sex.M,
+                4,
+                6,
+                new Pair(5, 13.0),
+                new Pair(25, 11.0),
+                new Pair(50, 11.0),
+                new Pair(95, 8.0));
+        PercentileCalculator slowCalc = new PercentileCalculator(NormTable.of(slow));
+        assertThat(slowCalc.percentile(FitnessItem.SHUTTLE_RUN_5M_X4, Sex.M, 5, 11.0))
+                .isEqualTo(38); // (25 + 50) / 2 = 37.5
+    }
+
+    @Test
     @DisplayName("결과는 1~99 로 잘라 0과 100 이 나오지 않는다")
     void 결과는_1_99_로_잘라_0과_100_이_나오지_않는다() {
         List<NormPoint> extreme =

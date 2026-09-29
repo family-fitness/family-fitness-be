@@ -129,7 +129,7 @@ Python 3 만 있으면 된다. Windows 콘솔(cp949)에서 결과를 파일로 �
 
 | 스크립트 | 하는 일 | 실행 |
 |---|---|---|
-| `kspo_norms_to_sql.py` | AI 팀 분위수 산출물(`age_band_value_quantiles.csv`) → 규준표 마이그레이션(`V3`). 적용된 V3 를 다시 적재하는 방식은 아직 정하지 않았다 | backend 폴더에서 `python3 scripts/kspo_norms_to_sql.py ../../family-fitness-ai/data/release/age_band_value_quantiles.csv 2026 > src/main/resources/db/migration/V3__fitness_norms_kspo_2024_2026.sql` |
+| `kspo_norms_to_sql.py` | AI 팀 분위수 산출물 → 규준표 마이그레이션. 예전 판 `age_band_value_quantiles.csv`(`V3`)와 지금 판 `value_quantiles.csv`(한 살 단위 · 101칸, 표본 30 미만은 뺀다)를 다 읽는다. `--items` 를 주면 그 항목만 넣고 그 항목만 지운다(`V155` 044 벽패스). 적용된 V3 전체를 다시 적재하는 방식은 아직 정하지 않았다 | backend 폴더에서 `python3 scripts/kspo_norms_to_sql.py ../../family-fitness-ai/data/release/value_quantiles.csv 2026 --items 044 > src/main/resources/db/migration/V155__fitness_norms_044_wall_pass.sql` (V3 는 `…/age_band_value_quantiles.csv 2026`) |
 | `grade_thresholds_to_sql.py` | AI 등급 기준표(`grade_thresholds.csv`, 국민체력100 공식 항목별 기준) → `fitness_grade_thresholds` 마이그레이션. 첫 적재는 `--create-table`(`V154`), 다음 판은 새 V 파일(표를 통째로 바꾼다). AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/grade_thresholds_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_grade_thresholds_<AI 커밋>.sql` |
 | `ai_clips_to_sql.py` | AI 클립 릴리스(`video_clips.csv` · `clip_labels.csv` · `corpus_meta.csv`) → 운동 영상 · 구간 마이그레이션. 첫 적재는 `--create-table`(`V132`), 다음 릴리스는 새 V 파일 | backend 폴더에서 `python3 scripts/ai_clips_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__coaching_clip_release_<AI 커밋>.sql` |
 | `ddl_to_dbml.py` | 마이그레이션 DDL → `docs/erd.dbml` | 저장소 루트에서 `python3 backend/scripts/ddl_to_dbml.py > docs/erd.dbml` |
@@ -143,12 +143,12 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 - 도메인 단위 테스트(순수 Java) → 애플리케이션 테스트(포트 대역) → 웹 테스트(MockMvc, H2 위 실제 스택) 순서로 둔다.
 - `ModularityTests` 가 모듈 일곱 개가 있는지와 Spring Modulith 경계(순환 · 내부 패키지 접근 · 선언된 의존)를 검증하고, ArchUnit 으로 모듈마다 부를 수 있는 모듈 목록(아무도 notification 을 부르지 않는다 등)을 확인한다.
 - `FamilyfitnessApplicationTests` 가 H2 에 전체 마이그레이션을 적용해 기동을 확인한다. `PostgresMigrationTests` 등 Testcontainers 시험은 Docker 가 없으면 건너뛴다.
-- 규준표(`fitness_norms`)는 국민체력100 공공데이터 2024-07~2026-07 전수에서 AI 팀이 낸 분위수 산출물(`family-fitness-ai/data/release/age_band_value_quantiles.csv`)을 `V3__fitness_norms_kspo_2024_2026.sql` 로 적재한다. API 키가 필요 없다. 산출물이 갱신되면 `scripts/kspo_norms_to_sql.py` 로 다시 만든다. 데이터가 있는 구간: 유아기 48~83개월 · 유소년 11~12세 · 청소년 13~18세 · 성인 19~64세. 만 7~10세는 공공데이터에 측정이 없어 백분위가 `null` 이다.
+- 규준표(`fitness_norms`)는 국민체력100 공공데이터 2024-07~2026-07 전수에서 AI 팀이 낸 분위수 산출물(`family-fitness-ai/data/release/age_band_value_quantiles.csv`)을 `V3__fitness_norms_kspo_2024_2026.sql` 로 적재한다. 유소년 044 벽패스(11 · 12세)는 지금 판 `value_quantiles.csv` 에서 `V155` 로 더했다. API 키가 필요 없다. 산출물이 갱신되면 `scripts/kspo_norms_to_sql.py` 로 다시 만든다. 데이터가 있는 구간: 유아기 48~83개월 · 유소년 11~12세 · 청소년 13~18세 · 성인 19~64세. 만 7~10세는 공공데이터에 측정이 없어 백분위가 `null` 이다.
 - 항목 등급은 국민체력100 공식 기준표(`fitness_grade_thresholds`, `V154`)로 낸다. AI 의 `data/release/grade_thresholds.csv` 를 `scripts/grade_thresholds_to_sql.py` 로 옮긴 것이라 AI 인증 등급과 같은 표다. 기준 줄이 없는 만 7~10세 · 어르신은 등급이 `null` 이다.
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V154` 이고 다음은 `V155` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V155` 이고 다음은 `V156` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

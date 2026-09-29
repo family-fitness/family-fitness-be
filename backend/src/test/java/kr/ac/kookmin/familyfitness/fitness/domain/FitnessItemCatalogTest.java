@@ -21,7 +21,8 @@ class FitnessItemCatalogTest {
     @DisplayName("연령대별 항목은 계약 표와 같다")
     void 연령대별_항목은_계약_표와_같다() {
         assertThat(codes(AgeGroup.TODDLER)).containsExactlyInAnyOrder("020", "028", "009", "012", "050", "022", "051");
-        assertThat(codes(AgeGroup.YOUTH)).containsExactlyInAnyOrder("020", "028", "009", "012", "043", "022");
+        // 유소년은 AI 카탈로그(common/items.py AGE_GROUP_ITEMS)와 같다 — 044 벽패스까지 일곱
+        assertThat(codes(AgeGroup.YOUTH)).containsExactlyInAnyOrder("020", "028", "009", "012", "043", "022", "044");
         assertThat(codes(AgeGroup.ADOLESCENT))
                 .containsExactlyInAnyOrder("020", "035", "037", "028", "009", "010", "012", "013", "014", "017");
         assertThat(codes(AgeGroup.ADULT))
@@ -34,7 +35,7 @@ class FitnessItemCatalogTest {
     void EASY_항목이_먼저_오고_EQUIPMENT_항목은_선택이다() {
         List<FitnessItem> youth = FitnessItem.forAgeGroup(AgeGroup.YOUTH);
         assertThat(youth.stream().map(FitnessItem::getCode).toList())
-                .containsExactly("009", "012", "043", "020", "022", "028");
+                .containsExactly("009", "012", "043", "020", "022", "028", "044");
         assertThat(youth.stream()
                         .filter(it -> it.getInputGroup() == InputGroup.EASY)
                         .toList())
@@ -58,8 +59,29 @@ class FitnessItemCatalogTest {
                 .map(FitnessItem::getCode)
                 .toList();
         assertThat(equipment)
-                .containsExactlyInAnyOrder("028", "020", "022", "050", "021", "013", "035", "037", "040", "017", "051");
+                .containsExactlyInAnyOrder(
+                        "028", "020", "022", "050", "021", "013", "035", "037", "040", "017", "051", "044");
         assertThat(FitnessItem.RELATIVE_GRIP.getEquipment()).isEqualTo("악력계");
+    }
+
+    @Test
+    @DisplayName("044 눈-손협응력(벽패스)은 유소년 협응력 항목이다 — 회 · 높을수록 좋음 · 벽과 공이 필요한 선택 항목 · 0~60회")
+    void 눈_손협응력_벽패스_044_는_유소년_협응력_항목이다() {
+        FitnessItem wallPass = FitnessItem.resolve("044");
+        assertThat(wallPass).isEqualTo(FitnessItem.WALL_PASS);
+        assertThat(wallPass.getItemName()).isEqualTo("눈-손협응력(벽패스)");
+        assertThat(wallPass.label(AgeGroup.YOUTH)).isEqualTo("눈-손협응력(벽패스)");
+        assertThat(wallPass.getUnit()).isEqualTo("회");
+        assertThat(wallPass.getFactor()).isEqualTo(FitnessFactor.COORDINATION);
+        assertThat(wallPass.isHigherIsBetter()).isTrue();
+        assertThat(wallPass.getInputGroup()).isEqualTo(InputGroup.EQUIPMENT);
+        assertThat(wallPass.isOptional()).isTrue();
+        assertThat(wallPass.getEquipment()).isEqualTo("벽·공");
+        assertThat(wallPass.getRange()).isEqualTo(new ValueRange(0, 60));
+        assertThat(wallPass.isFor(AgeGroup.YOUTH)).isTrue();
+        assertThat(wallPass.isFor(AgeGroup.ADOLESCENT)).isFalse();
+        // 레이더(육각형)에는 협응력이 없다 — FE 육각형도 협응력 · 평형성은 그리지 않는다
+        assertThat(FitnessFactor.RADAR).doesNotContain(FitnessFactor.COORDINATION);
     }
 
     @Test

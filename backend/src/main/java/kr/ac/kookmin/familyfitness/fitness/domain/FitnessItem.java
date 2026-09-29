@@ -177,6 +177,21 @@ public enum FitnessItem {
             null,
             new ValueRange(0, 120),
             EnumSet.of(AgeGroup.YOUTH)),
+    /**
+     * 유소년의 협응력 시험 — 벽에 공을 던지고 받은 횟수(AI `common/items.py` 044, 017 과는 다른 시험). 벽과 공이 있어야 해서 선택 항목이다.
+     * 범위 0~60: 공식 1등급 기준이 18~19회, 공공데이터 11~12세 99번째 백분위가 12~17회, 최댓값이 33~50회(여 12세 90회 한 건은
+     * 튀는 값)라 기준의 세 배쯤 넉넉히 둔다.
+     */
+    WALL_PASS(
+            "044",
+            "눈-손협응력(벽패스)",
+            "회",
+            FitnessFactor.COORDINATION,
+            true,
+            InputGroup.EQUIPMENT,
+            Equipment.WALL_AND_BALL,
+            new ValueRange(0, 60),
+            EnumSet.of(AgeGroup.YOUTH)),
     SHUTTLE_RUN_5M_X4(
             "050",
             "5m4회왕복달리기",
@@ -201,6 +216,7 @@ public enum FitnessItem {
     private static final class Equipment {
         private static final String SPACE = "공간";
         private static final String DEVICE = "장비";
+        private static final String WALL_AND_BALL = "벽·공";
     }
 
     /** 혈압. 입력으로 받지 않는다 (400 ITEM_NOT_ALLOWED). */
