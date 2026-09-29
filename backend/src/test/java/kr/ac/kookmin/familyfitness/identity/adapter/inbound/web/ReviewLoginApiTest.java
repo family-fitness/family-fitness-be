@@ -164,6 +164,20 @@ class ReviewLoginApiTest {
     }
 
     @Test
+    @DisplayName("체험 가족의 식구 차례는 부를 때마다 같다 — 엄마 · 아빠 · 하윤 · 서준")
+    void 식구_차례는_늘_같다() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            Login login = login();
+            JsonNode family = getJson(login, "/api/v1/families/" + login.familyId() + "/profiles");
+
+            assertThat(StreamSupport.stream(family.get("profiles").spliterator(), false)
+                            .map(it -> it.get("name").asString())
+                            .toList())
+                    .containsExactly("엄마", "아빠", "하윤", "서준");
+        }
+    }
+
+    @Test
     @DisplayName("하윤은 사흘 전에 유소년 일곱 종목과 키 · 몸무게 · 허리둘레를 재서 종합 등급 2등급이 나온다")
     void 하윤은_종합_등급이_나온다() throws Exception {
         Login login = login();
