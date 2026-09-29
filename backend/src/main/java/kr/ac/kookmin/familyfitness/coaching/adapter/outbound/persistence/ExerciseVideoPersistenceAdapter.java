@@ -30,9 +30,8 @@ public class ExerciseVideoPersistenceAdapter implements ExerciseVideoRepository 
 
     @Override
     public List<ExerciseVideo> findAllAfter(@Nullable String afterVideoId) {
-        List<ExerciseVideoEntity> entities = afterVideoId == null
-                ? videos.findAllByOrderByVideoIdAsc()
-                : videos.findByVideoIdGreaterThanOrderByVideoIdAsc(afterVideoId);
+        List<ExerciseVideoEntity> entities =
+                afterVideoId == null ? videos.findListed() : videos.findListedAfter(afterVideoId);
         return entities.stream().map(ExerciseVideoEntity::toDomain).toList();
     }
 }

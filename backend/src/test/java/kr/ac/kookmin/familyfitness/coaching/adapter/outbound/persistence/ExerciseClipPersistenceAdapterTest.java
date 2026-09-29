@@ -264,6 +264,29 @@ class ExerciseClipPersistenceAdapterTest {
     }
 
     @Test
+    @DisplayName("클립이 모두 꺼진 공단 영상은 영상 목록(findAllAfter)에서 빠지고 id 로는 찾힌다. 유튜브 영상은 클립과 상관없이 남는다")
+    void 클립이_모두_꺼진_공단_영상은_영상_목록에서_빠진다() {
+        List<String> listed = videos.findAllAfter(null).stream()
+                .map(ExerciseVideo::getVideoId)
+                .toList();
+
+        // GET /videos(ALL) · 대체 편성의 영상 한 편 편성이 이 목록을 쓴다
+        assertThat(listed).doesNotContain("0AUDLJ08S_00059", "0AUDLJ08S_00172").contains("0AUDLJ08S_00173");
+        assertThat(listed.stream().filter(it -> it.startsWith("0AUDLJ08S_"))).hasSize(KSPO_ACTIVE);
+        assertThat(videos.findAllAfter("0AUDLJ08S_00058"))
+                .extracting(ExerciseVideo::getVideoId)
+                .first()
+                .isEqualTo("0AUDLJ08S_00173");
+        assertThat(videos.findById("0AUDLJ08S_00059")).isNotNull();
+
+        // 유튜브 영상은 클립을 모두 꺼도 목록에 남는다(영상 한 편 편성은 클립 없이도 쓴다)
+        jdbc.update("update video_exercises set active = false where video_id = ?", "IdpXx2gm90o");
+        assertThat(videos.findAllAfter(null))
+                .extracting(ExerciseVideo::getVideoId)
+                .contains("IdpXx2gm90o");
+    }
+
+    @Test
     @DisplayName("켜진 공단 클립과 그 영상의 제목 끝에 「-1」 「-2」 가 없다 — 「목 스트레칭」 여러 편은 한 이름이다")
     void 켜진_공단_클립과_영상의_제목_끝에_번호가_없다() {
         List<ExerciseClip> kspo = clips.findAllActive().stream()
