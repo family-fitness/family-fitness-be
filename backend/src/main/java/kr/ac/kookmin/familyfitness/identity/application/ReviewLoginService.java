@@ -28,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
  *       재 둬서 종합 등급(2등급)이 나온다
  *   <li>서준 — 아이, 만 6세 남(유아기), 계정 없음, 보호자 동의 있음. 사흘 전에 유아기 종목 몇 가지만 재 뒀다
  * </ul>
- * 네 사람 모두 운동할 수 있는 시간을 적어 둔다. 미션은 만들지 않는다 — 들어와서 오늘 편성을 직접 짜 보게.
+ * 네 사람 모두 운동할 수 있는 시간을 적어 둔다. 분은 FE 가 고를 수 있는 값(10 · 20 · 30 · 40)만 쓴다 — 15분이면 편성 화면이 10분 칩을 켠다. 미션은 만들지 않는다 — 들어와서 오늘 편성을 직접 짜 보게.
  * 측정은 이 모듈이 넣지 않는다. {@link ReviewFamilyCreated} 를 발행하면 측정(fitness)이 같은 트랜잭션에서 넣는다.
  *
  * <p>가족 · 구성원 · 참여 방식 · 운동할 수 있는 시간은 화면이 부르는 서비스를 그대로 거친다. 규칙(나이 · 동의 · 칸 값)이 사람이 만든
@@ -108,16 +108,16 @@ public class ReviewLoginService {
                 new BigDecimal("21.5"),
                 consent);
 
-        availability.replace(userId, mom, weekdaysAnd("19:00", 15, "SAT", "10:00", 30));
+        availability.replace(userId, mom, weekdaysAnd("19:00", 20, "SAT", "10:00", 30));
         availability.replace(
                 userId,
                 dad,
                 List.of(
-                        slot("TUE", "20:00", 15),
-                        slot("THU", "20:00", 15),
+                        slot("TUE", "20:00", 20),
+                        slot("THU", "20:00", 20),
                         slot("SAT", "10:00", 30),
                         slot("SUN", "10:00", 30)));
-        availability.replace(userId, hayun.profileId(), everyDay("18:30", 15, "10:00", 30));
+        availability.replace(userId, hayun.profileId(), everyDay("18:30", 20, "10:00", 30));
         availability.replace(userId, seojun.profileId(), everyDay("18:30", 10, "10:00", 20));
 
         events.publishEvent(new ReviewFamilyCreated(familyId, userId, hayun.profileId(), seojun.profileId()));

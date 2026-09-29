@@ -150,6 +150,13 @@ class ReviewLoginApiTest {
             JsonNode slots =
                     getJson(login, "/api/v1/profiles/" + member.get("profileId").asString() + "/availability");
             assertThat(slots.isEmpty()).as(member.get("name").asString()).isFalse();
+            // FE 편성 · 일정 화면이 고를 수 있는 분(10 · 20 · 30 · 40)만 적는다 — 15분이면 화면이 10분 칩을 켠다
+            assertThat(StreamSupport.stream(slots.get("slots").spliterator(), false)
+                            .map(it -> it.get("minutes").asInt())
+                            .toList())
+                    .as(member.get("name").asString())
+                    .isNotEmpty()
+                    .allSatisfy(it -> assertThat(it).isIn(10, 20, 30, 40));
         }
         assertThat(jdbc.queryForObject(
                         "select count(*) from missions where family_id = ?", Integer.class, login.familyId()))
