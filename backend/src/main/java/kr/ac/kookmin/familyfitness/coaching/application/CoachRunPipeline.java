@@ -104,6 +104,8 @@ public class CoachRunPipeline {
                 latest == null ? Map.of() : latest.measurements(),
                 latest == null ? null : latest.heightCm(),
                 latest == null ? null : latest.weightKg(),
+                latest == null ? null : latest.bodyFatPct(),
+                latest == null ? null : latest.waistCm(),
                 time.today());
         return new CoachRunRequest(
                 List.of(new CoachRunRequest.Participant(profile, CoachRoles.DRIVER)),

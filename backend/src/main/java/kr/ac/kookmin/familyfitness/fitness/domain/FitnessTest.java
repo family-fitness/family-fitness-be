@@ -32,8 +32,9 @@ public class FitnessTest {
     /** testedOn 기준 만 나이 */
     private final int ageAtTest;
 
-    private final @Nullable BigDecimal heightCm;
-    private final @Nullable BigDecimal weightKg;
+    /** 그 회차에 같이 적은 키 · 몸무게 · 체지방률 · 허리둘레. 안 적은 값은 null. */
+    private final BodyMeasures body;
+
     private final List<FitnessTestItem> items;
     private final Instant createdAt;
     private final AgeGroup ageGroup;
@@ -44,8 +45,7 @@ public class FitnessTest {
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<FitnessTestItem> items,
             Instant createdAt) {
         this.id = id;
@@ -53,8 +53,7 @@ public class FitnessTest {
         this.testedOn = testedOn;
         this.source = source;
         this.ageAtTest = ageAtTest;
-        this.heightCm = heightCm;
-        this.weightKg = weightKg;
+        this.body = body;
         this.items = items;
         this.createdAt = createdAt;
         this.ageGroup = AgeGroup.ofAge(ageAtTest);
@@ -80,12 +79,24 @@ public class FitnessTest {
         return ageAtTest;
     }
 
+    public BodyMeasures getBody() {
+        return body;
+    }
+
     public @Nullable BigDecimal getHeightCm() {
-        return heightCm;
+        return body.heightCm();
     }
 
     public @Nullable BigDecimal getWeightKg() {
-        return weightKg;
+        return body.weightKg();
+    }
+
+    public @Nullable BigDecimal getBodyFatPct() {
+        return body.bodyFatPct();
+    }
+
+    public @Nullable BigDecimal getWaistCm() {
+        return body.waistCm();
     }
 
     public List<FitnessTestItem> getItems() {
@@ -174,8 +185,7 @@ public class FitnessTest {
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<Measurement> measurements,
             BiFunction<FitnessItem, BigDecimal, @Nullable Integer> scorer,
             BiFunction<FitnessItem, BigDecimal, @Nullable Grade> grader,
@@ -195,7 +205,7 @@ public class FitnessTest {
                     return new FitnessTestItem(item, m.value(), score);
                 })
                 .toList();
-        return new FitnessTest(id, profileId, testedOn, source, ageAtTest, heightCm, weightKg, items, createdAt);
+        return new FitnessTest(id, profileId, testedOn, source, ageAtTest, body, items, createdAt);
     }
 
     /**
@@ -208,8 +218,7 @@ public class FitnessTest {
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<StoredItem> items,
             Instant createdAt) {
         return new FitnessTest(
@@ -218,8 +227,7 @@ public class FitnessTest {
                 testedOn,
                 source,
                 ageAtTest,
-                heightCm,
-                weightKg,
+                body,
                 items.stream()
                         .map(it -> {
                             FitnessItem item = FitnessItem.findByCode(it.itemCode());

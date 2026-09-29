@@ -195,6 +195,8 @@ class CoachingFlowWebTest {
                         today.minusDays(2),
                         new BigDecimal("140.5"),
                         new BigDecimal("35.0"),
+                        null,
+                        null,
                         Map.of("012", new BigDecimal("8.0")),
                         null,
                         null));

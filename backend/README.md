@@ -103,7 +103,7 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 | 모듈 | 범위 | 주소 |
 |---|---|---|
 | `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
-| `fitness` | 측정 항목 · 측정 등록(AI 와 같은 백분위 · 공식 기준표 등급 굳힘) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
+| `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 · 공식 기준표 등급 굳힘) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
 | `coaching` | 하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
@@ -155,7 +155,7 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V157` 이고 다음은 `V158` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V158` 이고 다음은 `V159` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

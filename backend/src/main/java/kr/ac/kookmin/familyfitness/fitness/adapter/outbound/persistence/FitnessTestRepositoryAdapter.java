@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
+import kr.ac.kookmin.familyfitness.fitness.domain.BodyMeasures;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
 import kr.ac.kookmin.familyfitness.fitness.domain.Grade;
@@ -82,6 +83,8 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
                 test.getAgeAtTest(),
                 test.getHeightCm(),
                 test.getWeightKg(),
+                test.getBodyFatPct(),
+                test.getWaistCm(),
                 test.getCreatedAt(),
                 test.getItems().stream()
                         .map(it -> {
@@ -104,8 +107,8 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
                 entity.getTestedOn(),
                 FitnessTestSource.valueOf(entity.getSource()),
                 entity.getAgeAtTest(),
-                entity.getHeightCm(),
-                entity.getWeightKg(),
+                new BodyMeasures(
+                        entity.getHeightCm(), entity.getWeightKg(), entity.getBodyFatPct(), entity.getWaistCm()),
                 entity.getItems().stream()
                         .map(it -> new FitnessTest.StoredItem(
                                 it.getItemCode(), it.getRawValue(), it.getPercentile(), it.getGrade()))

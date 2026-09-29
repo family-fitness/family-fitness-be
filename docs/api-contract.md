@@ -138,7 +138,7 @@
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
-  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`).
+  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`).
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -277,7 +277,7 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 | 044 | 눈-손협응력(벽패스) | 회 | ↑ | 협응력 |
 | 050 | 5m4회왕복달리기 | 초 | ↓ | 민첩성 |
 | 051 | 3x3버튼누르기 | 초 | ↓ | 협응력 |
-- 입력 금지: 005 이완기혈압 · 006 수축기혈압 → 400 `ITEM_NOT_ALLOWED`. 신체조성(003·004·018·042)은 점수화하지 않고 받지도 않는다(400 `UNKNOWN_ITEM`). 044 는 유소년의 벽패스(벽에 공을 던지고 받은 횟수)로, 청소년 017(초)과 다른 협응력 시험이다(AI `common/items.py` 와 같다).
+- 입력 금지: 005 이완기혈압 · 006 수축기혈압 → 400 `ITEM_NOT_ALLOWED`. 신체조성(003·004·018·042)은 `items` 로 받지 않고(400 `UNKNOWN_ITEM`) 백분위도 내지 않는다. 체지방률(003) · 허리둘레(004)는 측정 등록의 `bodyFatPct` · `waistCm` 칸으로 받아 그 회차에 굳힌다 — 인증 3등급의 신체조성 관문(BMI · 체지방률 · 허리둘레-신장비)에 쓴다. 044 는 유소년의 벽패스(벽에 공을 던지고 받은 횟수)로, 청소년 017(초)과 다른 협응력 시험이다(AI `common/items.py` 와 같다).
 - 연령대별 항목 (AI 팀 기준표 열 매핑 `CRITERIA_COLUMNS` 기준):
   - 유아기(4~6): 020(10m 왕복오래달리기) · 028 · 009 · 012 · 050 · 022 · 051
   - 유소년(7~12): 020(15m 왕복 오래달리기) · 028 · 009 · 012 · 043 · 022 · 044(벽패스) — AI `AGE_GROUP_ITEMS` 유소년과 같다
@@ -450,7 +450,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ## 2. 측정 (fitness)
 
-부모만 볼 값: 호출 계정의 그 가족 프로필이 CHILD 면 측정 응답에서 등급 · 요인별 백분위 · 가장 낮은/높은 항목 · 코치 방향 · 체중 · 「상위 n%」 문구를 비운다(null). `overallPercentile` 과 키 · 잰 값은 남긴다. 부모 계정은 아이 모드여도 다 받는다(서버가 화면을 모른다).
+부모만 볼 값: 호출 계정의 그 가족 프로필이 CHILD 면 측정 응답에서 등급 · 요인별 백분위 · 가장 낮은/높은 항목 · 코치 방향 · 체중 · 체지방률 · 허리둘레 · 「상위 n%」 문구를 비운다(null). `overallPercentile` 과 키 · 잰 값은 남긴다. 부모 계정은 아이 모드여도 다 받는다(서버가 화면을 모른다).
 
 ### GET /api/v1/fitness/items?ageGroup=&profileId=&testedOn=&sex= — 로그인(`profileId` 를 주면 보호자)
 응답 200 `{ageGroup, items: [{itemCode, itemName, itemLabel, unit, factor, higherIsBetter, inputGroup, optional, equipment|null, range:{min,max}}]}`.
@@ -461,8 +461,9 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### POST /api/v1/profiles/{profileId}/fitness-tests — 보호자
 자녀 계정은 자기 것도 403 `NOT_A_PARENT` 다(FE 는 측정을 보호자 화면에만 둔다).
-요청 `{testedOn●, source●, heightCm?(30~230), weightKg?(5~250), items●[{itemCode●, value●}]}`.
-응답 201 `{fitnessTestId, testedOn, items:[{itemCode, itemLabel, unit, value, percentile|null, grade|null, band|null, topPercentText|null}], weakest|null, strongest|null, disclaimer}`.
+요청 `{testedOn●, source●, heightCm?(30~230), weightKg?(5~250), bodyFatPct?(3~60), waistCm?(30~200), items●[{itemCode●, value●}]}`.
+- `bodyFatPct` 는 체지방률 %, `waistCm` 은 허리둘레 cm 다(둘 다 소수 한 자리까지 저장). 키 · 몸무게처럼 고를 수 있고, 범위 밖이면 400 `BAD_REQUEST`, 안 적었으면 `null` 을 보내거나 칸을 뺀다.
+응답 201 `{fitnessTestId, testedOn, bodyFatPct|null, waistCm|null, items:[{itemCode, itemLabel, unit, value, percentile|null, grade|null, band|null, topPercentText|null}], weakest|null, strongest|null, disclaimer}`.
 판정 차례: 400(몸통) → 404 `PROFILE_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 400(`testedOn` 이 미래) → 422 `NOT_MEASURABLE`(측정일 기준 만 4세 미만) → 422 `CONSENT_REQUIRED` → 409 `DUPLICATE_DATE` → 400 `NO_ITEMS` → 항목마다 400 `ITEM_NOT_ALLOWED`(005/006) · 400 `UNKNOWN_ITEM` → 400(같은 항목 두 번) → 422 `ITEM_NOT_FOR_AGE_GROUP` → 400 `ITEM_OUT_OF_RANGE`.
 불변식: 항목 0개면 저장 안 함. 백분위 · 등급은 저장 시점에 굳음. 한 프로필 같은 날짜 측정은 하나. `FitnessTest` 통째로 저장. age_at_test = testedOn 기준 만 나이. 동의 판정은 오늘 기준이다.
 저장 뒤 `FitnessTestRegistered` 를 낸다. 가장 이른 회차를 뺀 회차(다시 잰 회차)가 새로 생기면 경험치 `REMEASURE` +20 을 같은 트랜잭션에서 적는다. 커밋 뒤에는 알림함이 그 아이의 지난 회차로 만든 `REMEASURE` 알림을 지운다(7장).
@@ -473,12 +474,12 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
 ### GET /api/v1/profiles/{profileId}/fitness-tests/latest — 같은 가족
-응답 200 `{fitnessTestId, testedOn, heightCm|null, weightKg|null, radar, items, weakest|null, strongest|null, coachDirection|null, disclaimer}`.
-이력이 없어도 **404 가 아니라 200** 이다: `fitnessTestId · testedOn · heightCm · weightKg` 는 null, `radar` 6요인 percentile null, `items:[]`, `coachDirection` 은 부모 계정이면 `"GROWTH"` · 아이 계정이면 null.
-- `heightCm` · `weightKg`: 그 회차에 같이 적은 값만. 없으면 null 이고, 프로필(가입 때) 값으로 채우지 않는다.
+응답 200 `{fitnessTestId, testedOn, heightCm|null, weightKg|null, bodyFatPct|null, waistCm|null, radar, items, weakest|null, strongest|null, coachDirection|null, disclaimer}`.
+이력이 없어도 **404 가 아니라 200** 이다: `fitnessTestId · testedOn · heightCm · weightKg · bodyFatPct · waistCm` 은 null, `radar` 6요인 percentile null, `items:[]`, `coachDirection` 은 부모 계정이면 `"GROWTH"` · 아이 계정이면 null.
+- `heightCm` · `weightKg` · `bodyFatPct` · `waistCm`: 그 회차에 같이 적은 값만. 없으면 null 이고, 프로필(가입 때) 값으로 채우지 않는다.
 - `radar`: 근력 · 근지구력 · 유연성 · 심폐지구력 · 순발력 · 민첩성 차례의 `{factor, percentile|null}` 6개(요인에 항목 여럿이면 평균). 협응력 · 평형성은 싣지 않는다.
 - `items[]`: `{itemCode, itemLabel, unit, value, percentile, grade, band, topPercentText}`. `weakest/strongest`: `{factor, itemCode, percentile}` — 레이더 밖 요인(협응력: 017 · 044 · 051)도 될 수 있다. `coachDirection`: weakest 백분위 > 75 → `STRENGTHEN`, 아니면 `GROWTH`.
-- 아이 계정이면 `weightKg` · `radar[].percentile` · 항목의 `percentile · grade · band · topPercentText` · `weakest` · `strongest` · `coachDirection` 이 null 이다.
+- 아이 계정이면 `weightKg` · `bodyFatPct` · `waistCm` · `radar[].percentile` · 항목의 `percentile · grade · band · topPercentText` · `weakest` · `strongest` · `coachDirection` 이 null 이다.
 - 「가장 최근」 은 testedOn 이 가장 늦은 회차다. 지난 날짜로 측정을 적으면 방금 적은 회차가 아니라 더 늦은 회차가 나온다.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
@@ -811,7 +812,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
                  "focus_factor": <한글 요인 | null>, "with_companion": <withParent>}}
 ```
 - `profile_refs` 는 편성 대상 한 명뿐이다. 가족 전원을 보내지 않으므로 AI 의 「1~4명」 제한과 형제 사이 409 가 생기지 않는다. 동의가 없는 프로필은 싣지 않는다.
-- 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. `measurements` 가 비면 칸을 null 로 보낸다.
+- 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. 그 회차에 체지방률 · 허리둘레를 적었으면 `measurements` 에 `003` · `004` 로 같이 싣는다(AI 가 BMI · 허리둘레-신장비와 함께 3등급 판정에 쓴다). `measurements` 가 비면 칸을 null 로 보낸다.
 - `focus_factor` 는 AI 가 대상 요인으로 쓴다(AI-14 — AI 의 `feature/AI-14-focus-factor` 가 머지된 뒤부터. 그 전 AI 는 이 칸을 무시해 http 모드에서 고른 힘이 반영되지 않는다). 모르는 이름이면 AI 가 가장 낮은 요인으로 짠다. `with_companion` 은 AI 계약에 아직 없어 AI 가 무시한다. 대체 편성 · 스텁은 둘 다 반영한다.
 - 응답 202 `{run_id, status:"running", poll_after_ms}`.
 

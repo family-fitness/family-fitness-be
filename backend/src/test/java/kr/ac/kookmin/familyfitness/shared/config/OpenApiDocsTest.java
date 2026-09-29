@@ -115,6 +115,18 @@ class OpenApiDocsTest {
     }
 
     @Test
+    @DisplayName("측정 요청 · 응답의 체지방률 · 허리둘레는 null 을 싣는 number 다")
+    void 체지방률_허리둘레는_null_을_싣는_number_다() {
+        for (String schema : List.of("RegisterFitnessTestRequest", "FitnessTestResponse", "LatestFitnessResponse")) {
+            for (String name : List.of("bodyFatPct", "waistCm")) {
+                assertThat(typesOf(property(schema, name)))
+                        .as(schema + "." + name)
+                        .containsExactlyInAnyOrder("number", "null");
+            }
+        }
+    }
+
+    @Test
     @DisplayName("요청 검증용 getter(isContentPresent)는 CheerRequest 칸으로 나가지 않는다")
     void CheerRequest_에_contentPresent_가_없다() {
         JsonNode properties =

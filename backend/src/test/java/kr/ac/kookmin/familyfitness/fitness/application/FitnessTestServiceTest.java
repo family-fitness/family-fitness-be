@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered.Round;
+import kr.ac.kookmin.familyfitness.fitness.domain.BodyMeasures;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
@@ -131,7 +132,7 @@ class FitnessTestServiceTest {
             measurements.add(new Measurement(item.code(), BigDecimal.valueOf(item.value())));
         }
         return new RegisterFitnessTestCommand(
-                testedOn, FitnessTestSource.SELF_INPUT, null, null, List.copyOf(measurements));
+                testedOn, FitnessTestSource.SELF_INPUT, BodyMeasures.NONE, List.copyOf(measurements));
     }
 
     private static FitnessTestItem itemOf(FitnessTest test, String code) {
@@ -174,6 +175,30 @@ class FitnessTestServiceTest {
 
         // 저장된 값을 그대로 읽는다
         assertThat(itemOf(tests.findById(test.getId()), "028").percentile()).isEqualTo(76);
+    }
+
+    @Test
+    @DisplayName("키 · 몸무게 · 체지방률 · 허리둘레는 그 회차에 같이 굳고, 측정 항목(getMeasurements)에는 섞이지 않는다")
+    void 신체_값은_그_회차에_같이_굳는다() {
+        childProfile();
+        BodyMeasures body = new BodyMeasures(
+                new BigDecimal("135.5"), new BigDecimal("31.2"), new BigDecimal("22.5"), new BigDecimal("61.2"));
+        FitnessTest test = service.register(
+                actorId,
+                profileId,
+                new RegisterFitnessTestCommand(
+                        LocalDate.of(2026, 9, 1),
+                        FitnessTestSource.SELF_INPUT,
+                        body,
+                        List.of(new Measurement("028", BigDecimal.valueOf(36)))));
+
+        FitnessTest stored = tests.findById(test.getId());
+        assertThat(stored.getBody()).isEqualTo(body);
+        assertThat(stored.getHeightCm()).isEqualByComparingTo("135.5");
+        assertThat(stored.getWeightKg()).isEqualByComparingTo("31.2");
+        assertThat(stored.getBodyFatPct()).isEqualByComparingTo("22.5");
+        assertThat(stored.getWaistCm()).isEqualByComparingTo("61.2");
+        assertThat(stored.getMeasurements()).containsOnlyKeys("028");
     }
 
     @Test

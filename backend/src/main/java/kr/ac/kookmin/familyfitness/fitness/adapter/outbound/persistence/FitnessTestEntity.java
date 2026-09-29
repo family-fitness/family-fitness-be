@@ -52,6 +52,12 @@ public class FitnessTestEntity {
     @Column(name = "weight_kg", precision = 4, scale = 1)
     private @Nullable BigDecimal weightKg;
 
+    @Column(name = "body_fat_pct", precision = 4, scale = 1)
+    private @Nullable BigDecimal bodyFatPct;
+
+    @Column(name = "waist_cm", precision = 4, scale = 1)
+    private @Nullable BigDecimal waistCm;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -71,6 +77,8 @@ public class FitnessTestEntity {
             int ageAtTest,
             @Nullable BigDecimal heightCm,
             @Nullable BigDecimal weightKg,
+            @Nullable BigDecimal bodyFatPct,
+            @Nullable BigDecimal waistCm,
             Instant createdAt,
             List<FitnessTestItemEmbeddable> items) {
         this.id = id;
@@ -80,6 +88,8 @@ public class FitnessTestEntity {
         this.ageAtTest = ageAtTest;
         this.heightCm = heightCm;
         this.weightKg = weightKg;
+        this.bodyFatPct = bodyFatPct;
+        this.waistCm = waistCm;
         this.createdAt = createdAt;
         this.items = new ArrayList<>(items);
     }
@@ -110,6 +120,14 @@ public class FitnessTestEntity {
 
     public @Nullable BigDecimal getWeightKg() {
         return weightKg;
+    }
+
+    public @Nullable BigDecimal getBodyFatPct() {
+        return bodyFatPct;
+    }
+
+    public @Nullable BigDecimal getWaistCm() {
+        return waistCm;
     }
 
     public Instant getCreatedAt() {

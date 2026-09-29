@@ -158,7 +158,7 @@ flowchart LR
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V157`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V158`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
   양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 32개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.

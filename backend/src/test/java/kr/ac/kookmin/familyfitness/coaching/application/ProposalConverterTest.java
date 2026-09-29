@@ -372,7 +372,13 @@ class ProposalConverterTest {
                 base.supportMode(),
                 base.consentGiven());
         AiProfile profile = AiProfileFactory.of(
-                toddler, Map.of("012", new BigDecimal("5.5"), "005", new BigDecimal("80")), null, null, Fixed.TODAY);
+                toddler,
+                Map.of("012", new BigDecimal("5.5"), "005", new BigDecimal("80")),
+                null,
+                null,
+                null,
+                null,
+                Fixed.TODAY);
 
         assertThat(profile.profileRef()).isEqualTo(ProfileRef.of(toddler.profileId()));
         assertThat(profile.age()).isEqualTo(38);
@@ -381,11 +387,25 @@ class ProposalConverterTest {
         assertThat(profile.measurements()).containsOnlyKeys("012");
         assertThat(profile.inputLevel()).isEqualTo("L2");
 
-        AiProfile child =
-                AiProfileFactory.of(family.child, Map.of(), new BigDecimal("140.5"), new BigDecimal("35"), Fixed.TODAY);
+        AiProfile child = AiProfileFactory.of(
+                family.child, Map.of(), new BigDecimal("140.5"), new BigDecimal("35"), null, null, Fixed.TODAY);
         assertThat(child.age()).isEqualTo(11);
         assertThat(child.ageUnit()).isEqualTo("세");
         assertThat(child.inputLevel()).isEqualTo("L1");
+        // 체지방률 003 · 허리둘레 004 는 적은 것만 measurements 에 싣는다 — AI 가 3등급(BMI · 체지방률 · WHtR) 판정에 쓴다
+        AiProfile withBody = AiProfileFactory.of(
+                family.child,
+                Map.of("012", new BigDecimal("8")),
+                new BigDecimal("140.5"),
+                new BigDecimal("35"),
+                new BigDecimal("22.5"),
+                new BigDecimal("61.2"),
+                Fixed.TODAY);
+        assertThat(withBody.measurements())
+                .containsOnly(Map.entry("012", 8.0), Map.entry("003", 22.5), Map.entry("004", 61.2));
+        AiProfile waistOnly =
+                AiProfileFactory.of(family.child, Map.of(), null, null, null, new BigDecimal("61.2"), Fixed.TODAY);
+        assertThat(waistOnly.measurements()).containsOnly(Map.entry("004", 61.2));
         assertThat(AiProfileFactory.participant(family.child, child).role()).isEqualTo("주행자");
         assertThat(AiProfileFactory.participant(family.parent, child).role()).isEqualTo("동반자");
         assertThat(AiProfileFactory.participant(family.cheerParent, child).role())

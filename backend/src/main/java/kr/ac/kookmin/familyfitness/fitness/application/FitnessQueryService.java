@@ -32,6 +32,8 @@ public class FitnessQueryService implements FitnessQuery {
                 test.getTestedOn(),
                 test.getHeightCm(),
                 test.getWeightKg(),
+                test.getBodyFatPct(),
+                test.getWaistCm(),
                 test.getMeasurements(),
                 test.getWeakest(),
                 test.getStrongest());

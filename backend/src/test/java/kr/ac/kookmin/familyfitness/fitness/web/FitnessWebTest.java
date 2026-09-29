@@ -138,6 +138,20 @@ class FitnessWebTest {
                 .content(registerBody(on, heightCm, weightKg, items)));
     }
 
+    /** 체지방률 · 허리둘레를 같이 적은 회차. 값은 JSON 그대로 넣는다("null" 이면 안 적은 것). */
+    private ResultActions registerWithBody(LocalDate on, String bodyFatPct, String waistCm, Item... items)
+            throws Exception {
+        String rendered = Stream.of(items)
+                .map(it -> "{\"itemCode\":\"" + it.code() + "\",\"value\":" + it.value() + "}")
+                .collect(Collectors.joining(","));
+        return mvc.perform(post("/api/v1/profiles/" + childId + "/fitness-tests")
+                .header(HttpHeaders.AUTHORIZATION, bearer())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"testedOn\":\"" + on + "\",\"source\":\"SELF_INPUT\",\"heightCm\":145,\"weightKg\":38,"
+                        + "\"bodyFatPct\":" + bodyFatPct + ",\"waistCm\":" + waistCm + ",\"items\":[" + rendered
+                        + "]}"));
+    }
+
     private ResultActions registerYouthTest() throws Exception {
         return register(
                 testedOn,
@@ -313,6 +327,62 @@ class FitnessWebTest {
                                                 + "\",\"source\":\"SELF_INPUT\",\"heightCm\":10,\"items\":[{\"itemCode\":\"028\",\"value\":30}]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("체지방률 · 허리둘레를 같이 적으면 그 회차에 굳고 보호자에게만 돌려준다 — 안 적은 회차는 null")
+    void 체지방률_허리둘레를_같이_적으면_보호자에게만_돌려준다() throws Exception {
+        registerWithBody(testedOn, "22.5", "61.2", new Item("028", "30"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.bodyFatPct").value(22.5))
+                .andExpect(jsonPath("$.waistCm").value(61.2));
+        registerWithBody(testedOn.minusDays(7), "null", "null", new Item("028", "30"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.bodyFatPct").value(nullValue()))
+                .andExpect(jsonPath("$.waistCm").value(nullValue()));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bodyFatPct").value(22.5))
+                .andExpect(jsonPath("$.waistCm").value(61.2));
+        // 몸무게처럼 아이 계정에는 비운다
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(kidUserId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bodyFatPct").value(nullValue()))
+                .andExpect(jsonPath("$.waistCm").value(nullValue()));
+        assertThat(jdbc.queryForObject(
+                        "select body_fat_pct from fitness_tests where profile_id = ? and tested_on = ?",
+                        java.math.BigDecimal.class,
+                        childId,
+                        testedOn))
+                .isEqualByComparingTo("22.5");
+    }
+
+    @Test
+    @DisplayName("체지방률은 3~60 · 허리둘레는 30~200 cm 밖이면 400 BAD_REQUEST 이고, 양 끝 값은 받는다")
+    void 체지방률_허리둘레_범위_밖이면_400() throws Exception {
+        for (String[] body : List.of(
+                new String[] {"2.9", "null"},
+                new String[] {"60.1", "null"},
+                new String[] {"null", "29.9"},
+                new String[] {"null", "200.1"})) {
+            registerWithBody(testedOn, body[0], body[1], new Item("028", "30"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
+        registerWithBody(testedOn, "3", "200", new Item("028", "30")).andExpect(status().isCreated());
+        registerWithBody(testedOn.minusDays(1), "60", "30", new Item("028", "30"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("신체조성 003 · 004 는 items 로는 받지 않는다(400 UNKNOWN_ITEM) — bodyFatPct · waistCm 칸으로 받는다")
+    void 신체조성은_items_로_받지_않는다() throws Exception {
+        register(testedOn, "135.5", "31.2", new Item("003", "22"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("UNKNOWN_ITEM"));
     }
 
     @Test
