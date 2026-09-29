@@ -127,6 +127,39 @@ class OpenApiDocsTest {
     }
 
     @Test
+    @DisplayName("인증 등급은 회차에 하나다 — 항목 줄에 grade 가 없고, latest 의 certification 은 null 을 싣는 참조다")
+    void 인증_등급은_회차에_하나다() {
+        JsonNode itemProperties =
+                docs.path("components").path("schemas").path("ItemResult").path("properties");
+        assertThat(itemProperties.has("percentile")).isTrue();
+        assertThat(itemProperties.has("grade")).isFalse();
+
+        JsonNode latest = property("LatestFitnessResponse", "certification");
+        List<JsonNode> choices = new ArrayList<>();
+        latest.path("oneOf").forEach(choices::add);
+        assertThat(choices).hasSize(2);
+        assertThat(choices.get(0).path("$ref").asString()).isEqualTo("#/components/schemas/Certification");
+        assertThat(typesOf(choices.get(1))).containsExactly("null");
+        // 등록 응답은 보호자만 받아 늘 있다
+        assertThat(property("FitnessTestResponse", "certification").path("$ref").asString())
+                .isEqualTo("#/components/schemas/Certification");
+        assertThat(typesOf(property("Certification", "grade"))).containsExactlyInAnyOrder("string", "null");
+        assertThat(typesOf(property("Certification", "status"))).containsExactly("string");
+        // FE schema.ts 가 쓰는 이름 그대로 — Certification · MissingItem · PeerGrade
+        assertThat(property("Certification", "missingItems")
+                        .path("items")
+                        .path("$ref")
+                        .asString())
+                .isEqualTo("#/components/schemas/MissingItem");
+        assertThat(property("Certification", "peers").path("items").path("$ref").asString())
+                .isEqualTo("#/components/schemas/PeerGrade");
+        assertThat(typesOf(property("MissingItem", "itemCodes"))).containsExactly("array");
+        assertThat(typesOf(property("MissingItem", "label"))).containsExactly("string");
+        assertThat(typesOf(property("PeerGrade", "grade"))).containsExactly("string");
+        assertThat(typesOf(property("PeerGrade", "ratio"))).containsExactly("number");
+    }
+
+    @Test
     @DisplayName("요청 검증용 getter(isContentPresent)는 CheerRequest 칸으로 나가지 않는다")
     void CheerRequest_에_contentPresent_가_없다() {
         JsonNode properties =

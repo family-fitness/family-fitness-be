@@ -50,7 +50,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * H2 + Flyway(국민체력100 또래 분포 V156 · 등급 기준표 V154) 위에서 fitness 웹 어댑터를 끝까지 돈다. 백분위 기대값은 AI
+ * H2 + Flyway(국민체력100 또래 분포 V156 · 등급 기준표 V154 · 또래 등급 비율 V159) 위에서 fitness 웹 어댑터를 끝까지 돈다. 백분위 기대값은 AI
  * stats/tables.py percentile_of 가 같은 값에 낸 것과 같다.
  * identity 는 목: 같은 가족 판단과 프로필 상세를 흉내 낸다.
  */
@@ -223,16 +223,13 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.testedOn").value(testedOn.toString()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(48)))
-                // 등급은 국민체력100 공식 기준표(여아 만 11세 012: 1등급 ≥ 10.9 · 2등급 ≥ 6.5 · 3등급 ≥ 3.0) — 백분위와 따로다
-                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("2등급")))
+                // 항목마다 등급은 없다 — 등급은 회차의 certification 하나다
+                .andExpect(jsonPath("$.items[0].grade").doesNotExist())
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 52%")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(36)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].grade", contains("3등급")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(62)))
-                // 022 는 3등급 줄이 없다 — 2등급(≥ 146)에 못 미치면 백분위 62 여도 참가
-                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].grade", contains("참가")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].percentile", contains(10)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].unit", contains("%")))
@@ -241,39 +238,116 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.weakest.percentile").value(10))
                 .andExpect(jsonPath("$.strongest.itemCode").value("022"))
                 .andExpect(jsonPath("$.strongest.percentile").value(62))
+                // 1 · 2등급은 009 · 043 · 044 가, 3등급은 009 와 허리둘레가 없어 판정하지 못한다 — 둘이 적은 3등급 쪽을 알린다
+                .andExpect(jsonPath("$.certification.grade").value(nullValue()))
+                .andExpect(jsonPath("$.certification.status").value("NEEDS_ITEMS"))
+                .andExpect(jsonPath("$.certification.missingItems[*].label", contains("윗몸말아올리기", "허리둘레")))
+                .andExpect(jsonPath("$.certification.missingItems[1].itemCodes", contains("042")))
                 .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER));
     }
 
     @Test
-    @DisplayName("항목 등급은 V154 공식 기준표로 굳는다 — 여아 만 11세 1 · 2 · 3등급 · 참가, latest 도 같은 등급")
-    void 항목_등급은_공식_기준표로_굳는다() throws Exception {
-        // 여아 만 11세 기준: 020 ≥ 62 · 028 ≥ 44.4 · 009 2등급 ≥ 26 · 012 3등급 ≥ 3.0 · 043 2등급 ≥ 30(3등급 줄 없음) · 022 ≥ 165
+    @DisplayName("인증 등급은 한 사람에게 하나다 — 1등급 줄의 항목을 다 재고 다 넘으면 1등급, 또래 등급 비율을 같이 준다")
+    void 인증_등급은_한_사람에게_하나다() throws Exception {
+        // 여아 만 11세 1등급 기준: 020 ≥ 62 · 028 ≥ 44.4 · 009 ≥ 36 · 012 ≥ 10.9 · 043 ≥ 32 · 022 ≥ 165 · 044 ≥ 19
         register(
                         testedOn,
                         "135.5",
                         "31.2",
                         new Item("020", "62"),
                         new Item("028", "44.4"),
-                        new Item("009", "26"),
-                        new Item("012", "3"),
-                        new Item("043", "29"),
-                        new Item("022", "165"))
+                        new Item("009", "36"),
+                        new Item("012", "10.9"),
+                        new Item("043", "32"),
+                        new Item("022", "165"),
+                        new Item("044", "19"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].grade", contains("1등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("1등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='009')].grade", contains("2등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='043')].grade", contains("참가")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].grade", contains("1등급")));
+                .andExpect(jsonPath("$.certification.grade").value("1등급"))
+                .andExpect(jsonPath("$.certification.status").value("GRADED"))
+                .andExpect(jsonPath("$.certification.missingItems", hasSize(0)))
+                .andExpect(jsonPath("$.certification.peers[*].grade", contains("1등급", "2등급", "3등급", "참가")))
+                .andExpect(jsonPath("$.certification.peers[*].ratio", contains(0.0322, 0.0983, 0.2282, 0.6413)));
 
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
                         .header(HttpHeaders.AUTHORIZATION, bearer()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("3등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='043')].grade", contains("참가")))
-                .andExpect(jsonPath("$.items[*].grade", containsInAnyOrder("1등급", "1등급", "2등급", "3등급", "참가", "1등급")));
+                .andExpect(jsonPath("$.certification.grade").value("1등급"))
+                .andExpect(jsonPath("$.certification.peers", hasSize(4)));
         assertThat(jdbc.queryForObject("select count(*) from fitness_grade_thresholds", Integer.class))
                 .isEqualTo(1122);
+        assertThat(jdbc.queryForObject("select count(*) from fitness_grade_distribution", Integer.class))
+                .isEqualTo(1048);
+        // 항목마다 굳혀 두던 등급 칸은 걷었다
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from information_schema.columns"
+                                + " where lower(table_name) = 'fitness_test_items' and lower(column_name) = 'grade'",
+                        Integer.class))
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("3등급은 키 · 몸무게 · 허리둘레로 BMI · 허리둘레-신장비를 셈해 본다 — 1등급에 모자란 종목을 같이 알린다")
+    void 등급_3_은_BMI_와_허리둘레_신장비로_본다() throws Exception {
+        // 012 4.0 · 020 70 · 028 41.3 · 키 145 · 몸무게 38 만으로는 판정하지 못한다(009 · 허리둘레가 없다)
+        registerWithBody(
+                        testedOn.minusDays(7),
+                        "null",
+                        "null",
+                        new Item("012", "4.0"),
+                        new Item("020", "70"),
+                        new Item("028", "41.3"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.certification.status").value("NEEDS_ITEMS"))
+                .andExpect(jsonPath("$.certification.missingItems[*].label", contains("윗몸말아올리기", "허리둘레")));
+        // 009 20회와 허리둘레 60cm 를 더하면 BMI 18.07 < 23.3 · 허리둘레-신장비 0.414 < 0.47 로 3등급
+        registerWithBody(
+                        testedOn,
+                        "null",
+                        "60",
+                        new Item("012", "4.0"),
+                        new Item("020", "70"),
+                        new Item("028", "41.3"),
+                        new Item("009", "20"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.certification.grade").value("3등급"))
+                .andExpect(jsonPath("$.certification.status").value("GRADED"))
+                .andExpect(jsonPath("$.certification.missingItems[*].itemCodes[0]", contains("022", "043", "044")))
+                .andExpect(
+                        jsonPath("$.certification.missingItems[*].label", contains("제자리멀리뛰기", "반복옆뛰기", "눈-손협응력(벽패스)")));
+    }
+
+    @Test
+    @DisplayName("일곱 종목과 키 · 몸무게 · 허리둘레를 다 적으면 판정해서 등급을 주고, 1등급을 판정했으니 모자란 종목은 없다")
+    void 일곱_종목을_다_재면_등급이_나온다() throws Exception {
+        // 여아 만 11세 2등급 기준: 020 ≥ 51 · 028 ≥ 39.5 · 009 ≥ 26 · 012 ≥ 6.5 · 043 ≥ 30 · 022 ≥ 146 · 044 ≥ 13.
+        // 020 55 가 1등급(62)에 못 미쳐 2등급이다. 3등급은 보지 않는다(BMI 18.07 · 허리둘레-신장비 0.414).
+        registerWithBody(
+                        testedOn,
+                        "null",
+                        "60",
+                        new Item("020", "55"),
+                        new Item("028", "45.0"),
+                        new Item("009", "40"),
+                        new Item("012", "12.0"),
+                        new Item("043", "33"),
+                        new Item("022", "170"),
+                        new Item("044", "20"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.waistCm").value(60.0))
+                .andExpect(jsonPath("$.items", hasSize(7)))
+                .andExpect(jsonPath("$.items[0].grade").doesNotExist())
+                .andExpect(jsonPath("$.certification.grade").value("2등급"))
+                .andExpect(jsonPath("$.certification.status").value("GRADED"))
+                .andExpect(jsonPath("$.certification.missingItems", hasSize(0)))
+                .andExpect(jsonPath("$.certification.peers[*].ratio", contains(0.0322, 0.0983, 0.2282, 0.6413)));
+
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.certification.grade").value("2등급"))
+                .andExpect(jsonPath("$.certification.status").value("GRADED"))
+                .andExpect(jsonPath("$.heightCm").value(145))
+                .andExpect(jsonPath("$.weightKg").value(38));
     }
 
     @Test
@@ -416,6 +490,7 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.strongest").value(nullValue()))
                 .andExpect(jsonPath("$.coachDirection").value("GROWTH"))
+                .andExpect(jsonPath("$.certification").value(nullValue()))
                 .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER));
     }
 
@@ -439,17 +514,16 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.radar[4].percentile").value(62))
                 .andExpect(jsonPath("$.radar[5].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("참가")))
+                .andExpect(jsonPath("$.certification.status").value("NEEDS_ITEMS"))
                 .andExpect(jsonPath("$.weakest.itemCode").value("028"))
                 .andExpect(jsonPath("$.strongest.itemCode").value("022"))
                 .andExpect(jsonPath("$.coachDirection").value("GROWTH"));
     }
 
     @Test
-    @DisplayName("044 벽패스는 또래 분포 백분위와 V154 공식 기준 등급을 받고, 레이더에는 들어가지 않는다")
-    void 벽패스_044_는_또래_분포_백분위와_공식_기준_등급을_받고_레이더에는_들어가지_않는다() throws Exception {
+    @DisplayName("044 벽패스는 또래 분포 백분위를 받고, 레이더에는 들어가지 않는다")
+    void 벽패스_044_는_또래_분포_백분위를_받고_레이더에는_들어가지_않는다() throws Exception {
         // 여아 만 11세 또래 분포: 0~35 번째 칸이 0회라 0회는 가운데 자리 18, 13회는 99번째 값(12회)과 맨 끝(36회) 사이라 100.
-        // 기준은 1등급 ≥ 19 · 2등급 ≥ 13
         register(testedOn, "135.5", "31.2", new Item("044", "0"), new Item("028", "30"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].itemLabel", contains("눈-손협응력(벽패스)")))
@@ -457,7 +531,6 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].percentile", contains(18)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].band", contains("growth")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].topPercentText", contains("상위 82%")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].grade", contains("참가")))
                 // 028 30% 는 백분위 10 — 벽패스 0회(18)보다 낮아 가장 낮은 항목은 여전히 근력이다
                 .andExpect(jsonPath("$.weakest.itemCode").value("028"))
                 .andExpect(jsonPath("$.strongest.itemCode").value("044"))
@@ -467,13 +540,10 @@ class FitnessWebTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.items[0].percentile").value(100))
                 // AI 백분위는 100 도 나온다 — 문구는 「상위 0%」 가 아니라 「상위 1%」
-                .andExpect(jsonPath("$.items[0].topPercentText").value("상위 1%"))
-                .andExpect(jsonPath("$.items[0].grade").value("2등급"));
+                .andExpect(jsonPath("$.items[0].topPercentText").value("상위 1%"));
         register(testedOn.minusDays(2), "135.5", "31.2", new Item("044", "5"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items[0].percentile").value(80))
-                // 또래 80번째여도 공식 2등급(≥ 13회)에 못 미치면 참가다
-                .andExpect(jsonPath("$.items[0].grade").value("참가"));
+                .andExpect(jsonPath("$.items[0].percentile").value(80));
         register(testedOn.minusDays(3), "135.5", "31.2", new Item("044", "61"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("ITEM_OUT_OF_RANGE"));
@@ -489,11 +559,10 @@ class FitnessWebTest {
     @Test
     @DisplayName("043 반복옆뛰기를 재면 레이더 민첩성 꼭지점에 백분위가 들어간다")
     void 반복옆뛰기_043_을_재면_레이더_민첩성_꼭지점에_백분위가_들어간다() throws Exception {
-        // 여아 만 11세 또래 분포에서 35회는 87번째 백분위, 공식 기준표로는 1등급(≥ 32회)
+        // 여아 만 11세 또래 분포에서 35회는 87번째 백분위
         register(testedOn, "135.5", "31.2", new Item("043", "35"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items[0].percentile").value(87))
-                .andExpect(jsonPath("$.items[0].grade").value("1등급"));
+                .andExpect(jsonPath("$.items[0].percentile").value(87));
 
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
                         .header(HttpHeaders.AUTHORIZATION, bearer()))
@@ -689,7 +758,7 @@ class FitnessWebTest {
     }
 
     @Test
-    @DisplayName("자녀 계정의 latest 는 부모만 볼 값(몸무게 · 백분위 · 등급 · 약한 항목 · 코치 방향)을 비우고 잰 값과 키는 준다")
+    @DisplayName("자녀 계정의 latest 는 부모만 볼 값(몸무게 · 백분위 · 인증 등급 · 약한 항목 · 코치 방향)을 비우고 잰 값과 키는 준다")
     void 자녀_계정의_latest_는_부모만_볼_값을_비운다() throws Exception {
         registerYouthTest().andExpect(status().isCreated());
 
@@ -705,12 +774,12 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[0].value").isNumber())
                 .andExpect(jsonPath("$.items[*].percentile", everyItem(nullValue())))
-                .andExpect(jsonPath("$.items[*].grade", everyItem(nullValue())))
                 .andExpect(jsonPath("$.items[*].band", everyItem(nullValue())))
                 .andExpect(jsonPath("$.items[*].topPercentText", everyItem(nullValue())))
                 .andExpect(jsonPath("$.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.strongest").value(nullValue()))
                 .andExpect(jsonPath("$.coachDirection").value(nullValue()))
+                .andExpect(jsonPath("$.certification").value(nullValue()))
                 .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER));
 
         // 같은 회차를 부모 계정으로 부르면 그대로다

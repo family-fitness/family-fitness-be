@@ -103,7 +103,6 @@ Table fitness_test_items {
   item_code varchar(3) [not null]
   raw_value numeric(8,3) [not null]
   percentile smallint
-  grade varchar(10)
   band varchar(10)
   indexes {
     (fitness_test_id, item_code) [pk]
@@ -603,6 +602,22 @@ Table fitness_value_quantiles {
   Note: '''(sex in ('M', 'F'))
 (age_unit in ('세', '개월'))
 (n >= 0)'''
+}
+
+Table fitness_grade_distribution {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age smallint [not null]
+  grade varchar(10) [not null]
+  n int [not null]
+  ratio numeric(5,4) [not null]
+  indexes {
+    (age_group, sex, age, grade) [unique, name: 'uq_fitness_grade_distribution']
+  }
+  Note: '''(sex in ('M', 'F'))
+(grade in ('1등급', '2등급', '3등급', '참가'))
+(ratio between 0 and 1)'''
 }
 
 Ref: profiles.family_id > families.id

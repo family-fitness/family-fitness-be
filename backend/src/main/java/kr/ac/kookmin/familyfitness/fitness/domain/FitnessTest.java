@@ -176,8 +176,8 @@ public class FitnessTest {
     }
 
     /**
-     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(또래 분포가 없으면 null), {@code grader} 가 (항목, 값) → 공식 기준표 등급(기준
-     * 줄이 없으면 null)을 돌려주고, 둘 다 저장 시점 값으로 굳는다.
+     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(또래 분포가 없으면 null)를 돌려주고, 저장 시점 값으로 굳는다.
+     * 등급은 여기서 매기지 않는다 — 읽을 때 {@link Certifier} 가 한 사람에게 하나를 매긴다.
      */
     public static FitnessTest register(
             UUID id,
@@ -188,7 +188,6 @@ public class FitnessTest {
             BodyMeasures body,
             List<Measurement> measurements,
             BiFunction<FitnessItem, BigDecimal, @Nullable Integer> scorer,
-            BiFunction<FitnessItem, BigDecimal, @Nullable Grade> grader,
             Instant createdAt) {
         if (measurements.isEmpty()) throw new NoItemsException();
         AgeGroup ageGroup = AgeGroup.ofAge(ageAtTest);
@@ -201,7 +200,7 @@ public class FitnessTest {
                     if (!item.getRange().contains(m.value())) {
                         throw new ItemOutOfRangeException(item.getCode(), m.value(), item.getRange());
                     }
-                    ItemScore score = ItemScore.of(scorer.apply(item, m.value()), grader.apply(item, m.value()));
+                    ItemScore score = ItemScore.of(scorer.apply(item, m.value()));
                     return new FitnessTestItem(item, m.value(), score);
                 })
                 .toList();
@@ -209,8 +208,7 @@ public class FitnessTest {
     }
 
     /**
-     * 저장소에서 복원. 등급은 저장된 값을 그대로 쓰고, 구간 · 문구는 굳어 있는 백분위에서 다시 파생한다(계산은 {@link ItemScore}
-     * 한 곳).
+     * 저장소에서 복원. 구간 · 문구는 굳어 있는 백분위에서 다시 파생한다(계산은 {@link ItemScore} 한 곳).
      */
     public static FitnessTest reconstitute(
             UUID id,
@@ -232,17 +230,13 @@ public class FitnessTest {
                         .map(it -> {
                             FitnessItem item = FitnessItem.findByCode(it.itemCode());
                             if (item == null) throw new UnknownItemException(it.itemCode());
-                            @Nullable Grade grade = it.grade() == null ? null : Grade.fromLabel(it.grade());
-                            return new FitnessTestItem(item, it.value(), ItemScore.of(it.percentile(), grade));
+                            return new FitnessTestItem(item, it.value(), ItemScore.of(it.percentile()));
                         })
                         .toList(),
                 createdAt);
     }
 
-    /** {@code grade} 는 저장된 등급 라벨(`1등급` 등). 기준 줄이 없던 항목은 null. */
+    /** 저장된 항목 한 줄. 또래 분포가 없던 항목은 백분위가 null. */
     public record StoredItem(
-            String itemCode,
-            BigDecimal value,
-            @Nullable Integer percentile,
-            @Nullable String grade) {}
+            String itemCode, BigDecimal value, @Nullable Integer percentile) {}
 }

@@ -18,33 +18,25 @@ class GradeTest {
     }
 
     @Test
-    @DisplayName("구간 · 상위 문구는 백분위에서, 등급은 공식 기준표에서 따로 온다")
-    void 구간_상위_문구는_백분위에서_등급은_기준표에서_따로_온다() {
-        ItemScore score = ItemScore.of(24, Grade.THIRD);
-        assertThat(score.grade()).isEqualTo(Grade.THIRD);
-        assertThat(score.band()).isEqualTo(Band.GROWTH);
-        assertThat(score.topPercentText()).isEqualTo("상위 76%");
-
-        // 백분위가 높아도 기준표에 못 미치면 참가다(예전 85/65/40 규칙이면 2등급)
-        ItemScore strong = ItemScore.of(75, Grade.PARTICIPATION);
-        assertThat(strong.grade()).isEqualTo(Grade.PARTICIPATION);
-        assertThat(strong.band()).isEqualTo(Band.STRENGTH);
-        assertThat(strong.topPercentText()).isEqualTo("상위 25%");
+    @DisplayName("항목 점수는 백분위에서 구간 · 상위 문구만 파생한다 — 항목마다 등급은 없다")
+    void 항목_점수는_백분위에서_구간과_상위_문구만_파생한다() {
+        assertThat(ItemScore.of(24)).isEqualTo(new ItemScore(24, Band.GROWTH, "상위 76%"));
+        assertThat(ItemScore.of(75)).isEqualTo(new ItemScore(75, Band.STRENGTH, "상위 25%"));
+        assertThat(ItemScore.of(50)).isEqualTo(new ItemScore(50, Band.STEADY, "상위 50%"));
     }
 
     @Test
     @DisplayName("AI 백분위는 0 과 100 도 나온다 — 100 은 「상위 0%」 가 아니라 「상위 1%」")
     void 백분위_100_은_상위_1퍼센트다() {
-        assertThat(ItemScore.of(100, null)).isEqualTo(new ItemScore(100, null, Band.STRENGTH, "상위 1%"));
-        assertThat(ItemScore.of(99, null).topPercentText()).isEqualTo("상위 1%");
-        assertThat(ItemScore.of(0, null)).isEqualTo(new ItemScore(0, null, Band.GROWTH, "상위 100%"));
+        assertThat(ItemScore.of(100)).isEqualTo(new ItemScore(100, Band.STRENGTH, "상위 1%"));
+        assertThat(ItemScore.of(99).topPercentText()).isEqualTo("상위 1%");
+        assertThat(ItemScore.of(0)).isEqualTo(new ItemScore(0, Band.GROWTH, "상위 100%"));
     }
 
     @Test
-    @DisplayName("규준이 없으면 백분위 · 구간 · 문구는 null 이고 등급은 기준표대로 남는다")
-    void 규준이_없으면_백분위_쪽만_null() {
-        assertThat(ItemScore.of(null, Grade.SECOND)).isEqualTo(new ItemScore(null, Grade.SECOND, null, null));
-        assertThat(ItemScore.of(null, null)).isEqualTo(ItemScore.NONE);
-        assertThat(ItemScore.of(50, null)).isEqualTo(new ItemScore(50, null, Band.STEADY, "상위 50%"));
+    @DisplayName("또래 분포가 없으면 백분위 · 구간 · 문구가 모두 null")
+    void 또래_분포가_없으면_모두_null() {
+        assertThat(ItemScore.of(null)).isEqualTo(ItemScore.NONE);
+        assertThat(ItemScore.NONE).isEqualTo(new ItemScore(null, null, null));
     }
 }

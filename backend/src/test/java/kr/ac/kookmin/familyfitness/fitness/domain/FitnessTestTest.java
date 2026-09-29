@@ -33,14 +33,6 @@ class FitnessTestTest {
             List<Measurement> measurements,
             int ageAtTest,
             BiFunction<FitnessItem, BigDecimal, @Nullable Integer> scorer) {
-        return register(measurements, ageAtTest, scorer, (item, value) -> null);
-    }
-
-    private FitnessTest register(
-            List<Measurement> measurements,
-            int ageAtTest,
-            BiFunction<FitnessItem, BigDecimal, @Nullable Integer> scorer,
-            BiFunction<FitnessItem, BigDecimal, @Nullable Grade> grader) {
         return FitnessTest.register(
                 UUID.randomUUID(),
                 profileId,
@@ -50,7 +42,6 @@ class FitnessTestTest {
                 BodyMeasures.NONE,
                 measurements,
                 scorer,
-                grader,
                 now);
     }
 
@@ -121,7 +112,7 @@ class FitnessTestTest {
                 .filter(it -> it.item() == FitnessItem.RELATIVE_GRIP)
                 .findFirst()
                 .orElseThrow();
-        assertThat(grip.score()).isEqualTo(new ItemScore(80, null, Band.STRENGTH, "상위 20%"));
+        assertThat(grip.score()).isEqualTo(new ItemScore(80, Band.STRENGTH, "상위 20%"));
         FitnessTestItem reach = test.getItems().stream()
                 .filter(it -> it.item() == FitnessItem.SIT_AND_REACH)
                 .findFirst()
@@ -133,27 +124,8 @@ class FitnessTestTest {
     }
 
     @Test
-    @DisplayName("등급은 grader(공식 기준표) 결과로 굳고 백분위와 따로다 — 규준이 없어도 등급은 붙는다")
-    void 등급은_grader_결과로_굳고_백분위와_따로다() {
-        FitnessTest test = register(
-                List.of(m("028", 47), m("012", 5), m("043", 20)),
-                11,
-                (item, value) -> item == FitnessItem.RELATIVE_GRIP ? 50 : null,
-                (item, value) -> switch (item) {
-                    case RELATIVE_GRIP -> Grade.FIRST;
-                    case SIT_AND_REACH -> Grade.THIRD;
-                    default -> null;
-                });
-        assertThat(itemOf(test, FitnessItem.RELATIVE_GRIP).score())
-                .isEqualTo(new ItemScore(50, Grade.FIRST, Band.STEADY, "상위 50%"));
-        assertThat(itemOf(test, FitnessItem.SIT_AND_REACH).score())
-                .isEqualTo(new ItemScore(null, Grade.THIRD, null, null));
-        assertThat(itemOf(test, FitnessItem.SIDE_STEP).score()).isEqualTo(ItemScore.NONE);
-    }
-
-    @Test
-    @DisplayName("복원한 회차는 저장된 등급을 그대로 쓴다 — 백분위에서 다시 셈하지 않는다")
-    void 복원한_회차는_저장된_등급을_그대로_쓴다() {
+    @DisplayName("복원한 회차는 저장된 백분위에서 구간 · 문구를 다시 파생한다 — 항목마다 등급은 없다")
+    void 복원한_회차는_저장된_백분위에서_다시_파생한다() {
         FitnessTest test = FitnessTest.reconstitute(
                 UUID.randomUUID(),
                 profileId,
@@ -162,15 +134,15 @@ class FitnessTestTest {
                 11,
                 BodyMeasures.NONE,
                 List.of(
-                        new FitnessTest.StoredItem("028", BigDecimal.valueOf(30), 90, "참가"),
-                        new FitnessTest.StoredItem("012", BigDecimal.valueOf(12), null, "1등급"),
-                        new FitnessTest.StoredItem("020", BigDecimal.valueOf(42), 35, null)),
+                        new FitnessTest.StoredItem("028", BigDecimal.valueOf(30), 90),
+                        new FitnessTest.StoredItem("012", BigDecimal.valueOf(12), null),
+                        new FitnessTest.StoredItem("020", BigDecimal.valueOf(42), 100)),
                 now);
         assertThat(itemOf(test, FitnessItem.RELATIVE_GRIP).score())
-                .isEqualTo(new ItemScore(90, Grade.PARTICIPATION, Band.STRENGTH, "상위 10%"));
-        assertThat(itemOf(test, FitnessItem.SIT_AND_REACH).score())
-                .isEqualTo(new ItemScore(null, Grade.FIRST, null, null));
-        assertThat(itemOf(test, FitnessItem.SHUTTLE_RUN).score().grade()).isNull();
+                .isEqualTo(new ItemScore(90, Band.STRENGTH, "상위 10%"));
+        assertThat(itemOf(test, FitnessItem.SIT_AND_REACH).score()).isEqualTo(ItemScore.NONE);
+        assertThat(itemOf(test, FitnessItem.SHUTTLE_RUN).score().topPercentText())
+                .isEqualTo("상위 1%");
     }
 
     private static FitnessTestItem itemOf(FitnessTest test, FitnessItem item) {

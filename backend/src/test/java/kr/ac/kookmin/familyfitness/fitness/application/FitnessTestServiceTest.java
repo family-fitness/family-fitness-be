@@ -23,6 +23,8 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered.Round;
 import kr.ac.kookmin.familyfitness.fitness.domain.BodyMeasures;
+import kr.ac.kookmin.familyfitness.fitness.domain.Certification.PeerShare;
+import kr.ac.kookmin.familyfitness.fitness.domain.CertificationStatus;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
@@ -30,6 +32,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestItem;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
 import kr.ac.kookmin.familyfitness.fitness.domain.FutureTestDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Grade;
+import kr.ac.kookmin.familyfitness.fitness.domain.GradeDistribution;
 import kr.ac.kookmin.familyfitness.fitness.domain.GradeThreshold;
 import kr.ac.kookmin.familyfitness.fitness.domain.ItemNotForAgeGroupException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Measurement;
@@ -77,7 +80,12 @@ class FitnessTestServiceTest {
                 threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 48, 53, Grade.FIRST, "020", "48"),
                 threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 54, 59, Grade.FIRST, "020", "59"),
                 threshold(AgeGroup.TODDLER, NormAgeUnit.MONTHS, 54, 59, Grade.SECOND, "020", "44"));
-        GradeCatalog catalog = new GradeCatalog(() -> rows);
+        GradeCatalog catalog = new GradeCatalog(
+                () -> rows,
+                () -> List.of(
+                        new GradeDistribution.Row(AgeGroup.YOUTH, Sex.F, 9, Grade.FIRST, new BigDecimal("0.03")),
+                        new GradeDistribution.Row(
+                                AgeGroup.YOUTH, Sex.F, 9, Grade.PARTICIPATION, new BigDecimal("0.7"))));
         catalog.refresh();
         return catalog;
     }
@@ -153,22 +161,27 @@ class FitnessTestServiceTest {
     }
 
     @Test
-    @DisplayName("등록하면 백분위가 또래 분포로, 등급이 공식 기준표로 계산돼 굳고 구간이 붙는다")
-    void 등록하면_백분위가_규준으로_등급이_기준표로_계산돼_굳고_구간이_붙는다() {
+    @DisplayName("등록하면 백분위가 또래 분포로 계산돼 굳고 구간이 붙고, 인증 등급이 한 사람에게 하나 붙는다")
+    void 등록하면_백분위가_굳고_인증_등급이_한_사람에게_하나_붙는다() {
         childProfile();
-        FitnessTest test =
+        RegisteredFitnessTest registered =
                 service.register(actorId, profileId, command(new ItemPair("028", 42), new ItemPair("012", 9)));
+        FitnessTest test = registered.test();
 
         assertThat(test.getAgeAtTest()).isEqualTo(9);
         assertThat(test.getAgeGroup()).isEqualTo(AgeGroup.YOUTH);
         // 42 는 75번째 칸 하나 — 아래 · 위 자리 75 · 76 의 가운데 75.5 를 짝수 쪽으로 반올림해 76(AI percentile_of 와 같다)
         FitnessTestItem grip = itemOf(test, "028");
         assertThat(grip.percentile()).isEqualTo(76);
-        assertThat(grip.score().grade()).isEqualTo(Grade.SECOND);
         assertThat(grip.score().band()).isEqualTo(Band.STRENGTH);
         assertThat(itemOf(test, "012").percentile()).isEqualTo(50);
-        // 012 는 이 기준표에 줄이 없어 등급이 null 이다(백분위와 따로다)
-        assertThat(itemOf(test, "012").score().grade()).isNull();
+        // 이 기준표는 028 한 줄씩이다 — 42 는 1등급(≥ 45)에 못 미치고 2등급(≥ 40)을 넘는다. 백분위와 따로다
+        assertThat(registered.certification().grade()).isEqualTo(Grade.SECOND);
+        assertThat(registered.certification().status()).isEqualTo(CertificationStatus.GRADED);
+        assertThat(registered.certification().missingItems()).isEmpty();
+        assertThat(registered.certification().peers())
+                .extracting(PeerShare::grade)
+                .containsExactly(Grade.FIRST, Grade.PARTICIPATION);
         assertThat(test.getWeakest().itemCode()).isEqualTo("012");
         assertThat(test.getStrongest().itemCode()).isEqualTo("028");
         assertThat(tests.saved).containsKey(test.getId());
@@ -184,13 +197,14 @@ class FitnessTestServiceTest {
         BodyMeasures body = new BodyMeasures(
                 new BigDecimal("135.5"), new BigDecimal("31.2"), new BigDecimal("22.5"), new BigDecimal("61.2"));
         FitnessTest test = service.register(
-                actorId,
-                profileId,
-                new RegisterFitnessTestCommand(
-                        LocalDate.of(2026, 9, 1),
-                        FitnessTestSource.SELF_INPUT,
-                        body,
-                        List.of(new Measurement("028", BigDecimal.valueOf(36)))));
+                        actorId,
+                        profileId,
+                        new RegisterFitnessTestCommand(
+                                LocalDate.of(2026, 9, 1),
+                                FitnessTestSource.SELF_INPUT,
+                                body,
+                                List.of(new Measurement("028", BigDecimal.valueOf(36)))))
+                .test();
 
         FitnessTest stored = tests.findById(test.getId());
         assertThat(stored.getBody()).isEqualTo(body);
@@ -209,12 +223,16 @@ class FitnessTestServiceTest {
         LocalDate sep8 = LocalDate.of(2026, 9, 8);
         LocalDate aug1 = LocalDate.of(2026, 8, 1);
         LocalDate aug15 = LocalDate.of(2026, 8, 15);
-        FitnessTest first = service.register(actorId, profileId, command(sep1, new ItemPair("028", 36)));
-        FitnessTest later = service.register(actorId, profileId, command(sep8, new ItemPair("028", 40)));
+        FitnessTest first = service.register(actorId, profileId, command(sep1, new ItemPair("028", 36)))
+                .test();
+        FitnessTest later = service.register(actorId, profileId, command(sep8, new ItemPair("028", 40)))
+                .test();
         // 지난 날짜를 나중에 적으면 이 회차가 가장 이른 회차가 되고, 그때까지 가장 이르던 9/1 이 다시 잰 회차가 된다
-        FitnessTest past = service.register(actorId, profileId, command(aug1, new ItemPair("028", 30)));
+        FitnessTest past = service.register(actorId, profileId, command(aug1, new ItemPair("028", 30)))
+                .test();
         // 가장 이른 날과 가장 늦은 날 사이에 적으면 새 회차 자신이다
-        FitnessTest between = service.register(actorId, profileId, command(aug15, new ItemPair("028", 33)));
+        FitnessTest between = service.register(actorId, profileId, command(aug15, new ItemPair("028", 33)))
+                .test();
 
         assertThat(published)
                 .containsExactly(
@@ -244,7 +262,8 @@ class FitnessTestServiceTest {
     @DisplayName("또래 분포가 없는 항목은 백분위 null 로 저장된다")
     void 또래_분포가_없는_항목은_백분위_null_로_저장된다() {
         childProfile();
-        FitnessTest test = service.register(actorId, profileId, command(new ItemPair("009", 20)));
+        FitnessTest test = service.register(actorId, profileId, command(new ItemPair("009", 20)))
+                .test();
         assertThat(test.getItems())
                 .singleElement()
                 .extracting(FitnessTestItem::percentile)
@@ -265,7 +284,8 @@ class FitnessTestServiceTest {
     @DisplayName("동의 불필요(만 14세 이상)면 동의 없이도 저장한다")
     void 동의_불필요_만_14세_이상_면_동의_없이도_저장한다() {
         childProfile(LocalDate.of(2010, 1, 1), false, false, true);
-        FitnessTest test = service.register(actorId, profileId, command(new ItemPair("028", 36)));
+        FitnessTest test = service.register(actorId, profileId, command(new ItemPair("028", 36)))
+                .test();
         assertThat(test.getAgeGroup()).isEqualTo(AgeGroup.ADOLESCENT);
     }
 
@@ -314,8 +334,9 @@ class FitnessTestServiceTest {
         childProfile();
         assertThat(service.latest(actorId, profileId).test()).isNull();
         service.register(actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)));
-        FitnessTest newer =
-                service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)));
+        FitnessTest newer = service.register(
+                        actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)))
+                .test();
         assertThat(service.latest(actorId, profileId).test().getId()).isEqualTo(newer.getId());
     }
 
@@ -325,12 +346,15 @@ class FitnessTestServiceTest {
         childProfile();
         assertThat(service.history(actorId, profileId, 20).tests()).isEmpty();
 
-        FitnessTest august =
-                service.register(actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)));
-        FitnessTest september =
-                service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)));
-        FitnessTest july =
-                service.register(actorId, profileId, command(LocalDate.of(2026, 7, 1), new ItemPair("028", 36)));
+        FitnessTest august = service.register(
+                        actorId, profileId, command(LocalDate.of(2026, 8, 1), new ItemPair("028", 30)))
+                .test();
+        FitnessTest september = service.register(
+                        actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("028", 40)))
+                .test();
+        FitnessTest july = service.register(
+                        actorId, profileId, command(LocalDate.of(2026, 7, 1), new ItemPair("028", 36)))
+                .test();
 
         assertThat(service.history(actorId, profileId, 20).tests())
                 .extracting(FitnessTest::getId)
@@ -409,14 +433,30 @@ class FitnessTestServiceTest {
     void 유아기_등급은_측정일_기준_개월로_기준_구간을_고른다() {
         // 2022-03-01 생 — 2026-08-15 는 53개월, 2026-09-01 은 54개월(둘 다 만 4세)
         childProfile(LocalDate.of(2022, 3, 1));
-        FitnessTest at53 =
+        RegisteredFitnessTest at53 =
                 service.register(actorId, profileId, command(LocalDate.of(2026, 8, 15), new ItemPair("020", 50)));
-        FitnessTest at54 =
+        RegisteredFitnessTest at54 =
                 service.register(actorId, profileId, command(LocalDate.of(2026, 9, 1), new ItemPair("020", 50)));
 
-        assertThat(at53.getAgeGroup()).isEqualTo(AgeGroup.TODDLER);
-        assertThat(itemOf(at53, "020").score().grade()).isEqualTo(Grade.FIRST);
-        assertThat(itemOf(at54, "020").score().grade()).isEqualTo(Grade.SECOND);
+        assertThat(at53.test().getAgeGroup()).isEqualTo(AgeGroup.TODDLER);
+        assertThat(at53.certification().grade()).isEqualTo(Grade.FIRST);
+        assertThat(at54.certification().grade()).isEqualTo(Grade.SECOND);
+        // latest 도 저장된 회차를 측정일 개월 나이로 다시 셈한다 — 가장 늦은 회차(54개월)
+        assertThat(service.latest(actorId, profileId).certification().grade()).isEqualTo(Grade.SECOND);
+    }
+
+    @Test
+    @DisplayName("latest 인증 등급은 보호자에게만 셈한다 — 아이 계정이거나 회차가 없으면 null")
+    void latest_인증_등급은_보호자에게만_셈한다() {
+        childProfile();
+        assertThat(service.latest(actorId, profileId).certification()).isNull();
+        service.register(actorId, profileId, command(new ItemPair("028", 46)));
+        LatestFitnessView parent = service.latest(actorId, profileId);
+        assertThat(parent.certification()).isNotNull();
+        assertThat(parent.certification().grade()).isEqualTo(Grade.FIRST);
+
+        callerIsChildAccount();
+        assertThat(service.latest(actorId, profileId).certification()).isNull();
     }
 
     @Test

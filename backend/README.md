@@ -103,7 +103,7 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 | 모듈 | 범위 | 주소 |
 |---|---|---|
 | `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
-| `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 · 공식 기준표 등급 굳힘) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
+| `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 굳힘) · 인증 등급(한 사람에게 하나, 읽을 때 셈) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
 | `coaching` | 하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
@@ -136,8 +136,10 @@ Python 3 만 있으면 된다. Windows 콘솔(cp949)에서 결과를 파일로 �
 |---|---|---|
 | `value_quantiles_to_sql.py` | AI 또래 분포 표(`value_quantiles.csv`, (연령대 · 성별 · 나이 · 항목)마다 표본 수와 백분위 값 101칸) → `fitness_value_quantiles` 마이그레이션. 첫 적재는 `--create-table`(`V156`), 다음 판은 새 V 파일(표를 통째로 바꾼다). AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/value_quantiles_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_value_quantiles_<AI 커밋>.sql` |
 | `grade_thresholds_to_sql.py` | AI 등급 기준표(`grade_thresholds.csv`, 국민체력100 공식 항목별 기준) → `fitness_grade_thresholds` 마이그레이션. 첫 적재는 `--create-table`(`V154`), 다음 판은 새 V 파일(표를 통째로 바꾼다). AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/grade_thresholds_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_grade_thresholds_<AI 커밋>.sql` |
+| `grade_distribution_to_sql.py` | AI 또래 등급 비율 표(`grade_distribution.csv`, 국민체력100 인증 결과를 (연령대 · 성별 · 나이 · 등급)마다 센 것) → `fitness_grade_distribution` 마이그레이션. 첫 적재는 `--create-table`(`V159`), 다음 판은 새 V 파일. AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/grade_distribution_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_grade_distribution_<AI 커밋>.sql` |
 | `ai_clips_to_sql.py` | AI 클립 릴리스(`video_clips.csv` · `clip_labels.csv` · `corpus_meta.csv`) → 운동 영상 · 구간 마이그레이션. 첫 적재는 `--create-table`(`V132`), 다음 릴리스는 새 V 파일 | backend 폴더에서 `python3 scripts/ai_clips_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__coaching_clip_release_<AI 커밋>.sql` |
 | `ai_percentile_fixture.py` | AI 코드(`stats/tables.py` peer · percentile_of)로 백분위 기대값을 뽑아 `src/test/resources/fitness/ai-percentiles.csv` 를 만든다. `AiPercentileParityTest` 가 이 줄마다 서버 계산과 대조한다. AI 표가 바뀌면 마이그레이션과 같이 다시 만든다 | backend 폴더에서 `../../family-fitness-ai/.venv/Scripts/python.exe scripts/ai_percentile_fixture.py ../../family-fitness-ai > src/test/resources/fitness/ai-percentiles.csv` (macOS · Linux 는 `.venv/bin/python`) |
+| `ai_certify_fixture.py` | AI 코드(`stats/assess.py` _with_body · `stats/tables.py` certify)로 인증 등급 기대값을 뽑아 `src/test/resources/fitness/ai-certify.csv` 를 만든다. `AiCertifyParityTest` 가 이 줄마다 서버 계산과 대조한다. AI 기준표가 바뀌면 마이그레이션과 같이 다시 만든다 | backend 폴더에서 `../../family-fitness-ai/.venv/Scripts/python.exe scripts/ai_certify_fixture.py ../../family-fitness-ai > src/test/resources/fitness/ai-certify.csv` |
 | `ddl_to_dbml.py` | 마이그레이션 DDL → `docs/erd.dbml` | 저장소 루트에서 `python3 backend/scripts/ddl_to_dbml.py > docs/erd.dbml` |
 
 `ddl_to_dbml.py` 는 파일을 버전 차례로, 파일 안에서는 문장 차례로 적용한다. `create table` · `create [unique] index` ·
@@ -151,11 +153,11 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 - `FamilyfitnessApplicationTests` 가 H2 에 전체 마이그레이션을 적용해 기동을 확인한다. `PostgresMigrationTests` 등 Testcontainers 시험은 Docker 가 없으면 건너뛴다.
 - 백분위는 또래 분포 표(`fitness_value_quantiles`, `V156`)로 낸다. AI 의 `data/release/value_quantiles.csv`(국민체력100 공공데이터 2024-07~2026-07 전수로 AI 가 만든 표)를 `scripts/value_quantiles_to_sql.py` 로 옮긴 것이고, 계산식도 AI `percentile_of` 와 같다. API 키가 필요 없다. 칸이 있는 나이: 유아기 48~83개월 · 유소년 11~12세 · 청소년 13~18세 · 성인 19~64세 · 어르신(012 · 028). 만 7~10세는 공공데이터에 측정이 없어 백분위가 `null` 이다. 예전 표 `fitness_norms`(`V2` · `V3` · `V155`)는 `V157` 로 걷었다.
 - `AiPercentileParityTest` 가 AI 가 낸 백분위 기대값(`scripts/ai_percentile_fixture.py`)과 서버 계산을 줄마다 대조한다.
-- 항목 등급은 국민체력100 공식 기준표(`fitness_grade_thresholds`, `V154`)로 낸다. AI 의 `data/release/grade_thresholds.csv` 를 `scripts/grade_thresholds_to_sql.py` 로 옮긴 것이라 AI 인증 등급과 같은 표다. 기준 줄이 없는 만 7~10세 · 어르신은 등급이 `null` 이다.
+- 인증 등급은 국민체력100 인증서처럼 한 사람(회차)에게 하나를 매긴다. 규칙은 AI `stats/tables.py` certify 를 옮겼고, 기준표는 `fitness_grade_thresholds`(`V154`, `scripts/grade_thresholds_to_sql.py`), 같은 나이 · 성별 참가자의 등급별 비율은 `fitness_grade_distribution`(`V159`, `scripts/grade_distribution_to_sql.py`)이다. 저장하지 않고 등록 · latest 응답 때 셈한다. 기준 줄이 없는 만 7~10세 · 어르신은 `NO_CRITERIA` 다. `AiCertifyParityTest` 가 AI 가 낸 등급 기대값(`scripts/ai_certify_fixture.py`)과 서버 계산을 사람마다 대조한다.
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V158` 이고 다음은 `V159` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V160` 이고 다음은 `V161` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

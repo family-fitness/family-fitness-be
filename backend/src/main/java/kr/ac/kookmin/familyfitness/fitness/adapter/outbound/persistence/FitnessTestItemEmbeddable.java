@@ -19,24 +19,16 @@ public class FitnessTestItemEmbeddable {
     @Column(name = "percentile")
     private @Nullable Integer percentile;
 
-    @Column(name = "grade", length = 10)
-    private @Nullable String grade;
-
     @Column(name = "band", length = 10)
     private @Nullable String band;
 
     protected FitnessTestItemEmbeddable() {}
 
     public FitnessTestItemEmbeddable(
-            String itemCode,
-            BigDecimal rawValue,
-            @Nullable Integer percentile,
-            @Nullable String grade,
-            @Nullable String band) {
+            String itemCode, BigDecimal rawValue, @Nullable Integer percentile, @Nullable String band) {
         this.itemCode = itemCode;
         this.rawValue = rawValue;
         this.percentile = percentile;
-        this.grade = grade;
         this.band = band;
     }
 
@@ -50,10 +42,6 @@ public class FitnessTestItemEmbeddable {
 
     public @Nullable Integer getPercentile() {
         return percentile;
-    }
-
-    public @Nullable String getGrade() {
-        return grade;
     }
 
     public @Nullable String getBand() {

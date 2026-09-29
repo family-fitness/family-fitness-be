@@ -2,14 +2,14 @@
 """family-fitness-ai 의 국민체력100 등급 기준표 `data/release/grade_thresholds.csv` → Flyway 마이그레이션.
 
 기준표 한 줄은 (연령대 · 성별 · 나이 구간 · 등급 · 항목)의 공식 기준 하나다. AI 는 이 표로 인증 등급을 내고
-(stats/tables.py certify), 서버는 같은 표로 **항목마다** 등급을 낸다(fitness.domain.GradeTable). 한 줄의 뜻은 AI 의
+(stats/tables.py certify), 서버도 같은 표 · 같은 규칙으로 한 사람에게 하나를 매긴다(fitness.domain.Certifier). 한 줄의 뜻은 AI 의
 Threshold.passes() 와 같다.
   >=  값 ≥ cutoff          <=  값 ≤ cutoff          <  값 < cutoff          between  cutoff ≤ 값 ≤ cutoff_upper
 나이 구간은 유아기만 개월(48~83), 나머지는 세다. age_unit 칸에 그대로 넣는다.
 AI 표의 value2 는 between 에서만 뜻이 있어(그 밖은 0.0) cutoff_upper 는 between 일 때만 넣고 그 밖은 null 이다.
-신체조성 줄(003 체지방률 · 018 BMI · 042 WHtR)도 그대로 넣는다. 서버 카탈로그에 없는 항목이라 항목 등급에는 쓰이지 않는다.
+신체조성 줄(003 체지방률 · 018 BMI · 042 WHtR)도 그대로 넣는다. 3등급 판정에 쓴다(BMI · WHtR 은 키 · 몸무게 · 허리둘레로 셈한다).
 
-낸 SQL 은 표를 통째로 바꾼다(delete 뒤 insert). 등급은 측정을 등록할 때 굳으므로 표를 바꿔도 지난 회차는 그대로다.
+낸 SQL 은 표를 통째로 바꾼다(delete 뒤 insert). 등급은 저장하지 않고 읽을 때 셈하므로 표를 바꾸면 지난 회차도 새 표를 따른다.
 문장은 PostgreSQL 과 H2 양쪽에서 도는 것만 쓴다.
 
 사용(backend 폴더에서):
@@ -122,13 +122,13 @@ def main(ai_root: Path, create_table: bool) -> None:
     out = sys.stdout
     out.reconfigure(encoding="utf-8", newline="\n")
     command = "scripts/grade_thresholds_to_sql.py" + (" --create-table" if create_table else "")
-    print("-- fitness: 국민체력100 항목별 등급 기준표. 항목 등급을 이 표로 낸다(AI 인증 등급과 같은 표).", file=out)
+    print("-- fitness: 국민체력100 등급 기준표. 한 사람의 인증 등급을 이 표로 낸다(AI certify 와 같은 표).", file=out)
     print(f"-- {command} 가 생성한다. 손으로 고치지 말고, AI 릴리스가 바뀌면 새 V 파일로 다시 만든다.", file=out)
     print(f"-- 출처: family-fitness-ai HEAD {head} (입력 파일 마지막 변경 {release_commit}, {committed_at})", file=out)
     print(f"--   {INPUT} {len(rows)}행 · 연령대 {' · '.join(groups)}.", file=out)
     print("-- 한 줄의 뜻은 AI stats/tables.py Threshold.passes() 와 같다: >= · <= · < 는 cutoff 와 견주고,", file=out)
     print("--   between 은 cutoff ≤ 값 ≤ cutoff_upper. 유아기 나이 구간은 개월, 나머지는 세다.", file=out)
-    print("-- 표를 통째로 바꾼다. 등급은 측정을 등록할 때 굳으므로 지난 회차는 그대로다.", file=out)
+    print("-- 표를 통째로 바꾼다. 등급은 저장하지 않고 읽을 때 셈한다.", file=out)
     print("-- PostgreSQL 과 H2(MODE=PostgreSQL) 양쪽에서 그대로 실행되는 문법만 쓴다.", file=out)
     if create_table:
         print(CREATE_TABLE, file=out)

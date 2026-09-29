@@ -28,9 +28,8 @@ public record GradeThreshold(
         }
     }
 
-    /** 이 줄의 나이 단위로 본 나이가 구간 안인가. 유아기 줄은 개월, 나머지는 세로 본다. */
-    public boolean covers(int ageYears, int ageMonths) {
-        int age = ageUnit == NormAgeUnit.MONTHS ? ageMonths : ageYears;
+    /** 이 줄의 나이 단위(유아기 개월 · 나머지 만 나이)로 본 나이가 구간 안인가. */
+    public boolean covers(int age) {
         return age >= ageFrom && age <= ageTo;
     }
 
