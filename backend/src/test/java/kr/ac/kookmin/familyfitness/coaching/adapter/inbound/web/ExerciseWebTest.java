@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -46,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * H2 + Flyway(V132 유튜브 클립 적재 · V141 구간 찜 · V161 공단 영상 클립 적재) 위에서 운동 구간 목록과 찜 주소를 끝까지 돈다.
- * 수는 AI 커밋 2af9002(유튜브) · 610959a(공단) 판 기준이다. 목록은 영상 id 차례라 공단 영상(0AUDLJ08S_…)이 유튜브 영상보다 앞에 선다.
+ * 수는 AI 커밋 2af9002(유튜브) · 610959a(공단) 판 기준이다. 목록은 유튜브 구간과 공단 영상을 번갈아 세운다(ExerciseService.alternateSources).
  * identity 는 목: 같은 가족 판단과 계정의 자기 프로필만 흉내 낸다. 찜 행의 FK 때문에 프로필 행은 실제로 넣는다.
  */
 @SpringBootTest
@@ -142,27 +143,27 @@ class ExerciseWebTest {
     @Test
     @DisplayName("보는 아이의 연령대(유소년) 구간을 같은 제목 하나씩 앞 40개까지 FE 모양으로 준다 — 공단 영상은 한 편이 구간 하나다")
     void 보는_아이의_연령대_구간을_같은_제목_하나씩_앞_40개까지_FE_모양으로_준다() throws Exception {
-        // 유튜브 구간과 공단 영상 구간을 같은 제목 하나씩 모아 160개(공단 104 · 유튜브 56)
+        // 유튜브 구간과 공단 영상 구간을 같은 제목 하나씩 모아 160개(공단 104 · 유튜브 56). 유튜브 · 공단을 번갈아 세운다
         list(parentUser, "profileId", childId.toString())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(160))
                 .andExpect(jsonPath("$.clips", hasSize(40)))
-                .andExpect(jsonPath("$.clips[0].clipId").value("0AUDLJ08S_00351-0"))
-                .andExpect(jsonPath("$.clips[0].videoId").value("0AUDLJ08S_00351"))
-                .andExpect(jsonPath("$.clips[0].startSec").value(0))
-                .andExpect(jsonPath("$.clips[0].endSec").value(91))
-                .andExpect(jsonPath("$.clips[0].title").value("팔굽혀펴기"))
-                .andExpect(jsonPath("$.clips[0].factor").value("근력"))
-                .andExpect(jsonPath("$.clips[0].phase").value("MAIN"))
-                .andExpect(jsonPath("$.clips[0].homeOk").value(true))
-                .andExpect(jsonPath("$.clips[0].quiet").value(true))
-                .andExpect(jsonPath("$.clips[0].props").value(true))
-                .andExpect(jsonPath("$.clips[0].favorited").value(false))
-                .andExpect(jsonPath("$.clips[0].mediaUrl")
+                .andExpect(jsonPath("$.clips[0].clipId").value("Eg3GpTv7z8s-102"))
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00351-0"))
+                .andExpect(jsonPath("$.clips[1].videoId").value("0AUDLJ08S_00351"))
+                .andExpect(jsonPath("$.clips[1].startSec").value(0))
+                .andExpect(jsonPath("$.clips[1].endSec").value(91))
+                .andExpect(jsonPath("$.clips[1].title").value("팔굽혀펴기"))
+                .andExpect(jsonPath("$.clips[1].factor").value("근력"))
+                .andExpect(jsonPath("$.clips[1].phase").value("MAIN"))
+                .andExpect(jsonPath("$.clips[1].homeOk").value(true))
+                .andExpect(jsonPath("$.clips[1].quiet").value(true))
+                .andExpect(jsonPath("$.clips[1].props").value(true))
+                .andExpect(jsonPath("$.clips[1].favorited").value(false))
+                .andExpect(jsonPath("$.clips[1].mediaUrl")
                         .value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
-                .andExpect(jsonPath("$.clips[0].thumbnailUrl")
-                        .value("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00351/0AUDLJ08S_00351_SC_00002.jpeg"))
-                .andExpect(jsonPath("$.clips[39].clipId").value("0AUDLJ08S_00392-0"));
+                .andExpect(jsonPath("$.clips[1].thumbnailUrl")
+                        .value("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00351/0AUDLJ08S_00351_SC_00002.jpeg"));
         // 유튜브 구간은 지금 모양 그대로이고 mediaUrl · thumbnailUrl 이 null 이다
         list(parentUser, "profileId", childId.toString(), "q", "옆으로 누워 발 뒤로 넘기기")
                 .andExpect(jsonPath("$.total").value(1))
@@ -178,12 +179,26 @@ class ExerciseWebTest {
     }
 
     @Test
+    @DisplayName("첫 쪽 40개에 유튜브 구간과 공단 영상이 번갈아 함께 선다 — 영상 id 차례로 세우면 공단 영상(0AUDLJ08S_…)만 앞에 섰다")
+    void 첫_쪽에_두_출처가_번갈아_선다() throws Exception {
+        for (ResultActions page : List.of(list(parentUser, "profileId", childId.toString()), list(parentUser))) {
+            page.andExpect(status().isOk())
+                    .andExpect(jsonPath("$.clips", hasSize(40)))
+                    .andExpect(jsonPath("$.clips[0].mediaUrl", nullValue()))
+                    .andExpect(jsonPath("$.clips[1].mediaUrl").isString())
+                    .andExpect(jsonPath("$.clips[38].mediaUrl", nullValue()))
+                    .andExpect(jsonPath("$.clips[39].mediaUrl").isString());
+        }
+    }
+
+    @Test
     @DisplayName("profileId 가 없으면 호출한 계정의 자기 프로필(성인) 연령대로 거르고, 프로필이 없는 계정은 빈 목록이다")
     void profileId_가_없으면_호출한_계정의_자기_프로필_연령대로_거르고_프로필이_없는_계정은_빈_목록이다() throws Exception {
         list(parentUser)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(324))
-                .andExpect(jsonPath("$.clips[0].clipId").value("0AUDLJ08S_00059-0"));
+                .andExpect(jsonPath("$.clips[0].clipId").value("IhShIA-WJNE-20"))
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00059-0"));
         list(outsiderUser)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(0))
@@ -195,10 +210,13 @@ class ExerciseWebTest {
     void 요인은_한글_이름으로_검색어는_앞뒤_공백을_빼고_제목의_부분_일치로_거른다() throws Exception {
         list(parentUser, "profileId", childId.toString(), "factor", "순발력")
                 .andExpect(jsonPath("$.total").value(12))
-                .andExpect(jsonPath("$.clips[0].clipId").value("0AUDLJ08S_00431-0"))
-                .andExpect(jsonPath("$.clips[11].clipId").value("IdpXx2gm90o-518"))
-                .andExpect(jsonPath("$.clips[11].title").value("버피"))
-                .andExpect(jsonPath("$.clips[11].factor").value("순발력"));
+                // 유튜브 구간이 하나라 맨 앞에 서고, 그 뒤는 공단 영상이 목록 차례로 잇는다
+                .andExpect(jsonPath("$.clips[0].clipId").value("IdpXx2gm90o-518"))
+                .andExpect(jsonPath("$.clips[0].title").value("버피"))
+                .andExpect(jsonPath("$.clips[0].factor").value("순발력"))
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00431-0"))
+                .andExpect(jsonPath("$.clips[2].clipId", startsWith("0AUDLJ08S_")))
+                .andExpect(jsonPath("$.clips[11].clipId", startsWith("0AUDLJ08S_")));
         list(parentUser, "profileId", childId.toString(), "q", " 스쿼트 ")
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.clips[*].clipId", contains("IdpXx2gm90o-424", "IdpXx2gm90o-602")));

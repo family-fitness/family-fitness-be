@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,8 +57,8 @@ public class ExerciseService {
 
     /**
      * 거르는 차례: 켜진 운동 구간 → 보는 프로필의 연령대에 맞는 것({@link ExerciseClip#suits}, 어르신은 성인 구간도) → 요인 · 단계 ·
-     * 조용함 · 검색어 → (FAVORITES 면) 찜 → 같은 제목은 하나만(보는 연령대와 같은 구간을 먼저, 그다음 목록 차례로 처음 것) → 목록 차례로
-     * 줄 세워 앞 {@link #PAGE} 개. 연령대를 먼저 걸어야 같은 제목의 다른 연령대 구간이 대표로 남지 않는다.
+     * 조용함 · 검색어 → (FAVORITES 면) 찜 → 같은 제목은 하나만(보는 연령대와 같은 구간을 먼저, 그다음 목록 차례로 처음 것) → 유튜브 구간과
+     * 공단 영상을 번갈아({@link #alternateSources}) 앞 {@link #PAGE} 개. 연령대를 먼저 걸어야 같은 제목의 다른 연령대 구간이 대표로 남지 않는다.
      */
     @Transactional(readOnly = true)
     public ExerciseListView list(UUID userId, ExerciseListQuery query) {
@@ -67,17 +68,14 @@ public class ExerciseService {
         if (ageGroup == null) return ExerciseListView.EMPTY;
         Set<String> favorited = profileId == null ? Set.of() : favorites.clipIdsOf(profileId);
 
-        List<ExerciseClip> hits = distinctByTitle(clips.findAllActive().stream()
-                        .filter(ExerciseClip::isExercise)
-                        .filter(it -> it.suits(ageGroup))
-                        .filter(query::matches)
-                        .filter(it -> query.list() != ExerciseListType.FAVORITES || favorited.contains(it.clipId()))
-                        .sorted(Comparator.comparing((ExerciseClip it) -> it.ageGroup() != ageGroup)
-                                .thenComparing(CATALOG_ORDER))
-                        .toList())
-                .stream()
-                .sorted(CATALOG_ORDER)
-                .toList();
+        List<ExerciseClip> hits = alternateSources(distinctByTitle(clips.findAllActive().stream()
+                .filter(ExerciseClip::isExercise)
+                .filter(it -> it.suits(ageGroup))
+                .filter(query::matches)
+                .filter(it -> query.list() != ExerciseListType.FAVORITES || favorited.contains(it.clipId()))
+                .sorted(Comparator.comparing((ExerciseClip it) -> it.ageGroup() != ageGroup)
+                        .thenComparing(CATALOG_ORDER))
+                .toList()));
         List<ExerciseView> page = hits.stream()
                 .limit(PAGE)
                 .map(it -> ExerciseView.of(it, favorited.contains(it.clipId())))
@@ -113,6 +111,28 @@ public class ExerciseService {
                 .findFirst()
                 .map(ProfileSummary::ageGroup)
                 .orElse(null);
+    }
+
+    /**
+     * 유튜브 구간과 공단 영상을 하나씩 번갈아 세운다(유튜브 먼저). 출처 안에서는 목록 차례({@link #CATALOG_ORDER})다. 한쪽이 먼저 떨어지면
+     * 남은 쪽을 그대로 잇는다. 영상 id 차례로만 세우면 공단 영상 id(0AUDLJ08S_…)가 유튜브 id 대부분보다 앞서, 첫 쪽 {@link #PAGE} 개가
+     * 모두 공단 영상이었다(다음 쪽은 없다).
+     */
+    static List<ExerciseClip> alternateSources(List<ExerciseClip> clips) {
+        List<ExerciseClip> youtube = clips.stream()
+                .filter(it -> it.media().mediaUrl() == null)
+                .sorted(CATALOG_ORDER)
+                .toList();
+        List<ExerciseClip> kspo = clips.stream()
+                .filter(it -> it.media().mediaUrl() != null)
+                .sorted(CATALOG_ORDER)
+                .toList();
+        List<ExerciseClip> merged = new ArrayList<>(clips.size());
+        for (int i = 0; i < Math.max(youtube.size(), kspo.size()); i++) {
+            if (i < youtube.size()) merged.add(youtube.get(i));
+            if (i < kspo.size()) merged.add(kspo.get(i));
+        }
+        return List.copyOf(merged);
     }
 
     /** 같은 제목이 여러 영상에 되풀이된다. 들어온 차례에서 처음 나온 구간 하나만 남긴다(FE 목과 같다). */
