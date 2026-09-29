@@ -78,20 +78,20 @@ public class ReviewLoginService {
     }
 
     /**
-     * 같은 IP 가 한 시간에 30번을 넘기면 계정을 만들기 전에 429 TOO_MANY. 모두 합쳐 한 시간에 새 계정 300개를 넘기면 최근 계정 하나로
-     * 들인다({@link ReviewLoginLimiter}). 어느 IP 로 셌는지 로그에 남긴다 — 배포 뒤 X-Forwarded-For 가 제대로 오는지 이 줄로 본다(README).
+     * 같은 IP 가 한 시간에 30번을 넘기면 계정을 만들기 전에 429 TOO_MANY. 모두 합쳐 한 시간에 새 계정 300개를 넘기면 그 IP 가 이 한
+     * 시간에 만든 계정으로 들이고, 그런 계정이 없으면 새로 만든다({@link ReviewLoginLimiter}). 어느 IP 로 셌는지 로그에 남긴다 — 배포 뒤 X-Forwarded-For 가 제대로 오는지 이 줄로 본다(README).
      */
     public AuthResult login(String clientIp) {
         ReviewLoginLimiter.Admission admission = limiter.acquire(clientIp);
         UUID reuse = admission.reuse();
         if (reuse != null) {
-            log.info("심사용 계정 로그인: IP {} · 새 계정 한도가 차 최근 계정 {} 로 들인다", ReviewLoginLimiter.keyOf(clientIp), reuse);
+            log.info("심사용 계정 로그인: IP {} · 새 계정 한도가 차 이 IP 가 만든 계정 {} 로 들인다", ReviewLoginLimiter.keyOf(clientIp), reuse);
             return auth.startSession(reuse);
         }
         User user = registration.registerOrGet(User.PROVIDER_REVIEW, PROVIDER_USER_PREFIX + UUID.randomUUID(), null);
         createFamily(user.id());
         UUID userId = user.id();
-        afterCommit(() -> limiter.remember(userId));
+        afterCommit(() -> limiter.remember(clientIp, userId));
         log.info("심사용 계정 로그인: IP {} · 새 계정 {}", ReviewLoginLimiter.keyOf(clientIp), userId);
         return auth.startSession(userId);
     }

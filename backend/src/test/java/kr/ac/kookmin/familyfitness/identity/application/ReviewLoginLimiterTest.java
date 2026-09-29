@@ -22,7 +22,7 @@ class ReviewLoginLimiterTest {
         ReviewLoginLimiter.Admission admission = limiter.acquire(ip);
         if (admission.reuse() == null) {
             UUID userId = UUID.randomUUID();
-            limiter.remember(userId);
+            limiter.remember(ip, userId);
             made.add(userId);
         }
         return admission;
@@ -38,8 +38,8 @@ class ReviewLoginLimiterTest {
     }
 
     @Test
-    @DisplayName("모두 합쳐 한 시간에 300개를 만들면 그다음은 429 가 아니라 그 한 시간에 만든 심사용 계정 가운데 하나를 준다 — 계정은 더 생기지 않고 심사위원은 들어온다")
-    void 모두_합친_한도가_차면_최근_계정을_나눠_준다() {
+    @DisplayName("모두 합쳐 한 시간에 300개를 만들면 그다음은 429 가 아니라, 그 IP 가 이 한 시간에 만든 가장 최근 계정으로 들인다")
+    void 모두_합친_한도가_차면_그_IP_가_만든_계정으로_들인다() {
         Instant start = clock.instant();
         List<UUID> made = new ArrayList<>();
         for (int i = 0; i < ReviewLoginLimiter.MAX_TOTAL; i++) {
@@ -47,37 +47,49 @@ class ReviewLoginLimiterTest {
                             .reuse())
                     .isNull();
         }
+        // 10.0.0.5 가 한 번 더 만들어 두었다고 친다(한도 전에 만든 계정 둘 가운데 뒤의 것을 받는다)
+        UUID later = UUID.randomUUID();
+        limiter.remember("10.0.0.5", later);
 
-        for (int i = 0; i < 5; i++) {
-            assertThat(loginAndRemember("9.9.9." + i, made).reuse()).isIn(made);
-        }
-        assertThat(made).hasSize(ReviewLoginLimiter.MAX_TOTAL);
+        assertThat(limiter.acquire("10.0.0.5").reuse()).isEqualTo(later);
+        assertThat(limiter.acquire("10.0.1.7").reuse()).isEqualTo(made.get(207));
 
         // 나눠 줄 때도 IP 마다 30번은 그대로 센다
-        for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("8.8.8.8");
-        assertThatThrownBy(() -> limiter.acquire("8.8.8.8")).isInstanceOf(TooManyReviewLoginsException.class);
+        for (int i = 2; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("10.0.0.5");
+        assertThatThrownBy(() -> limiter.acquire("10.0.0.5")).isInstanceOf(TooManyReviewLoginsException.class);
 
         clock.setInstant(start.plus(ReviewLoginLimiter.WINDOW));
-        assertThat(limiter.acquire("9.9.9.9").reuse()).isNull();
+        assertThat(limiter.acquire("10.0.1.7").reuse()).isNull();
     }
 
     @Test
-    @DisplayName("모두 합친 한도가 찼는데 나눠 줄 계정이 없으면(만들다 실패해 적힌 계정이 없음) 429 다")
-    void 나눠_줄_계정이_없으면_429() {
+    @DisplayName("모두 합친 한도가 찬 뒤 만든 계정이 없는 IP 는 새 계정을 하나 받고, 그 뒤로는 그 계정으로 들어온다 — 다른 IP 가 만든 계정은 받지 않는다")
+    void 한도가_찬_뒤_새_IP_는_새_계정_하나() {
+        List<UUID> attacker = new ArrayList<>();
         for (int i = 0; i < ReviewLoginLimiter.MAX_TOTAL; i++) {
-            limiter.acquire("10.0." + (i / 200) + "." + (i % 200));
+            loginAndRemember("10.0." + (i / 200) + "." + (i % 200), attacker);
         }
 
-        assertThatThrownBy(() -> limiter.acquire("9.9.9.9")).isInstanceOf(TooManyReviewLoginsException.class);
+        List<UUID> reviewer = new ArrayList<>();
+        assertThat(loginAndRemember("9.9.9.9", reviewer).reuse()).isNull();
+        assertThat(reviewer).hasSize(1);
+        for (int i = 0; i < 5; i++) {
+            assertThat(loginAndRemember("9.9.9.9", reviewer).reuse()).isEqualTo(reviewer.getFirst());
+        }
+        assertThat(reviewer).hasSize(1).doesNotContainAnyElementsOf(attacker);
+
+        // 계정을 적기 전에 실패했으면(만들다 되돌림) 나눠 줄 것이 없어 다시 새 계정이다 — 429 가 아니다
+        assertThat(limiter.acquire("8.8.8.8").reuse()).isNull();
+        assertThat(limiter.acquire("8.8.8.8").reuse()).isNull();
     }
 
     @Test
-    @DisplayName("한 시간이 지난 계정은 나눠 주지 않는다 — 나눠 주는 것은 최근 한 시간에 만든 계정뿐이다")
-    void 한_시간이_지난_계정은_나눠_주지_않는다() {
+    @DisplayName("한 시간이 지난 계정은 다시 주지 않는다 — 다시 주는 것은 최근 한 시간에 그 IP 가 만든 계정뿐이다")
+    void 한_시간이_지난_계정은_다시_주지_않는다() {
         Instant start = clock.instant();
         UUID old = UUID.randomUUID();
         limiter.acquire("7.7.7.7");
-        limiter.remember(old);
+        limiter.remember("7.7.7.7", old);
 
         clock.setInstant(start.plus(ReviewLoginLimiter.WINDOW).plusSeconds(1));
         List<UUID> made = new ArrayList<>();
@@ -85,9 +97,7 @@ class ReviewLoginLimiterTest {
             loginAndRemember("10.0." + (i / 200) + "." + (i % 200), made);
         }
 
-        for (int i = 0; i < 20; i++) {
-            assertThat(limiter.acquire("9.9.9." + i).reuse()).isIn(made).isNotEqualTo(old);
-        }
+        assertThat(limiter.acquire("7.7.7.7").reuse()).isNull();
     }
 
     @Test

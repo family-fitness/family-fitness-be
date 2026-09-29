@@ -36,8 +36,11 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   심사위원이 운영 서버에서 구글 계정 없이 둘러보는 길이라 운영에서 켜 둔다(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 `true` — 심사가 끝나면 `false`).
   부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
   남의 계정이 될 수 없다. 같은 IP(IPv6 는 /56 대역 — 통신사가 집 한 곳에 주는 크기)에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다.
-  새 계정은 IP 와 상관없이 모두 합쳐 한 시간에 300개까지 만든다(`app.auth.review-login.max-total`). 그 뒤로는 429 대신 그 한 시간에 만든
-  심사용 계정 하나(무작위)로 들인다 — 누구 한 사람이 300개를 채워 모든 심사위원을 막지 못하게. 이때만 심사위원끼리 계정이 겹칠 수 있다.
+  새 계정은 IP 와 상관없이 모두 합쳐 한 시간에 300개까지 만든다(`app.auth.review-login.max-total`). 그 뒤로도 429 는 주지 않는다 — 누구
+  한 사람이 300개를 채워 모든 심사위원을 막지 못하게. 대신 그 IP 가 이 한 시간에 만든 계정이 있으면 그 가운데 가장 최근 것으로 들이고,
+  없으면 새 계정을 하나 만든다(그 뒤로 그 IP 는 그 계정으로 들어온다). **다시 받은 계정은 같은 IP(같은 와이파이 · 회사망)에서 먼저 들어온
+  사람도 토큰을 쥐고 있다** — 그 사람이 가족 이름 · 식구 · 기록을 바꾸면 보이고, 내가 하는 일도 그 사람에게 보인다. 다른 IP 가 만든 계정은
+  주지 않는다: 한도를 채운 사람의 계정을 받으면 그 사람이 꾸민 화면을 보고 내 일을 들킨다.
   **운영에서는 늘 프록시 뒤다** — FE 가 `/api/v1/**` 를 Next 서버(rewrites)를 거쳐 넘기므로 BE 가 보는 remoteAddr 는 누가 부르든 Next 서버 IP 다.
   그래서 prod 프로필은 `server.forward-headers-strategy=native` 를 켜 두고, Tomcat 이 믿을 프록시(기본: 루프백 · 사설망)가 붙인 `X-Forwarded-For` 에서
   브라우저 IP 를 꺼낸다. 배포할 때 확인할 것:
@@ -63,7 +66,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   코치 대화(`POST /coach/chat`)도 대화마다 LLM 이 불릴 수 있어 센다(`ReviewChatQuota`): 심사용 계정마다 하루(KST) 30번, 모두 합쳐 하루 300번.
   넘기면 AI 를 부르기 전에 429 `TOO_MANY` 다. 편성과 달리 모두 합친 한도도 429 로 막는다 — AI 에 LLM 없이 답하라고 부탁할 칸이 없고, FE 에
   대화 화면이 없어 막혀도 심사위원이 보는 곳이 없다.
-  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 전체 한도로 한 시간 300가족까지다.
+  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 300가족에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 한 가족씩 더해진 만큼이다.
   심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고, 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
   test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest`)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.

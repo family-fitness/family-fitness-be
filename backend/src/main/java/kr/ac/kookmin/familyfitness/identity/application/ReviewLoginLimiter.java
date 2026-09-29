@@ -10,7 +10,6 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import kr.ac.kookmin.familyfitness.identity.domain.TooManyReviewLoginsException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,17 +21,23 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>같은 IP 에서 {@link #MAX_LOGINS} 번 — 심사위원 한 사람이 넉넉히 쓰는 양. 넘기면 429 TOO_MANY.
  *   <li>IP 와 상관없이 새 계정을 모두 합쳐 {@code maxTotal}(기본 {@link #MAX_TOTAL})개 — IP 를 바꿔 가며 부르거나(X-Forwarded-For 를
- *       꾸며 넣는 것 포함) 프록시 설정이 빠져 IP 가 하나로 보여도, 한 시간에 쌓이는 계정 수는 여기서 멈춘다. 이 한도에 닿으면 429 를 주지
- *       않고 그 한 시간 안에 만든 심사용 계정 가운데 하나를 무작위로 준다({@link Admission#reuse()}) — 누구 한 사람이 한도를 채워 모든
- *       심사위원을 한 시간 동안 막지 못하게. 그 계정은 다른 사람도 받았을 수 있어 기록이 섞일 수 있지만, 못 들어오는 것보다 낫다.
- *       나눠 줄 계정이 없으면(만들다 실패해 적힌 계정이 없음) 429 다.
+ *       꾸며 넣는 것 포함) 한 시간에 쌓이는 계정 수를 여기서 누른다. 이 한도에 닿아도 429 를 주지 않는다 — 누구 한 사람이 한도를 채워
+ *       모든 심사위원을 한 시간 동안 막지 못하게. 대신
+ *       <ul>
+ *         <li>그 IP 가 이 한 시간 안에 만든 계정이 있으면 그 가운데 가장 최근 것으로 들인다({@link Admission#reuse()}).
+ *         <li>없으면 새 계정을 하나 만든다. 그 뒤로 그 IP 는 그 계정으로 들어온다. 그래서 한도가 찬 뒤로는 한 시간에 IP 하나마다 계정
+ *             하나씩만 는다.
+ *       </ul>
+ *       다른 IP 가 만든 계정은 나눠 주지 않는다. 한도를 채운 사람은 자기가 만든 계정의 토큰을 다 쥐고 있어, 그 계정을 남에게 주면 그
+ *       사람이 가족 이름 · 식구 · 기록을 바꿔 뒤에 들어온 심사위원에게 보이고, 심사위원이 하는 일도 들여다본다. 같은 IP(같은 와이파이 ·
+ *       같은 회사망)끼리는 계정이 겹칠 수 있다.
  * </ul>
  *
  * <p>IPv4 는 주소 하나를, IPv6 는 앞 56비트(/56)를 한 IP 로 센다. 통신사는 보통 집 한 곳에 /56(= /64 대역 256개)을 주고, 기기 하나도
  * /64 를 통째로 받아 뒤 비트를 마음대로 바꿀 수 있다. /64 로 세면 집 한 곳이 IP 256개를 가진 것과 같다.
  *
  * <p>셈은 {@link ClaimAttemptLimiter} 와 같은 sliding window log 다. 통과한 요청만 센다(막힌 요청은 세지 않는다) — 그래서
- * 마지막으로 통과한 뒤 창이 지나면 풀린다. 계정을 나눠 준 로그인은 IP 셈에는 들어가고 새 계정 셈에는 들어가지 않는다. 확인과 기록을
+ * 마지막으로 통과한 뒤 창이 지나면 풀린다. 계정을 다시 준 로그인은 IP 셈에는 들어가고 새 계정 셈에는 들어가지 않는다. 확인과 기록을
  * 한 잠금 안에서 해서, 동시에 여러 번 불러도 한도를 넘지 않는다.
  *
  * <p>저장은 이 프로세스의 메모리다. 서버가 한 대라 이것으로 된다. 재시작하면 셈이 빈다.
@@ -46,12 +51,12 @@ public class ReviewLoginLimiter {
     static final int MAX_TOTAL = 300;
     static final Duration WINDOW = Duration.ofHours(1);
 
-    /** 이번 로그인을 받는 방법. {@code reuse} 가 null 이면 새 계정을 만들고, 아니면 그 심사용 계정으로 들인다. */
+    /** 이번 로그인을 받는 방법. {@code reuse} 가 null 이면 새 계정을 만들고, 아니면 같은 IP 가 만든 그 심사용 계정으로 들인다. */
     public record Admission(@Nullable UUID reuse) {
         static final Admission NEW = new Admission(null);
     }
 
-    private record Made(Instant at, UUID userId) {}
+    private record Made(Instant at, String key, UUID userId) {}
 
     private final IdentityClock clock;
     private final int maxTotal;
@@ -66,8 +71,8 @@ public class ReviewLoginLimiter {
     }
 
     /**
-     * IP 한도 안이면 이번 요청을 센다. 새 계정 한도가 남았으면 {@link Admission#NEW}, 찼으면 최근에 만든 심사용 계정 하나를 준다.
-     * IP 한도에 닿았거나, 새 계정 한도가 찼는데 나눠 줄 계정이 없으면 세지 않고 {@link TooManyReviewLoginsException}.
+     * IP 한도 안이면 이번 요청을 센다. 새 계정 한도가 남았으면 {@link Admission#NEW}. 찼으면 이 IP 가 이 한 시간에 만든 가장 최근 계정을
+     * 주고, 그런 계정이 없으면 {@link Admission#NEW}. IP 한도에 닿았으면 세지 않고 {@link TooManyReviewLoginsException}.
      */
     public synchronized Admission acquire(String clientIp) {
         Instant now = clock.now();
@@ -82,20 +87,27 @@ public class ReviewLoginLimiter {
         if (mine.size() >= MAX_LOGINS) throw new TooManyReviewLoginsException();
         Admission admission = Admission.NEW;
         if (all.size() >= maxTotal) {
-            if (made.isEmpty()) throw new TooManyReviewLoginsException();
-            Made[] recent = made.toArray(Made[]::new);
-            admission = new Admission(recent[ThreadLocalRandom.current().nextInt(recent.length)].userId());
-        } else {
-            all.addLast(now);
+            UUID own = latestMadeBy(key);
+            if (own != null) admission = new Admission(own);
         }
+        if (admission.reuse() == null) all.addLast(now);
         mine.addLast(now);
         byKey.put(key, mine);
         return admission;
     }
 
-    /** 새로 만든 심사용 계정을 적어 둔다 — 새 계정 한도가 찼을 때 나눠 줄 후보다. 계정이 커밋된 뒤에 부른다. */
-    public synchronized void remember(UUID userId) {
-        made.addLast(new Made(clock.now(), userId));
+    /** 새로 만든 심사용 계정을 만든 IP 와 함께 적어 둔다 — 새 계정 한도가 찼을 때 그 IP 에 다시 줄 후보다. 계정이 커밋된 뒤에 부른다. */
+    public synchronized void remember(String clientIp, UUID userId) {
+        made.addLast(new Made(clock.now(), keyOf(clientIp), userId));
+    }
+
+    private @Nullable UUID latestMadeBy(String key) {
+        var it = made.descendingIterator();
+        while (it.hasNext()) {
+            Made one = it.next();
+            if (one.key().equals(key)) return one.userId();
+        }
+        return null;
     }
 
     /**

@@ -54,16 +54,22 @@ class ReviewLoginOverflowTest {
     }
 
     @Test
-    @DisplayName("모두 합친 한도가 차면 429 가 아니라 그 한 시간에 만든 심사용 계정으로 들어온다 — 계정은 더 생기지 않는다")
-    void 모두_합친_한도가_차면_최근_계정으로_들어온다() throws Exception {
+    @DisplayName("모두 합친 한도가 차면 429 가 아니라 그 IP 가 만든 계정으로 들어오고, 만든 계정이 없는 IP 는 새 계정 하나를 받는다 — 다른 IP 의 계정은 받지 않는다")
+    void 모두_합친_한도가_차면_그_IP_가_만든_계정으로_들어온다() throws Exception {
         int before = reviewUsers();
-        List<UUID> made = List.of(reviewLogin("10.30.0.1"), reviewLogin("10.30.0.2"));
+        UUID first = reviewLogin("10.30.0.1");
+        UUID second = reviewLogin("10.30.0.2");
         assertThat(reviewUsers()).isEqualTo(before + 2);
 
-        for (int i = 3; i < 8; i++) {
-            assertThat(reviewLogin("10.30.0." + i)).isIn(made);
+        assertThat(reviewLogin("10.30.0.1")).isEqualTo(first);
+        assertThat(reviewLogin("10.30.0.2")).isEqualTo(second);
+
+        UUID third = reviewLogin("10.30.0.3");
+        assertThat(third).isNotIn(List.of(first, second));
+        assertThat(reviewUsers()).isEqualTo(before + 3);
+        for (int i = 0; i < 3; i++) {
+            assertThat(reviewLogin("10.30.0.3")).isEqualTo(third);
         }
-
-        assertThat(reviewUsers()).isEqualTo(before + 2);
+        assertThat(reviewUsers()).isEqualTo(before + 3);
     }
 }
