@@ -35,13 +35,28 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 - **심사용 계정 로그인**(`POST /api/v1/auth/review-login`, `app.auth.review-login.enabled`)은 개발용 기능이 아니라 이 목록에 없다.
   심사위원이 운영 서버에서 구글 계정 없이 둘러보는 길이라 운영에서 켜 둔다(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 `true` — 심사가 끝나면 `false`).
   부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
-  남의 계정이 될 수 없다. 같은 IP(IPv6 는 /64 대역)에서 한 시간에 30번, IP 와 상관없이 모두 합쳐 한 시간에 300번을 넘기면 429 `TOO_MANY` 다.
+  남의 계정이 될 수 없다. 같은 IP(IPv6 는 /56 대역 — 통신사가 집 한 곳에 주는 크기)에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다.
+  새 계정은 IP 와 상관없이 모두 합쳐 한 시간에 300개까지 만든다(`app.auth.review-login.max-total`). 그 뒤로는 429 대신 그 한 시간에 만든
+  심사용 계정 하나(무작위)로 들인다 — 누구 한 사람이 300개를 채워 모든 심사위원을 막지 못하게. 이때만 심사위원끼리 계정이 겹칠 수 있다.
   **운영에서는 늘 프록시 뒤다** — FE 가 `/api/v1/**` 를 Next 서버(rewrites)를 거쳐 넘기므로 BE 가 보는 remoteAddr 는 누가 부르든 Next 서버 IP 다.
   그래서 prod 프로필은 `server.forward-headers-strategy=native` 를 켜 두고, Tomcat 이 믿을 프록시(기본: 루프백 · 사설망)가 붙인 `X-Forwarded-For` 에서
   브라우저 IP 를 꺼낸다. 배포할 때 확인할 것:
   - Next 는 받은 `X-Forwarded-For` 를 그대로 넘길 뿐 스스로 붙이지 않는다(next 16 rewrites 의 proxy-request). Next 앞의 HTTPS 프록시(nginx 등)가 `X-Forwarded-For` 에 브라우저 IP 를 붙여야 한다.
   - Next 서버가 BE 에 공인 IP 로 들어오면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` 에 그 주소(정규식)를 준다. 안 주면 헤더를 믿지 않고 모두 Next 서버 IP 하나로 센다.
-  - 둘 중 하나가 빠져도 전체 한도(한 시간 300번)가 있어 계정이 끝없이 쌓이지는 않는다. 다만 누구든 31번만 부르면 한 시간 동안 모든 심사위원이 429 를 받는다.
+  - 둘 중 하나가 빠져도 전체 한도(한 시간 300개)가 있어 계정이 끝없이 쌓이지는 않는다. 다만 헤더가 오지 않으면 모든 심사위원이 Next 서버 IP 하나로 세져,
+    누구든 31번만 부르면 한 시간 동안 모든 심사위원이 429 를 받는다. 거꾸로 앞 프록시 없이 Next 를 바로 열면 브라우저가 꾸며 보낸 `X-Forwarded-For` 가
+    그대로 넘어와(Next 는 사설망이라 Tomcat 이 믿는다) IP 한도가 뜻이 없어진다. 코드로는 막을 수 없어 아래 점검으로 확인한다.
+
+  **심사 기간 전 배포 점검 — 심사용 로그인 IP**
+  1. [ ] Next 앞에 HTTPS 프록시(nginx 등)가 있고, 그 프록시가 `X-Forwarded-For` 에 브라우저 IP 를 붙인다
+     (nginx `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`, 브라우저가 보낸 값을 아예 버리려면 `$remote_addr`).
+  2. [ ] 바깥망(휴대폰 LTE 등)에서 가짜 헤더를 실어 한 번 부른다(심사용 계정이 하나 생긴다):
+     `curl -s -o /dev/null -w '%{http_code}
+' -X POST -H 'X-Forwarded-For: 203.0.113.9' https://<FE 주소>/api/v1/auth/review-login`
+     그리고 BE 로그의 `심사용 계정 로그인: IP …` 줄을 본다.
+     - 부른 기기의 공인 IP 가 찍히면 된다(앞 프록시가 붙인 값을 Tomcat 이 오른쪽부터 읽어 꾸민 값은 버린다).
+     - `203.0.113.9` 가 찍히면 꾸민 헤더를 믿고 있다 — 1 을 고친다.
+     - Next 서버 IP(사설망 · 루프백)가 찍히면 헤더가 오지 않는다 — 1 을 고치거나, BE 가 Next 를 공인 IP 로 받는다면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` 를 준다.
   심사용 계정은 편성(AI · LLM)을 하루(KST) 20번까지 시작한다(`ReviewRunQuota`, 21번째는 429 `TOO_MANY`). 구글 계정은 세지 않는다.
   계정은 누구나 만들 수 있어 계정마다 한도만으로는 LLM 호출이 쌓이므로, 심사용 계정을 모두 합쳐 하루 400번 AI 로 짠 뒤로는 AI 를 부르지 않고
   라벨 대체 편성으로 짠다. 429 로 막지 않는 까닭: 누구 한 사람이 한도를 채우면 그날 모든 심사위원의 편성이 막힌다.

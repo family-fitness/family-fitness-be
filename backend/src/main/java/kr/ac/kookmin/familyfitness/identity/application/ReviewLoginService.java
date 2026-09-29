@@ -12,9 +12,13 @@ import kr.ac.kookmin.familyfitness.identity.domain.WeeklyAvailability.RawSlot;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 심사용 계정 로그인. 부를 때마다 새 계정과 새 체험 가족을 만들고 그 계정으로 로그인시킨다 — 심사위원끼리 서로의 기록을 건드리지 않게.
@@ -31,6 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 네 사람 모두 운동할 수 있는 시간을 적어 둔다. 분은 FE 가 고를 수 있는 값(10 · 20 · 30 · 40)만 쓴다 — 15분이면 편성 화면이 10분 칩을 켠다. 미션은 만들지 않는다 — 들어와서 오늘 편성을 직접 짜 보게.
  * 측정은 이 모듈이 넣지 않는다. {@link ReviewFamilyCreated} 를 발행하면 측정(fitness)이 같은 트랜잭션에서 넣는다.
  *
+ * <p>새 계정을 모두 합쳐 한 시간에 만드는 수가 한도에 닿으면 새로 만들지 않고, 그 한 시간에 만든 심사용 계정 하나로 들인다
+ * ({@link ReviewLoginLimiter}) — 이때만 심사위원끼리 계정이 겹칠 수 있다.
+ *
  * <p>가족 · 구성원 · 참여 방식 · 운동할 수 있는 시간은 화면이 부르는 서비스를 그대로 거친다. 규칙(나이 · 동의 · 칸 값)이 사람이 만든
  * 가족과 똑같이 걸린다. 한 트랜잭션이라 중간에 실패하면 계정까지 남지 않는다.
  */
@@ -39,6 +46,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewLoginService {
     static final String PROVIDER_USER_PREFIX = "review-";
     static final String FAMILY_NAME = "체험 가족";
+
+    private static final Logger log = LoggerFactory.getLogger(ReviewLoginService.class);
 
     private final ReviewLoginLimiter limiter;
     private final UserRegistrationService registration;
@@ -68,12 +77,37 @@ public class ReviewLoginService {
         this.clock = clock;
     }
 
-    /** 같은 IP 가 한 시간에 30번, 또는 모두 합쳐 300번을 넘기면 계정을 만들기 전에 429 TOO_MANY({@link ReviewLoginLimiter}). */
+    /**
+     * 같은 IP 가 한 시간에 30번을 넘기면 계정을 만들기 전에 429 TOO_MANY. 모두 합쳐 한 시간에 새 계정 300개를 넘기면 최근 계정 하나로
+     * 들인다({@link ReviewLoginLimiter}). 어느 IP 로 셌는지 로그에 남긴다 — 배포 뒤 X-Forwarded-For 가 제대로 오는지 이 줄로 본다(README).
+     */
     public AuthResult login(String clientIp) {
-        limiter.acquire(clientIp);
+        ReviewLoginLimiter.Admission admission = limiter.acquire(clientIp);
+        UUID reuse = admission.reuse();
+        if (reuse != null) {
+            log.info("심사용 계정 로그인: IP {} · 새 계정 한도가 차 최근 계정 {} 로 들인다", ReviewLoginLimiter.keyOf(clientIp), reuse);
+            return auth.startSession(reuse);
+        }
         User user = registration.registerOrGet(User.PROVIDER_REVIEW, PROVIDER_USER_PREFIX + UUID.randomUUID(), null);
         createFamily(user.id());
-        return auth.startSession(user.id());
+        UUID userId = user.id();
+        afterCommit(() -> limiter.remember(userId));
+        log.info("심사용 계정 로그인: IP {} · 새 계정 {}", ReviewLoginLimiter.keyOf(clientIp), userId);
+        return auth.startSession(userId);
+    }
+
+    /** 커밋된 뒤에 돌린다 — 만들다 되돌린 계정을 나눠 줄 후보로 적지 않게. 트랜잭션 밖이면 곧바로. */
+    private static void afterCommit(Runnable task) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
     }
 
     private void createFamily(UUID userId) {
