@@ -119,7 +119,7 @@
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
 | 422 | `SELF_CHEER` · `CHEER_KIND_NOT_ALLOWED` · `NOT_A_REPLY_TARGET` | 응원 — 자기에게 · 종류와 방향이 안 맞음 · 고마워요가 답할 칭찬이 아님 |
 | 422 | `ALREADY_MOVED` | 쉬는 날 카드 — 그날 아이가 이미 운동함 |
-| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP 에서 한 시간에 30번을 넘김 |
+| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP(IPv6 는 /64)에서 한 시간에 30번, 또는 모두 합쳐 한 시간에 300번을 넘김 |
 | 500 | `INTERNAL_ERROR` | 처리하지 못한 예외 |
 | 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx · 200 인데 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락)(대화), 비동기 요청 시간 초과 |
 | 503 | `AI_BAD_REQUEST` | AI 가 400 을 냄(서버가 잘못 보낸 것) — 대화 |
@@ -138,7 +138,7 @@
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
-  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP 마다 한 시간 30번).
+  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP 마다 한 시간 30번 · 모두 합쳐 300번, prod 는 X-Forwarded-For 를 읽음).
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -370,7 +370,8 @@ local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보
   - 서준은 사흘 전 날짜로 유아기 종목 네 가지(009 · 012 · 022 · 050)와 키 · 몸무게를 재 뒀다. 일곱 가지를 다 재지 않아 등급 대신 `NEEDS_ITEMS` 다.
   - 네 사람 모두 운동할 수 있는 시간이 적혀 있다. 미션은 없다 — 들어와서 오늘 편성을 직접 짜 보게.
   - 가족 · 구성원 · 측정은 화면이 부르는 서비스를 그대로 거친다(나이 · 동의 · 항목 · 값 범위 규칙이 똑같이 걸린다). 한 트랜잭션이라 중간에 실패하면 계정도 남지 않는다.
-- 같은 IP 에서 한 시간에 30번을 넘기면 계정을 만들기 전에 429 `TOO_MANY` 다. 통과한 요청만 세고, 셈은 서버 메모리에 둔다(서버 한 대 기준). IP 는 서블릿 `remoteAddr` 라, 역방향 프록시 뒤에 두면 `SERVER_FORWARD_HEADERS_STRATEGY=native` 로 `X-Forwarded-For` 를 읽게 한다.
+- 같은 IP(IPv6 는 앞 64비트 대역)에서 한 시간에 30번, 또는 IP 와 상관없이 모두 합쳐 한 시간에 300번을 넘기면 계정을 만들기 전에 429 `TOO_MANY` 다. 통과한 요청만 세고, 셈은 서버 메모리에 둔다(서버 한 대 기준).
+  IP 는 서블릿 `remoteAddr` 다. 브라우저 요청은 늘 Next 서버를 거쳐 오므로 prod 는 `server.forward-headers-strategy=native` 로 믿을 프록시(Tomcat 기본: 루프백 · 사설망, 바꾸려면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES`)가 붙인 `X-Forwarded-For` 에서 브라우저 IP 를 꺼낸다. Next 는 이 헤더를 스스로 붙이지 않으므로 Next 앞의 HTTPS 프록시가 붙여야 한다(backend/README.md 「프로필」).
 오류: 429 `TOO_MANY`.
 
 ### GET · POST /api/v1/dev/clock — 로그인 · local · compose 에서만

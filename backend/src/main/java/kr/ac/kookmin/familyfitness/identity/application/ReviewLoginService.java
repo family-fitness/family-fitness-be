@@ -68,7 +68,7 @@ public class ReviewLoginService {
         this.clock = clock;
     }
 
-    /** 같은 IP 가 한 시간에 30번을 넘기면 계정을 만들기 전에 429 TOO_MANY({@link ReviewLoginLimiter}). */
+    /** 같은 IP 가 한 시간에 30번, 또는 모두 합쳐 300번을 넘기면 계정을 만들기 전에 429 TOO_MANY({@link ReviewLoginLimiter}). */
     public AuthResult login(String clientIp) {
         limiter.acquire(clientIp);
         User user = registration.registerOrGet(User.PROVIDER_REVIEW, PROVIDER_USER_PREFIX + UUID.randomUUID(), null);
