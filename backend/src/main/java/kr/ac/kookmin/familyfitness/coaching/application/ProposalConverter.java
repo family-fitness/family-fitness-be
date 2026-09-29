@@ -33,13 +33,14 @@ import org.jspecify.annotations.Nullable;
  * video=(day_offset, order) 순으로 첫 영상 있는 세션, participants=편성 대상 한 명(+ withParent 면 요청한 보호자),
  * citations=evidence 가 가리키는 것(없으면 전체), sessions=세션마다 칸 하나({@link #sessions}).
  * targetValue 는 칸이 있으면 칸 분의 합(보통 duration_min 과 같다), 칸이 없으면 duration_min(최소 1).
- * 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다.
+ * 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다. 공단 영상(video.source = kspo)의
+ * mp4 주소는 칸에 저장하지 않고 조회 때 카탈로그에서 붙인다.
  */
 public class ProposalConverter {
     public static final int MAX_TITLE = 120;
     public static final int MAX_COPY = 400;
 
-    /** 칸 표의 video_id varchar(32) 에 들어가는 유튜브 영상 id 글자(직접 만들기 검증과 같다). */
+    /** 칸 표의 video_id varchar(32) 에 들어가는 영상 id 글자(유튜브 id · 공단 파일 이름, 직접 만들기 검증과 같다). */
     private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
 
     /** AI order 는 「그날 안의 차례」라 날마다 1부터 다시 센다. 날(day_offset)을 먼저 보고 order 로 세운다. 같으면 받은 차례. */

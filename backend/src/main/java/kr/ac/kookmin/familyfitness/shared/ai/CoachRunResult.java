@@ -53,9 +53,27 @@ public record CoachRunResult(
             @Nullable Video video,
             List<Integer> evidence) {}
 
-    /** 클립 구간. startSec 부터 endSec 까지만 튼다. */
+    /**
+     * 클립 구간. startSec 부터 endSec 까지만 튼다.
+     *
+     * @param source youtube · kspo(공단 「국민체력100 동영상 정보」 오픈API 영상). 옛 응답처럼 없으면 null(유튜브로 본다)
+     * @param mediaUrl 공단 영상의 mp4 주소. 유튜브 영상은 null
+     */
     public record Video(
             String videoId,
             @Nullable Integer startSec,
-            @Nullable Integer endSec) {}
+            @Nullable Integer endSec,
+            @Nullable String source,
+            @Nullable String mediaUrl) {
+        public static final String SOURCE_KSPO = "kspo";
+
+        /** 유튜브 구간. */
+        public Video(String videoId, @Nullable Integer startSec, @Nullable Integer endSec) {
+            this(videoId, startSec, endSec, null, null);
+        }
+
+        public boolean isKspo() {
+            return SOURCE_KSPO.equals(source) || mediaUrl != null;
+        }
+    }
 }

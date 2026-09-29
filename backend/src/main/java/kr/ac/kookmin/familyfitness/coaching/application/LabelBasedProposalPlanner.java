@@ -19,6 +19,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.fitness.api.LatestFitness;
@@ -52,6 +53,13 @@ public class LabelBasedProposalPlanner {
 
     /** 한 세트로 삼기 좋은 클립 길이(ai:video/catalog.py SET_SECONDS). 같은 순위면 이 길이에 가까운 것부터 고른다. */
     static final int SET_SECONDS = 60;
+
+    /** 공단 오픈API 영상 인용(ai:video/catalog.py KSPO_CITATION · chunk_id "kspo:<video_id>"). 코퍼스 색인에 없는 영상이라 표에서 세운다. */
+    static final String KSPO_CITATION = "국민체력100 동영상 정보";
+
+    static final String KSPO_CHUNK_PREFIX = "kspo:";
+
+    static final String VIDEO_CHUNK_PREFIX = "video:";
 
     private static final Map<SessionPhase, String> PHASE_NAME = phaseNames();
 
@@ -186,7 +194,7 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 한 회분 클립(ai:video/catalog.py {@code routine} 을 옮김, 처방 동작 가산점은 뺐다 — 대체 편성은 처방 검색을 하지 않는다).
-     * 후보: 지금 판의 운동 클립 중 대상 연령대에 맞고({@link ExerciseClip#suits}, 어르신은 성인 클립도) 조건에 맞는 것(조용히 → quiet,
+     * 후보: 지금 판의 운동 클립(유튜브 구간 + 공단 영상 한 편 클립) 중 대상 연령대에 맞고({@link ExerciseClip#suits}, 어르신은 성인 클립도) 조건에 맞는 것(조용히 → quiet,
      * 집 → home_ok, 늘 도구 없음 — AI 요청과 같다). 단계마다 대상과 연령대가 같은 것 → 요인이 같은 것 → 처방 어휘 이름이 있는 것 →
      * 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼. 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
@@ -257,7 +265,7 @@ public class LabelBasedProposalPlanner {
                     clip.title(),
                     clipFactor != null ? clipFactor.getLabel() : (factor != null ? factor.getLabel() : ""),
                     clip.endSec() - clip.startSec(),
-                    new CoachRunResult.Video(clip.videoId(), clip.startSec(), clip.endSec()),
+                    videoOf(clip.videoId(), clip.startSec(), clip.endSec(), clip.media()),
                     List.copyOf(evidence)));
             videoSec += clip.endSec() - clip.startSec();
         }
@@ -288,18 +296,36 @@ public class LabelBasedProposalPlanner {
                 video == null ? factor.getLabel() + " 운동" : video.getTitle(),
                 factor.getLabel(),
                 video == null ? null : video.getDurationSec(),
-                video == null ? null : new CoachRunResult.Video(video.getVideoId(), null, null),
+                video == null ? null : videoOf(video.getVideoId(), null, null, video.getMedia()),
                 citations.stream().map(Citation::index).toList());
         return new Plan(List.copyOf(citations), List.of(session), null);
     }
 
+    /** AI 편성 응답의 video 칸과 같은 모양. 공단 영상이면 source=kspo 와 mp4 주소를 싣는다. */
+    private static CoachRunResult.Video videoOf(
+            String videoId, @Nullable Integer startSec, @Nullable Integer endSec, VideoMedia media) {
+        String mediaUrl = media.mediaUrl();
+        return mediaUrl == null
+                ? new CoachRunResult.Video(videoId, startSec, endSec)
+                : new CoachRunResult.Video(videoId, startSec, endSec, CoachRunResult.Video.SOURCE_KSPO, mediaUrl);
+    }
+
+    /**
+     * 영상 인용. 유튜브 영상은 코퍼스와 같은 "video:&lt;id&gt;" · 「국민체력100 운동영상 · 제목」 · 보기 주소, 공단 영상은 AI 와 같은
+     * "kspo:&lt;id&gt;" · 「국민체력100 동영상 정보 · 제목」 · mp4 주소다.
+     */
     private static Citation videoCitation(
             int index, String videoId, @Nullable ExerciseVideo video, String fallbackTitle) {
+        String title = video == null ? fallbackTitle : video.getTitle();
+        String mediaUrl = VideoMedia.of(video).mediaUrl();
+        if (mediaUrl != null) {
+            return new Citation(index, KSPO_CITATION + " · " + title, KSPO_CHUNK_PREFIX + videoId, mediaUrl);
+        }
         return new Citation(
                 index,
-                "국민체력100 운동영상 · " + (video == null ? fallbackTitle : video.getTitle()),
-                "video:" + videoId,
-                video == null ? "https://www.youtube.com/watch?v=" + videoId : video.getUrl());
+                "국민체력100 운동영상 · " + title,
+                VIDEO_CHUNK_PREFIX + videoId,
+                video == null ? ExerciseVideo.youtubeUrl(videoId) : video.getUrl());
     }
 
     private static List<CoachRunResult.Step> steps(
@@ -310,7 +336,8 @@ public class LabelBasedProposalPlanner {
             List<ExerciseClip> routine,
             Plan plan) {
         long videoCount = plan.citations().stream()
-                .filter(it -> it.chunkId().startsWith("video:"))
+                .filter(it -> it.chunkId().startsWith(VIDEO_CHUNK_PREFIX)
+                        || it.chunkId().startsWith(KSPO_CHUNK_PREFIX))
                 .count();
         String retrieved =
                 routine.isEmpty() ? "영상 라벨 기반 편성 · 영상 " + videoCount + "편" : "클립 라벨 기반 편성 · 클립 " + routine.size() + "개";

@@ -18,6 +18,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunInProgressException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidRunDateException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
@@ -497,6 +498,74 @@ class CoachRunServiceTest {
                                 () -> service.reject(family.parentUser, run.getId(), null))
                         .getCode())
                 .isEqualTo("INVALID_STATE");
+    }
+
+    @Test
+    @DisplayName("공단 영상이면 제안 대표 영상의 url 이 mp4 주소이고, 대표 영상 · 칸에 mediaUrl · thumbnailUrl 이 실린다")
+    void 공단_영상이면_제안_대표_영상과_칸에_mp4_주소가_실린다() {
+        videos.videos.put("0AUDLJ08S_00351", Videos.kspo("0AUDLJ08S_00351", "팔굽혀펴기", 91, 7, 12));
+        CoachRun run = runs.save(Runs.awaiting(
+                family.familyId,
+                family.child.profileId(),
+                Fixed.TODAY,
+                family.parent.profileId(),
+                Fixed.NOW,
+                List.of(new CoachProposalItem(
+                        0,
+                        "근력 키우기 10분",
+                        "TIMER_MINUTES",
+                        10,
+                        "이유",
+                        null,
+                        Fixed.TODAY,
+                        Fixed.TODAY,
+                        List.of(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자")),
+                        new ProposalVideo("0AUDLJ08S_00351", 0),
+                        List.of(),
+                        null,
+                        null,
+                        List.of(
+                                new MissionSession(
+                                        1,
+                                        SessionPhase.MAIN,
+                                        "팔굽혀펴기",
+                                        FitnessFactor.STRENGTH,
+                                        8,
+                                        new SessionClip("0AUDLJ08S_00351", 0, 91, "팔굽혀펴기")),
+                                new MissionSession(
+                                        2,
+                                        SessionPhase.COOLDOWN,
+                                        "다리 뒤 늘리기",
+                                        null,
+                                        2,
+                                        new SessionClip("Eg3GpTv7z8s", 1426, 1466, null)))))));
+
+        ProposalView proposal =
+                service.get(family.parentUser, run.getId()).proposals().getFirst();
+
+        assertThat(proposal.video())
+                .isEqualTo(new ProposalVideoView(
+                        "0AUDLJ08S_00351",
+                        "팔굽혀펴기",
+                        Videos.kspoMp4("0AUDLJ08S_00351"),
+                        0,
+                        List.of(
+                                ExerciseVideo.BADGE_QUIET,
+                                ExerciseVideo.BADGE_SMALL_ROOM,
+                                ExerciseVideo.BADGE_NO_EQUIPMENT),
+                        Videos.kspoMp4("0AUDLJ08S_00351"),
+                        Videos.kspoThumbnail("0AUDLJ08S_00351")));
+        assertThat(proposal.sessions())
+                .extracting(MissionSessionView::clip)
+                .containsExactly(
+                        new SessionClipView(
+                                "0AUDLJ08S_00351",
+                                0,
+                                91,
+                                "팔굽혀펴기",
+                                Videos.kspoMp4("0AUDLJ08S_00351"),
+                                Videos.kspoThumbnail("0AUDLJ08S_00351")),
+                        new SessionClipView("Eg3GpTv7z8s", 1426, 1466, null, null, null));
     }
 
     @Test

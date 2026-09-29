@@ -6,23 +6,28 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.activity.api.DailyMinutes;
 import kr.ac.kookmin.familyfitness.activity.api.RestDayQuery;
+import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.SessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CalendarRangeException;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionDay;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSpan;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionCompletion;
 import kr.ac.kookmin.familyfitness.identity.api.CheerKind;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
@@ -72,6 +77,7 @@ public class CalendarService {
     private final ActivityQuery activity;
     private final CheerQuery cheers;
     private final RestDayQuery restDays;
+    private final ExerciseVideoRepository videos;
     private final AppTime time;
 
     public CalendarService(
@@ -81,6 +87,7 @@ public class CalendarService {
             ActivityQuery activity,
             CheerQuery cheers,
             RestDayQuery restDays,
+            ExerciseVideoRepository videos,
             AppTime time) {
         this.missions = missions;
         this.completions = completions;
@@ -88,6 +95,7 @@ public class CalendarService {
         this.activity = activity;
         this.cheers = cheers;
         this.restDays = restDays;
+        this.videos = videos;
         this.time = time;
     }
 
@@ -103,6 +111,7 @@ public class CalendarService {
         Map<LocalDate, Integer> moved = hasPast ? movedMinutes(profileId, from, lastPast) : Map.of();
         Map<LocalDate, List<CalendarView.Sticker>> stickers = stickersOf(profileId, from, to);
         Set<LocalDate> rest = new HashSet<>(restDays.restDaysBetween(familyId, from, to));
+        Map<String, ExerciseVideo> videoById = clipVideosOf(planned);
 
         List<CalendarView.Day> days = new ArrayList<>();
         for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
@@ -114,7 +123,7 @@ public class CalendarService {
                     date,
                     moved.getOrDefault(date, 0),
                     plannedMinutes(stood),
-                    stood.stream().map(CalendarService::entryOf).toList(),
+                    stood.stream().map(it -> entryOf(it, videoById)).toList(),
                     got,
                     isRest ? Boolean.TRUE : null));
         }
@@ -211,7 +220,20 @@ public class CalendarService {
         return sum > 0 ? sum : null;
     }
 
-    private static CalendarView.Entry entryOf(MissionDay day) {
+    /** 칸 영상을 영상 표에서 한 번에 읽는다. 공단 영상이면 칸에 mp4 · 첫 장면 주소를 붙이려는 것이다. */
+    private Map<String, ExerciseVideo> clipVideosOf(Map<LocalDate, List<MissionDay>> planned) {
+        Set<String> videoIds = new LinkedHashSet<>();
+        planned.values()
+                .forEach(days -> days.forEach(day -> day.mission().getSessions().forEach(session -> {
+                    SessionClip clip = session.clip();
+                    if (clip != null) videoIds.add(clip.videoId());
+                })));
+        if (videoIds.isEmpty()) return Map.of();
+        return videos.findAllByIds(videoIds).stream()
+                .collect(Collectors.toMap(ExerciseVideo::getVideoId, Function.identity(), (a, b) -> a));
+    }
+
+    private static CalendarView.Entry entryOf(MissionDay day, Map<String, ExerciseVideo> videoById) {
         Mission mission = day.mission();
         return new CalendarView.Entry(
                 mission.getId(),
@@ -221,18 +243,19 @@ public class CalendarService {
                 day.completed(),
                 mission.hasSessions()
                         ? mission.getSessions().stream()
-                                .map(it -> sessionOf(day, it))
+                                .map(it -> sessionOf(day, it, videoById))
                                 .toList()
                         : null);
     }
 
-    private static CalendarView.Session sessionOf(MissionDay day, MissionSession session) {
+    private static CalendarView.Session sessionOf(
+            MissionDay day, MissionSession session, Map<String, ExerciseVideo> videoById) {
         return new CalendarView.Session(
                 session.position(),
                 session.phase(),
                 session.title(),
                 session.minutes(),
-                MissionSessionView.of(session).clip(),
+                MissionSessionView.clipOf(session, videoById),
                 day.verifiedByOf(session),
                 day.isDone(session));
     }

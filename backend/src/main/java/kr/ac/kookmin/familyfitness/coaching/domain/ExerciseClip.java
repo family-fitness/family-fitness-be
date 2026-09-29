@@ -5,7 +5,9 @@ import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.jspecify.annotations.Nullable;
 
 /**
- * 영상 안의 한 동작 구간(클립). AI 릴리스(video_clips · clip_labels)를 적재한 `video_exercises` 행이다. 읽기 전용.
+ * 영상 안의 한 동작 구간(클립). AI 릴리스를 적재한 `video_exercises` 행이다. 읽기 전용.
+ * 유튜브 영상은 한 편을 여러 동작 구간으로 자른 것(video_clips · clip_labels, V132)이고, 공단 「국민체력100 동영상 정보」 오픈API
+ * 영상은 한 편에 운동 하나라 한 편이 곧 클립 하나다(kspo_videos · kspo_video_labels, V161 — 시작 0초, 끝 = 영상 길이).
  *
  * <p>{@code clipId} 는 {@code {videoId}-{startSec}} 다. AI 의 {@code seq} 는 영상 안 순번이라 클립을 다시 끊으면 밀리지만,
  * 시작 초는 다시 끊어도 운동 클립이 그대로 남았다(9/17 → 9/22 판에서 491/491).
@@ -18,6 +20,7 @@ import org.jspecify.annotations.Nullable;
  * @param ageGroup 영상의 연령대(AI 코퍼스 값). 모르면 null.
  * @param source 라벨을 붙인 방법(AI 값 그대로: llm · human · exact · embed).
  * @param active 지금 AI 판에 있는 클립인지. 새 판에서 빠진 클립은 지우지 않고 false 로 둔다(찜처럼 clipId 를 가리키는 행을 살린다).
+ * @param media 공단 영상이면 mp4 · 첫 장면 주소. 유튜브 클립은 {@link VideoMedia#NONE}(videoId 로 유튜브 구간을 튼다).
  */
 public record ExerciseClip(
         String clipId,
@@ -36,15 +39,56 @@ public record ExerciseClip(
         boolean isExercise,
         @Nullable AgeGroup ageGroup,
         @Nullable String source,
-        boolean active) {
+        boolean active,
+        VideoMedia media) {
+
+    /** 유튜브 클립. */
+    public ExerciseClip(
+            String clipId,
+            String videoId,
+            int seq,
+            String nameOnVideo,
+            @Nullable String exerciseName,
+            String title,
+            @Nullable FitnessFactor factor,
+            SessionPhase phase,
+            int startSec,
+            int endSec,
+            boolean homeOk,
+            boolean quiet,
+            boolean needsProps,
+            boolean isExercise,
+            @Nullable AgeGroup ageGroup,
+            @Nullable String source,
+            boolean active) {
+        this(
+                clipId,
+                videoId,
+                seq,
+                nameOnVideo,
+                exerciseName,
+                title,
+                factor,
+                phase,
+                startSec,
+                endSec,
+                homeOk,
+                quiet,
+                needsProps,
+                isExercise,
+                ageGroup,
+                source,
+                active,
+                VideoMedia.NONE);
+    }
 
     public static String idOf(String videoId, int startSec) {
         return videoId + "-" + startSec;
     }
 
     /**
-     * 이 연령대(viewer)에게 보여 줄 구간인지. 연령대가 같으면 된다. 어르신은 성인 구간도 받는다 — 어르신 라벨 구간이 따로 없어
-     * (V132 에 0개) 같은 연령대만 고집하면 65세 넘은 가족은 영상을 하나도 못 받는다. 성인은 어르신 구간을 받지 않는다.
+     * 이 연령대(viewer)에게 보여 줄 구간인지. 연령대가 같으면 된다. 어르신은 성인 구간도 받는다 — 노인 전용 영상을 따로 만들지 않고
+     * 성인 영상을 똑같이 쓰기로 했다(유튜브 어르신 구간은 V132 에 0개, 공단 어르신 영상은 V161 이 더했다). 성인은 어르신 구간을 받지 않는다.
      */
     public boolean suits(AgeGroup viewer) {
         return ageGroup == viewer || (viewer == AgeGroup.SENIOR && ageGroup == AgeGroup.ADULT);

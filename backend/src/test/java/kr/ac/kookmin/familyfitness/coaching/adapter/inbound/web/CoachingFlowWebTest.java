@@ -589,11 +589,28 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].participants[0].needsGuardianCheck")
                         .value(false));
 
-        // 영상 목록(V132 AI 영상): 유소년 안전 필터 + 요인 — 근력 영상 중 유아기(IfV5H7USgaA) · 성인(IhShIA-WJNE 등)은 빠진다
+        // 영상 목록: 유소년 안전 필터 + 요인. videoId 차례라 공단 영상(V161, 0AUDLJ08S_…)이 먼저 나온다 — url 은 mp4 주소다
         mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=근력&size=1").header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.videos", hasSize(1)))
+                .andExpect(jsonPath("$.videos[0].videoId").value("0AUDLJ08S_00351"))
+                .andExpect(jsonPath("$.videos[0].title").value("팔굽혀펴기"))
+                .andExpect(
+                        jsonPath("$.videos[0].url").value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
+                .andExpect(jsonPath("$.videos[0].mediaUrl")
+                        .value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
+                .andExpect(jsonPath("$.videos[0].thumbnailUrl")
+                        .value("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00351/0AUDLJ08S_00351_SC_00002.jpeg"))
+                .andExpect(jsonPath("$.videos[0].durationSec").value(91))
+                .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"));
+        // 유튜브 영상(V132): 근력 영상 중 유아기(IfV5H7USgaA) · 성인(IhShIA-WJNE 등)은 빠진다. mediaUrl 은 null 이다
+        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=근력&size=1&cursor=0AUDLJ08S_99999")
+                        .header(HttpHeaders.AUTHORIZATION, child))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.videos", hasSize(1)))
                 .andExpect(jsonPath("$.videos[0].videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.videos[0].url").value("https://www.youtube.com/watch?v=Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.videos[0].mediaUrl", nullValue()))
                 .andExpect(
                         jsonPath("$.videos[0].thumbnailUrl").value("https://i.ytimg.com/vi/Eg3GpTv7z8s/hqdefault.jpg"))
                 .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"))

@@ -21,6 +21,7 @@ exercise_videos 에는 자료에 있는 칸만 채운다. 영상 길이 · 강�
 낸 SQL 은 이미 적재된 DB 위에 다시 돌려도 된다(첫 적재와 다음 릴리스가 같은 문장을 쓴다).
 - 클립: 같은 clip_id 가 있으면 이번 판 값으로 고치고 active=true 로 켠다. 없으면 넣는다.
 - 이번 판에 없는 클립은 지우지 않고 active=false 로 끈다. 찜처럼 clip_id 를 가리키는 행을 살리려는 것이다.
+  공단 영상 클립(kspo_videos_to_sql.py 가 싣는다)은 여기서 끄지 않는다 — 이 스크립트는 유튜브 클립만 다룬다.
 - 영상: 이 스크립트가 넣은 행(labeled_by='AI')만 이번 판 값으로 고친다. 없으면 넣는다. 시드 같은 다른 출처 행은 건드리지 않는다.
 문장은 PostgreSQL 과 H2 양쪽에서 도는 update … where 와 insert … select … where not exists 만 쓴다.
 
@@ -240,16 +241,20 @@ def clip_statements(clip: dict) -> str:
 
 
 def deactivate_statement(clip_ids: list[str]) -> str:
-    """이번 판에 없는 클립은 지우지 않고 끈다."""
+    """이번 판에 없는 유튜브 클립은 지우지 않고 끈다.
+
+    공단 영상 클립(kspo_videos_to_sql.py 가 싣는다, media_url 이 있는 영상)은 이 판에 없어도 끄지 않는다.
+    media_url 칸은 V161 이 더했으니 그 뒤에 만드는 마이그레이션에서만 이 문장이 돈다(V132 는 이 조건 없이 만들었다).
+    """
     per_line = 6
     lines = [
         "    " + ", ".join(sql_text(i) for i in clip_ids[start:start + per_line])
         for start in range(0, len(clip_ids), per_line)
     ]
     return (
-        "update video_exercises set active = false where active = true and clip_id not in (\n"
-        + ",\n".join(lines)
-        + "\n);"
+        "update video_exercises set active = false where active = true\n"
+        "  and video_id in (select video_id from exercise_videos where media_url is null)\n"
+        "  and clip_id not in (\n" + ",\n".join(lines) + "\n);"
     )
 
 

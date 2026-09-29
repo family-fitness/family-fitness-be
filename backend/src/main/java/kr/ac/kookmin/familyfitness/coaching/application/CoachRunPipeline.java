@@ -172,23 +172,35 @@ public class CoachRunPipeline {
         written(runs.finishIfRunning(run), runId, "실패 기록");
     }
 
-    /** 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다). */
+    /**
+     * 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다).
+     * 공단 영상(video.source = kspo)의 mp4 주소는 칸에 따로 저장하지 않고 조회 때 영상 표에서 붙인다. 그래서 AI 가 고른 공단 영상이 영상 표에
+     * 없으면(BE 에 실은 AI 판이 뒤처졌다) 화면이 그 칸을 유튜브로 틀려다 실패한다 — 그런 영상을 경고로 남긴다.
+     */
     private ClipTitles clipTitlesOf(CoachRunResult.Proposal proposal) {
         Set<String> clipIds = new LinkedHashSet<>();
         Set<String> videoIds = new LinkedHashSet<>();
+        Set<String> kspoVideoIds = new LinkedHashSet<>();
         for (CoachRunResult.Mission mission : proposal.missions()) {
             for (CoachRunResult.Session session : mission.sessions()) {
                 CoachRunResult.Video video = session.video();
                 if (video == null || video.videoId().isBlank()) continue;
                 videoIds.add(video.videoId());
+                if (video.isKspo()) kspoVideoIds.add(video.videoId());
                 clipIds.add(ExerciseClip.idOf(video.videoId(), ProposalConverter.clipStart(video)));
             }
         }
         if (videoIds.isEmpty()) return ClipTitles.none();
         Map<String, String> clipTitles = clips.findAllByIds(clipIds).stream()
                 .collect(Collectors.toMap(ExerciseClip::clipId, ExerciseClip::title, (a, b) -> a));
-        Map<String, String> videoTitles = videos.findAllByIds(videoIds).stream()
+        List<ExerciseVideo> known = videos.findAllByIds(videoIds);
+        Map<String, String> videoTitles = known.stream()
                 .collect(Collectors.toMap(ExerciseVideo::getVideoId, ExerciseVideo::getTitle, (a, b) -> a));
+        Set<String> unplayable = new LinkedHashSet<>(kspoVideoIds);
+        known.stream().filter(it -> it.getMedia().mediaUrl() != null).forEach(it -> unplayable.remove(it.getVideoId()));
+        if (!unplayable.isEmpty()) {
+            log.warn("AI 가 고른 공단 영상이 영상 표에 없거나 mp4 주소가 없다 — BE 에 실은 AI 판을 올려야 한다: {}", unplayable);
+        }
         return ClipTitles.of(clipTitles, videoTitles);
     }
 

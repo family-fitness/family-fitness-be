@@ -144,6 +144,8 @@ Table exercise_videos {
   labeled_by varchar(20) [not null]
   label_model varchar(40)
   collected_at timestamptz [not null]
+  media_url varchar(300)
+  thumbnail_url varchar(300)
 }
 
 Table video_interactions {

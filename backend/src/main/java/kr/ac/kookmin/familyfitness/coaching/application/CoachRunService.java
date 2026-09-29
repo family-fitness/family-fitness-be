@@ -24,11 +24,14 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidRunDateException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
+import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.NoMeasuredMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -240,6 +243,10 @@ public class CoachRunService {
         for (CoachProposalItem item : run.getProposals()) {
             ProposalVideo video = item.video();
             if (video != null) videoIds.add(video.videoId());
+            for (MissionSession session : item.sessions()) {
+                SessionClip clip = session.clip();
+                if (clip != null) videoIds.add(clip.videoId());
+            }
         }
         Map<String, ExerciseVideo> videoById = videoIds.isEmpty()
                 ? Map.of()
@@ -261,7 +268,9 @@ public class CoachRunService {
                         item.citations().stream()
                                 .map(it -> new ProposalCitationView(it.index(), it.label(), it.chunkId(), it.url()))
                                 .toList(),
-                        item.sessions().stream().map(MissionSessionView::of).toList()))
+                        item.sessions().stream()
+                                .map(it -> MissionSessionView.of(it, videoById))
+                                .toList()))
                 .toList();
         return new CoachRunView(
                 run.getId(),
@@ -301,11 +310,14 @@ public class CoachRunService {
             @Nullable ProposalVideo proposalVideo, Map<String, ExerciseVideo> videoById) {
         if (proposalVideo == null) return null;
         ExerciseVideo video = videoById.get(proposalVideo.videoId());
+        VideoMedia media = VideoMedia.of(video);
         return new ProposalVideoView(
                 proposalVideo.videoId(),
                 video == null ? null : video.getTitle(),
-                video == null ? "https://www.youtube.com/watch?v=" + proposalVideo.videoId() : video.getUrl(),
+                video == null ? ExerciseVideo.youtubeUrl(proposalVideo.videoId()) : video.getUrl(),
                 proposalVideo.startSec(),
-                video == null ? List.of() : video.getBadges());
+                video == null ? List.of() : video.getBadges(),
+                media.mediaUrl(),
+                media.thumbnailUrl());
     }
 }

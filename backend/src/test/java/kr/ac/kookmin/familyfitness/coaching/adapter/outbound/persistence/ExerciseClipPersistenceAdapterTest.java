@@ -11,6 +11,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoReposi
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +22,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
-/** H2 에 Flyway 로 V132(AI 클립 적재)를 적용한 결과를 포트로 읽는다. 수는 AI 커밋 2af9002 판 기준이다. */
+/**
+ * H2 에 Flyway 로 V132(유튜브 클립 적재) · V161(공단 영상 클립 적재)을 적용한 결과를 포트로 읽는다.
+ * 수는 AI 커밋 2af9002(유튜브) · 610959a(공단) 판 기준이다.
+ */
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
@@ -38,7 +42,7 @@ class ExerciseClipPersistenceAdapterTest {
     @Test
     @DisplayName("V132 는 클립 695개를 모두 싣고, 그중 운동 클립은 47편 651개다")
     void V132_는_클립_695개를_모두_싣고_그중_운동_클립은_47편_651개다() {
-        List<ExerciseClip> all = clips.findAllActive();
+        List<ExerciseClip> all = youtube(clips.findAllActive());
         List<ExerciseClip> exercises =
                 all.stream().filter(ExerciseClip::isExercise).toList();
 
@@ -121,7 +125,7 @@ class ExerciseClipPersistenceAdapterTest {
         jdbc.update("update video_exercises set active = false where clip_id = ?", "IdpXx2gm90o-56");
 
         assertThat(clips.findAllActive())
-                .hasSize(694)
+                .hasSize(695 + 890 - 1)
                 .extracting(ExerciseClip::clipId)
                 .doesNotContain("IdpXx2gm90o-56");
         ExerciseClip retired = clips.findById("IdpXx2gm90o-56");
@@ -132,7 +136,7 @@ class ExerciseClipPersistenceAdapterTest {
     @Test
     @DisplayName("영상 48편은 코퍼스 제목 · 연령 범위 · 영상 요인만 싣고, 자료에 없는 길이는 비워 둔다")
     void 영상_48편은_코퍼스_제목_연령_범위_영상_요인만_싣고_자료에_없는_길이는_비워_둔다() {
-        List<String> videoIds = clips.findAllActive().stream()
+        List<String> videoIds = youtube(clips.findAllActive()).stream()
                 .map(ExerciseClip::videoId)
                 .distinct()
                 .toList();
@@ -150,5 +154,88 @@ class ExerciseClipPersistenceAdapterTest {
         ExerciseVideo strength = videos.findById("Eg3GpTv7z8s");
         assertThat(strength).isNotNull();
         assertThat(strength.getLabel().factors()).containsExactly("근력");
+        assertThat(strength.getMedia()).isEqualTo(VideoMedia.NONE);
+        assertThat(strength.getUrl()).isEqualTo("https://www.youtube.com/watch?v=Eg3GpTv7z8s");
+    }
+
+    @Test
+    @DisplayName("V161 은 공단 영상 890편을 한 편에 클립 하나로 싣고, 운동 아님 · 물속 영상은 isExercise=false 로 둔다")
+    void V161_은_공단_영상_890편을_한_편에_클립_하나로_싣는다() {
+        List<ExerciseClip> kspo = clips.findAllActive().stream()
+                .filter(it -> it.media().mediaUrl() != null)
+                .toList();
+
+        assertThat(kspo).hasSize(890).allSatisfy(it -> {
+            assertThat(it.clipId()).isEqualTo(it.videoId() + "-0");
+            assertThat(it.seq()).isEqualTo(1);
+            assertThat(it.startSec()).isZero();
+            assertThat(it.media().mediaUrl())
+                    .isEqualTo("https://openapi.kspo.or.kr/web/video/" + it.videoId() + ".mp4");
+            assertThat(it.media().thumbnailUrl())
+                    .startsWith("https://openapi.kspo.or.kr/web/image/" + it.videoId() + "/");
+        });
+        assertThat(kspo.stream().collect(groupingBy(ExerciseClip::ageGroup, counting())))
+                .isEqualTo(Map.of(
+                        AgeGroup.YOUTH, 108L, AgeGroup.ADOLESCENT, 186L, AgeGroup.ADULT, 476L, AgeGroup.SENIOR, 120L));
+        List<ExerciseClip> candidates =
+                kspo.stream().filter(ExerciseClip::isExercise).toList();
+        assertThat(candidates.stream().collect(groupingBy(ExerciseClip::ageGroup, counting())))
+                .isEqualTo(Map.of(
+                        AgeGroup.YOUTH, 107L, AgeGroup.ADOLESCENT, 141L, AgeGroup.ADULT, 434L, AgeGroup.SENIOR, 101L));
+
+        // 한 편 = 클립 하나: 끝은 영상 길이, 영상 표에는 공단 채널 · 길이 · mp4 주소가 있다
+        assertThat(clips.findById("0AUDLJ08S_00351-0"))
+                .isEqualTo(new ExerciseClip(
+                        "0AUDLJ08S_00351-0",
+                        "0AUDLJ08S_00351",
+                        1,
+                        "팔굽혀펴기",
+                        "팔굽혀펴기",
+                        "팔굽혀펴기",
+                        FitnessFactor.STRENGTH,
+                        SessionPhase.MAIN,
+                        0,
+                        91,
+                        true,
+                        true,
+                        true,
+                        true,
+                        AgeGroup.YOUTH,
+                        "exact",
+                        true,
+                        new VideoMedia(
+                                "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4",
+                                "https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00351/0AUDLJ08S_00351_SC_00002.jpeg")));
+        ExerciseVideo video = videos.findById("0AUDLJ08S_00351");
+        assertThat(video).isNotNull();
+        assertThat(video.getChannelName()).isEqualTo("국민체력100 동영상 정보");
+        assertThat(video.getDurationSec()).isEqualTo(91);
+        assertThat(video.getLabel().ageFrom()).isEqualTo(7);
+        assertThat(video.getLabel().ageTo()).isEqualTo(12);
+        assertThat(video.getUrl()).isEqualTo("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4");
+        assertThat(video.getBadges()).containsExactly(ExerciseVideo.BADGE_QUIET, ExerciseVideo.BADGE_SMALL_ROOM);
+        assertThat(clips.findAllByIds(List.of("0AUDLJ08S_00351-0", "IdpXx2gm90o-56")))
+                .extracting(it -> it.media().mediaUrl())
+                .containsExactlyInAnyOrder("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4", null);
+    }
+
+    @Test
+    @DisplayName("다음 유튜브 판의 끄기 문장은 공단 클립을 끄지 않는다")
+    void 다음_유튜브_판의_끄기_문장은_공단_클립을_끄지_않는다() {
+        // scripts/ai_clips_to_sql.py deactivate_statement 가 내는 문장 — 이번 판에 IdpXx2gm90o-56 하나만 있다고 치자
+        jdbc.update("update video_exercises set active = false where active = true\n"
+                + "  and video_id in (select video_id from exercise_videos where media_url is null)\n"
+                + "  and clip_id not in ('IdpXx2gm90o-56')");
+
+        assertThat(clips.findAllActive())
+                .hasSize(1 + 890)
+                .filteredOn(it -> it.media().mediaUrl() == null)
+                .extracting(ExerciseClip::clipId)
+                .containsExactly("IdpXx2gm90o-56");
+    }
+
+    /** 유튜브 클립(V132)만. 공단 영상 클립(V161)은 mp4 주소가 있다. */
+    private static List<ExerciseClip> youtube(List<ExerciseClip> all) {
+        return all.stream().filter(it -> it.media().mediaUrl() == null).toList();
     }
 }

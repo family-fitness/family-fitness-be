@@ -232,6 +232,49 @@ class HttpAiGatewayTest {
     }
 
     @Test
+    @DisplayName("video 의 source · media_url 을 읽는다 — 공단 영상은 kspo 와 mp4 주소, 유튜브는 youtube 와 null, 옛 응답은 둘 다 null")
+    void video_의_source_와_media_url_을_읽는다() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_4"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_4","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"공단 영상","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],"duration_min":10,
+                             "sessions":[{"phase":"본운동","order":1,"exercise_name":"팔굽혀펴기","fitness_factor":"근력",
+                                          "video":{"video_id":"0AUDLJ08S_00351","start_sec":0,"end_sec":91,"source":"kspo",
+                                                   "media_url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"},
+                                          "evidence":[1]},
+                                         {"phase":"정리운동","order":2,"exercise_name":"나비자세","fitness_factor":"유연성",
+                                          "video":{"video_id":"Eg3GpTv7z8s","start_sec":144,"end_sec":182,"source":"youtube"},
+                                          "evidence":[]},
+                                         {"phase":"정리운동","order":3,"exercise_name":"목 돌리기","fitness_factor":"유연성",
+                                          "video":{"video_id":"IdpXx2gm90o","start_sec":56,"end_sec":96,"media_url":""},
+                                          "evidence":[]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"국민체력100 동영상 정보 · 팔굽혀펴기","chunk_id":"kspo:0AUDLJ08S_00351",
+                                        "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        List<CoachRunResult.Session> sessions =
+                gateway.getCoachRun("cr_4").proposal().missions().getFirst().sessions();
+
+        assertThat(sessions)
+                .extracting(CoachRunResult.Session::video)
+                .containsExactly(
+                        new CoachRunResult.Video(
+                                "0AUDLJ08S_00351",
+                                0,
+                                91,
+                                "kspo",
+                                "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"),
+                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182, "youtube", null),
+                        new CoachRunResult.Video("IdpXx2gm90o", 56, 96));
+        assertThat(sessions.getFirst().video().isKspo()).isTrue();
+        assertThat(sessions.get(1).video().isKspo()).isFalse();
+    }
+
+    @Test
     @DisplayName("200 인데 JSON 이 깨졌으면 AiUnavailableException — 코치 실행이 대체 편성으로 넘어간다")
     void 깨진_JSON_은_AiUnavailableException() {
         server.expect(requestTo("http://ai.internal:8000/v1/coach/runs"))

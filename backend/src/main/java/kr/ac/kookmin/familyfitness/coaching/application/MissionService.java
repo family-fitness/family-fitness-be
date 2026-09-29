@@ -27,6 +27,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionCompletion;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -234,6 +235,10 @@ public class MissionService {
         for (Mission mission : ordered) {
             MissionVideo video = mission.getVideo();
             if (video != null) videoIds.add(video.videoId());
+            for (MissionSession session : mission.getSessions()) {
+                SessionClip clip = session.clip();
+                if (clip != null) videoIds.add(clip.videoId());
+            }
         }
         Map<String, ExerciseVideo> videoById = videoIds.isEmpty()
                 ? Map.of()
@@ -263,33 +268,23 @@ public class MissionService {
                                         doneOf(done, m).positionsOf(p.getProfileId())))
                                 .toList(),
                         m.getSessions().stream()
-                                .map(MissionService::toSessionView)
+                                .map(it -> MissionSessionView.of(it, videoById))
                                 .toList()))
                 .toList();
-    }
-
-    private static MissionSessionView toSessionView(MissionSession session) {
-        SessionClip clip = session.clip();
-        return new MissionSessionView(
-                session.position(),
-                session.phase(),
-                session.title(),
-                session.factor(),
-                session.minutes(),
-                clip == null
-                        ? null
-                        : new SessionClipView(clip.videoId(), clip.startSec(), clip.endSec(), clip.title()));
     }
 
     private static @Nullable MissionVideoView toVideoView(
             @Nullable MissionVideo missionVideo, Map<String, ExerciseVideo> videoById) {
         if (missionVideo == null) return null;
         ExerciseVideo video = videoById.get(missionVideo.videoId());
+        VideoMedia media = VideoMedia.of(video);
         return new MissionVideoView(
                 missionVideo.videoId(),
                 video == null ? null : video.getTitle(),
-                video == null ? "https://www.youtube.com/watch?v=" + missionVideo.videoId() : video.getUrl(),
+                video == null ? ExerciseVideo.youtubeUrl(missionVideo.videoId()) : video.getUrl(),
                 video == null ? null : video.getDurationSec(),
-                missionVideo.startSec());
+                missionVideo.startSec(),
+                media.mediaUrl(),
+                media.thumbnailUrl());
     }
 }

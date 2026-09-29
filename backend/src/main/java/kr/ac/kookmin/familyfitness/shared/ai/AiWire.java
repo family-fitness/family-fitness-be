@@ -401,15 +401,22 @@ final class AiWire {
         /**
          * video_id 가 빠졌거나 null · 빈칸이면 영상이 없는 세션으로 읽는다. 도메인 {@link CoachRunResult.Video#videoId} 는
          * null 이 아니어야 한다 — 칸 변환과 구간 제목 조회가 그 값을 바로 쓴다. 영상 하나 때문에 제안 전체를 버리지 않는다.
+         * source(youtube · kspo) · media_url(공단 영상의 mp4 주소)은 없어도 읽힌다. 빈칸은 null 로 읽는다.
          */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record VideoBody(
                 @JsonProperty("video_id") @Nullable String videoId,
                 @JsonProperty("start_sec") @Nullable Integer startSec,
-                @JsonProperty("end_sec") @Nullable Integer endSec) {
+                @JsonProperty("end_sec") @Nullable Integer endSec,
+                @JsonProperty("source") @Nullable String source,
+                @JsonProperty("media_url") @Nullable String mediaUrl) {
             CoachRunResult.@Nullable Video toDomain() {
                 if (videoId == null || videoId.isBlank()) return null;
-                return new CoachRunResult.Video(videoId, startSec, endSec);
+                return new CoachRunResult.Video(videoId, startSec, endSec, blankToNull(source), blankToNull(mediaUrl));
+            }
+
+            private static @Nullable String blankToNull(@Nullable String value) {
+                return value == null || value.isBlank() ? null : value.strip();
             }
         }
 
