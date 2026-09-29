@@ -26,12 +26,18 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 
 | 프로필 | DB | 로그인 | AI | 시드 |
 |---|---|---|---|---|
-| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 구글 | 스텁 | 있음 |
-| `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 |
+| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 | 있음 |
+| `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 |
 | `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 |
-| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글만 | http (`APP_AI_BASE_URL`) | 없음 |
+| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬) | http (`APP_AI_BASE_URL`) | 없음 |
 
 - 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
+- **심사용 계정 로그인**(`POST /api/v1/auth/review-login`, `app.auth.review-login.enabled`)은 개발용 기능이 아니라 이 목록에 없다.
+  심사위원이 운영 서버에서 구글 계정 없이 둘러보는 길이라 운영에서 켜 둔다(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 `true` — 심사가 끝나면 `false`).
+  부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
+  남의 계정이 될 수 없고, 같은 IP 에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다. IP 는 서블릿의 remoteAddr 라,
+  역방향 프록시 뒤에 두면 `SERVER_FORWARD_HEADERS_STRATEGY=native` 를 줘야 심사위원마다 따로 센다(안 주면 모두 프록시 IP 하나로 센다).
+  test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest`)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
@@ -103,7 +109,7 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 
 | 모듈 | 범위 | 주소 |
 |---|---|---|
-| `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
+| `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `auth/review-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
 | `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 굳힘) · 인증 등급(한 사람에게 하나, 읽을 때 셈) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
@@ -111,7 +117,7 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 | `league` | 가족 리그(월 단위 달성률 · 다섯 티어 · 월초 정산) | `families/{id}/league` |
 | `notification` | 알림함(응원 · 새 운동 · 업적 · 다시 재기) | `notifications` · `notifications/read` |
 
-경로 45개(메서드까지 52개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
+경로 46개(메서드까지 53개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
 FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
 
 ## AI 서비스

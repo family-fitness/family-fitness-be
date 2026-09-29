@@ -158,6 +158,11 @@ public class AuthService {
         return AuthSession.of(userId, NextStep.afterLogin(profiles, claimCode), profiles);
     }
 
+    /** 이미 확인한 계정으로 로그인시킨다 — 심사용 계정 로그인({@link ReviewLoginService})이 계정과 가족을 만든 뒤 부른다. */
+    AuthResult startSession(UUID userId) {
+        return login(userId, null);
+    }
+
     /** 로그인마다 새 묶음을 연다. 기기(브라우저)마다 묶음이 따로라 한 기기의 로그아웃 · 재사용 감지가 다른 기기를 끊지 않는다. */
     private AuthResult login(UUID userId, @Nullable String claimCode) {
         ServiceTokens tokens = tokenIssuer.issue(userId);

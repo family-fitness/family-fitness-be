@@ -96,6 +96,13 @@ class DevFeatureGuardTest {
     }
 
     @Test
+    @DisplayName("심사용 계정 로그인은 개발용 기능이 아니라 prod 에서 켜도 뜬다")
+    void 심사용_계정_로그인은_prod_에서_켜도_뜬다() {
+        MockEnvironment prod = env("prod").withProperty("app.auth.review-login.enabled", "true");
+        assertThatCode(() -> DevFeatureGuard.check(prod)).doesNotThrowAnyException();
+    }
+
+    @Test
     @DisplayName("spring.factories 로 등록돼 실제 기동에서 컨텍스트를 올리기 전에 멈춘다")
     void spring_factories_로_등록돼_실제_기동에서_컨텍스트를_올리기_전에_멈춘다() {
         SpringApplication app = new SpringApplication(FamilyfitnessApplication.class);

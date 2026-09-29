@@ -55,6 +55,7 @@ class AuthServiceTest {
                             Duration.ofDays(30)),
                     new AppProperties.DevLogin(),
                     new AppProperties.DevAutoLogin(),
+                    new AppProperties.ReviewLogin(),
                     new AppProperties.Google()),
             new AppProperties.Ai());
     private final SecretKeySpec key =

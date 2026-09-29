@@ -14,6 +14,9 @@ import org.springframework.core.env.Profiles;
  * 다른 프로필(prod, 프로필 없음 등)에서 하나라도 켜져 있으면 컨텍스트를 올리기 전에 기동을 멈춘다.
  * 자동 로그인이 켜지면 X-Dev-User-Id 헤더로 아무 계정이나 될 수 있고, 시간 이동이 켜지면 서버 시계를 앞으로 옮길 수 있다.
  *
+ * <p>심사용 계정 로그인({@code app.auth.review-login.enabled})은 목록에 넣지 않는다. 심사위원이 운영 서버에서 둘러보라고 운영에서
+ * 켜는 기능이다. 늘 새 계정 · 새 체험 가족을 만들 뿐 남의 계정이 될 수 없고, IP 마다 한 시간에 30번으로 막아 둔다.
+ *
  * <p>`META-INF/spring.factories` 로 등록한다. 프로필 파일을 읽는 ConfigDataEnvironmentPostProcessor 뒤에 돌도록
  * 가장 낮은 우선순위를 준다. DataSource · Flyway 보다 먼저 돌아서, 멈출 때는 DB 에 아무것도 쓰지 않는다.
  */

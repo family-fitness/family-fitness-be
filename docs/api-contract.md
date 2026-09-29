@@ -18,7 +18,7 @@
 - 거부(`refused: true`)는 오류가 아니다. HTTP 200.
 - 값이 없으면 칸을 빼지 않고 `null` 로 싣는다(`spring.jackson.default-property-inclusion=always`). 모르는 값은 0 이 아니라 `null` 이다(백분위 · 등급 · 키 · 몸무게 · 달성률). 예외는 캘린더의 `rest` 하나다(쉬는 날일 때만 싣는다).
 - 인증: `Authorization: Bearer <accessToken>`. 액세스 토큰 1시간, 리프레시 토큰 30일.
-  공개 경로(`/api/v1/auth/**`)는 `Authorization` 헤더를 읽지 않는다. 만료 토큰이 실려 와도 google · refresh · logout · dev-login 은 401 이 나지 않는다.
+  공개 경로(`/api/v1/auth/**`)는 `Authorization` 헤더를 읽지 않는다. 만료 토큰이 실려 와도 google · refresh · logout · dev-login · review-login 은 401 이 나지 않는다.
 - actor(로그인 계정 userId)와 대상 profileId 는 다르다. 부모가 아이 기록을 대리 입력한다. HTTP 요청의 role · familyId 값을 믿지 않고 저장된 프로필로 판단한다.
 - 날짜 `YYYY-MM-DD`, 시각 ISO-8601, 달 `YYYY-MM`. 「오늘」 은 KST(Asia/Seoul)다(아래 「시각 · 날짜」). 한 주는 월요일에 시작한다.
 - 문구 규칙: 「부족」·「미달」·「하위」 금지. `band`/`factor` 같은 코드값을 그대로 노출하지 말고 `copy`·`disclaimer`·`notice`·`headline` 같은 표시 문구는 고쳐 쓰지 않는다. 아이 화면에서 `parent_scope` 를 읽지 않는다.
@@ -119,7 +119,7 @@
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
 | 422 | `SELF_CHEER` · `CHEER_KIND_NOT_ALLOWED` · `NOT_A_REPLY_TARGET` | 응원 — 자기에게 · 종류와 방향이 안 맞음 · 고마워요가 답할 칭찬이 아님 |
 | 422 | `ALREADY_MOVED` | 쉬는 날 카드 — 그날 아이가 이미 운동함 |
-| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음 |
+| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP 에서 한 시간에 30번을 넘김 |
 | 500 | `INTERNAL_ERROR` | 처리하지 못한 예외 |
 | 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx · 200 인데 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락)(대화), 비동기 요청 시간 초과 |
 | 503 | `AI_BAD_REQUEST` | AI 가 400 을 냄(서버가 잘못 보낸 것) — 대화 |
@@ -129,7 +129,7 @@
 
 ### 구현 상태 (2026-09-29 · develop `a880ad4`)
 
-- 경로 45개, 메서드까지 세면 52개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다.
+- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local · compose · prod)에만 있다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).
@@ -138,7 +138,7 @@
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
-  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`).
+  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP 마다 한 시간 30번).
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -148,7 +148,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 46개 · 메서드 54개)
+### 주소 목록 (경로 47개 · 메서드 55개)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
@@ -156,6 +156,7 @@
 | identity | POST | `/auth/refresh` | 토큰 없이 | 200 |
 | identity | POST | `/auth/logout` | 토큰 없이 | 204 |
 | identity | POST | `/auth/dev-login` | 토큰 없이(local · compose · test) | 200 |
+| identity | POST | `/auth/review-login` | 토큰 없이(local · compose · prod) | 200 |
 | (개발용) | GET · POST | `/dev/clock` | 로그인(local · compose) | 200 · 200 |
 | identity | GET | `/me` | 로그인 | 200 |
 | identity | POST | `/families` | 로그인 | 201 |
@@ -322,7 +323,7 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 
 `AuthResponse` = `{accessToken, refreshToken, userId, nextStep, profiles: ProfileSummary[], selfProfileId|null}`. `profiles` 는 이 계정에 붙은 프로필이라 0~1개이고, `selfProfileId` 는 그 프로필의 id 다.
 
-`nextStep` 은 구글 로그인 · dev-login · 리프레시 · `/me` 가 같은 규칙으로 정한다(`NextStep.afterLogin`).
+`nextStep` 은 구글 로그인 · dev-login · review-login · 리프레시 · `/me` 가 같은 규칙으로 정한다(`NextStep.afterLogin`).
 
 | 차례 | 조건 | `nextStep` |
 |---|---|---|
@@ -358,6 +359,19 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 시드 데모 계정 `demo-parent`(가족 데모네 · nextStep HOME) · `demo-parent-2`(프로필 없음, 초대코드 `K7M2QT` 로 claim 가능).
 같은 `providerUserId` 면 같은 계정이다. 딱 `demo-fresh` 일 때만 부를 때마다 **새 계정**(`demo-fresh-` + 무작위 8자, 프로필 없음 · nextStep `CREATE_FAMILY`)을 만든다 — FE 로그인 화면의 「새 계정 · 가족 없음」 단추가 보내는 값이라, 서버를 다시 띄우지 않고도 가족 만들기부터 몇 번이고 다시 볼 수 있다.
 local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보낸 요청만 그 계정으로 인증한다(curl · 스크립트용). 헤더가 없거나 비어 있으면 401, UUID 가 아니면 400.
+
+### POST /api/v1/auth/review-login — 토큰 없이 · 심사용 계정
+`app.auth.review-login.enabled=true` 일 때만 빈이 등록된다. local · compose 는 켜 두고, prod 는 `APP_AUTH_REVIEW_LOGIN_ENABLED`(기본 `true`)로 켜고 끈다. 꺼져 있으면 경로가 없어 404 `NOT_FOUND` 다. test 프로필은 꺼 둔다.
+심사위원이 구글 계정 없이 운영 서버에서 둘러보는 길이다(FE 로그인 화면 구글 단추 밑 「심사용 계정으로 둘러보기」). dev-login 과 달리 개발용 기능이 아니라 `DevFeatureGuard` 가 막지 않는다.
+요청 본문 없음. 응답 200 `AuthResponse` — dev-login 과 같은 모양이고 `nextStep` 은 늘 `HOME`, `profiles` 는 이 계정의 보호자 프로필(엄마) 하나다.
+- 부를 때마다 **새 계정과 새 체험 가족**을 만든다. 심사위원끼리 서로의 기록을 건드리지 않게 하려는 것이다. 계정은 provider `REVIEW`, providerUserId `review-` + 무작위라 같은 계정으로 다시 들어오는 길은 없다(그 브라우저의 리프레시 토큰으로만 이어 본다).
+- 체험 가족 「체험 가족」: 엄마(이 계정 · 보호자 · 만 38세 여 · 참여 방식 `FULL`), 아빠(보호자 · 만 40세 남 · 계정 없음), 하윤(아이 · 만 11세 여 · 유소년 · 계정 없음 · 보호자 동의 있음), 서준(아이 · 만 6세 남 · 유아기 · 계정 없음 · 보호자 동의 있음).
+  - 하윤은 사흘 전 날짜로 유소년 종목 일곱 가지(009 · 012 · 020 · 022 · 028 · 043 · 044)와 키 148cm · 몸무게 40kg · 허리둘레 62cm 를 재 뒀다. 인증 등급 `2등급`(`GRADED`)이 나온다.
+  - 서준은 사흘 전 날짜로 유아기 종목 네 가지(009 · 012 · 022 · 050)와 키 · 몸무게를 재 뒀다. 일곱 가지를 다 재지 않아 등급 대신 `NEEDS_ITEMS` 다.
+  - 네 사람 모두 운동할 수 있는 시간이 적혀 있다. 미션은 없다 — 들어와서 오늘 편성을 직접 짜 보게.
+  - 가족 · 구성원 · 측정은 화면이 부르는 서비스를 그대로 거친다(나이 · 동의 · 항목 · 값 범위 규칙이 똑같이 걸린다). 한 트랜잭션이라 중간에 실패하면 계정도 남지 않는다.
+- 같은 IP 에서 한 시간에 30번을 넘기면 계정을 만들기 전에 429 `TOO_MANY` 다. 통과한 요청만 세고, 셈은 서버 메모리에 둔다(서버 한 대 기준). IP 는 서블릿 `remoteAddr` 라, 역방향 프록시 뒤에 두면 `SERVER_FORWARD_HEADERS_STRATEGY=native` 로 `X-Forwarded-For` 를 읽게 한다.
+오류: 429 `TOO_MANY`.
 
 ### GET · POST /api/v1/dev/clock — 로그인 · local · compose 에서만
 `app.dev.time-travel.enabled=true` 일 때만 빈이 등록된다. 운영(prod)에는 이 경로가 없다(404). 켜면 서버 시계(`Clock` 빈)가 앞으로 옮길 수 있는 시계로 바뀐다.

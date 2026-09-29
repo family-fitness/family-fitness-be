@@ -49,12 +49,27 @@ public record AppProperties(
             @DefaultValue Jwt jwt,
             @DefaultValue DevLogin devLogin,
             @DefaultValue DevAutoLogin devAutoLogin,
+            @DefaultValue ReviewLogin reviewLogin,
             @DefaultValue Google google) {
         @ConstructorBinding
         public Auth {}
 
         public Auth() {
-            this(new Jwt(), new DevLogin(), new DevAutoLogin(), new Google());
+            this(new Jwt(), new DevLogin(), new DevAutoLogin(), new ReviewLogin(), new Google());
+        }
+    }
+
+    /**
+     * 심사용 계정 로그인(`POST /api/v1/auth/review-login`). 부를 때마다 새 계정과 체험 가족을 만든다.
+     * 심사위원이 운영 서버에서 구글 계정 없이 둘러보라고 여는 길이라 개발용 기능이 아니다 — local · compose · prod 에서 켜고,
+     * DevFeatureGuard 목록에 넣지 않는다.
+     */
+    public record ReviewLogin(@DefaultValue("false") boolean enabled) {
+        @ConstructorBinding
+        public ReviewLogin {}
+
+        public ReviewLogin() {
+            this(false);
         }
     }
 

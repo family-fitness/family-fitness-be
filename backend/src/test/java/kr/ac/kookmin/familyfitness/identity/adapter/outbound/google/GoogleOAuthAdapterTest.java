@@ -37,6 +37,7 @@ class GoogleOAuthAdapterTest {
                     new AppProperties.Jwt(),
                     new AppProperties.DevLogin(),
                     new AppProperties.DevAutoLogin(),
+                    new AppProperties.ReviewLogin(),
                     new AppProperties.Google(
                             "client-id",
                             "client-secret",
