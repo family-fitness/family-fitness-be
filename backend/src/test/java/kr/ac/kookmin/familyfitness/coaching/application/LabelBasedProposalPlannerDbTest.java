@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
@@ -34,8 +37,20 @@ class LabelBasedProposalPlannerDbTest {
     @Autowired
     LabelBasedProposalPlanner planner;
 
+    @Autowired
+    ExerciseClipRepository clips;
+
     @MockitoBean
     FitnessQuery fitnessQuery;
+
+    /** 칸 영상이 가리키는 클립(clipId = videoId-startSec). */
+    private ExerciseClip clipOf(CoachRunResult.Session session) {
+        CoachRunResult.Video video = session.video();
+        assertThat(video).isNotNull();
+        ExerciseClip clip = clips.findById(ExerciseClip.idOf(video.videoId(), video.startSec()));
+        assertThat(clip).as("칸 클립 %s", video.videoId()).isNotNull();
+        return clip;
+    }
 
     private static ProfileDetails subject(LocalDate birthDate) {
         return new ProfileDetails(
@@ -78,6 +93,11 @@ class LabelBasedProposalPlannerDbTest {
             assertThat(video.startSec()).isZero();
         });
         assertThat(sessions).anySatisfy(it -> assertThat(it.fitnessFactor()).isEqualTo("평형성"));
+        // 같은 점수(평형성 · 처방 어휘 이름)면 어르신 영상이 성인 영상보다 앞선다 — 본운동 칸은 모두 어르신 클립이다
+        assertThat(sessions)
+                .filteredOn(it -> it.phase().equals("본운동"))
+                .isNotEmpty()
+                .allSatisfy(it -> assertThat(clipOf(it).ageGroup()).isEqualTo(AgeGroup.SENIOR));
         List<Citation> citations = result.proposal().citations();
         assertThat(citations).isNotEmpty().allSatisfy(it -> {
             assertThat(it.chunkId()).startsWith("kspo:");
