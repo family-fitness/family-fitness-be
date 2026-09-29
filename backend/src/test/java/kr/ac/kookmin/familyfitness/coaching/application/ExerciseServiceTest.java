@@ -261,7 +261,7 @@ class ExerciseServiceTest {
     }
 
     @Test
-    @DisplayName("어르신은 어르신 구간과 성인 구간을 함께 받고, 같은 제목이면 어르신 구간을 남긴다")
+    @DisplayName("어르신은 어르신 구간과 성인 구간을 함께 받고, 같은 제목이면 어르신 구간을 남기고, 어르신 구간이 영상 id 차례와 상관없이 먼저 선다")
     void 어르신은_어르신_구간과_성인_구간을_함께_받고_같은_제목이면_어르신_구간을_남긴다() {
         add(
                 clip("aaa", 10, 70, "팔 굽혀 펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
@@ -271,7 +271,7 @@ class ExerciseServiceTest {
         UUID grandma = family.addChild("할머니", LocalDate.of(1950, 1, 1)).profileId();
 
         ExerciseListView view = list(family.parentUser, grandma);
-        assertThat(ids(view)).containsExactly("aaa-10", "zzz-0");
+        assertThat(ids(view)).containsExactly("zzz-0", "aaa-10");
         assertThat(view.total()).isEqualTo(2);
         // 성인은 어르신 구간을 받지 않는다
         assertThat(ids(list(family.parentUser, parentId))).containsExactly("aaa-10", "aaa-80");

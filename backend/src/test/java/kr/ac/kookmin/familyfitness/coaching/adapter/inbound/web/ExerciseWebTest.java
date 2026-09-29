@@ -203,6 +203,30 @@ class ExerciseWebTest {
     }
 
     @Test
+    @DisplayName("어르신이 보면 첫 쪽의 공단 영상이 모두 어르신 영상이다 — 영상 id 차례로 세우면 성인(공통) 영상이 앞서 어르신 영상이 하나도 없었다")
+    void 어르신이_보면_첫_쪽의_공단_영상이_어르신_영상이다() throws Exception {
+        UUID grandpaId = rows.profile(familyId, LocalDate.of(1956, 4, 1), Sex.M, ProfileRole.PARENT, "할아버지");
+        when(familyAccess.requireSameFamilyAsProfile(parentUser, grandpaId))
+                .thenReturn(summary(grandpaId, "할아버지", ProfileRole.PARENT, AgeGroup.SENIOR));
+
+        String body = list(parentUser, "profileId", grandpaId.toString())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clips", hasSize(40)))
+                .andReturn()
+                .getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        List<String> kspo = com.jayway.jsonpath.JsonPath.read(body, "$.clips[?(@.mediaUrl != null)].clipId");
+
+        assertThat(kspo).hasSize(20);
+        assertThat(kspo).allSatisfy(clipId -> assertThat(jdbc.queryForObject(
+                        "select age_group from video_exercises where clip_id = ?", String.class, clipId))
+                .isEqualTo("SENIOR"));
+        // 성인 영상도 그대로 함께 나온다(어르신 전용만 따로 두지 않는다) — 어르신 영상 뒤에 선다
+        list(parentUser, "profileId", grandpaId.toString(), "q", "빠르게 걷기")
+                .andExpect(jsonPath("$.clips[*].clipId", hasItem("0AUDLJ08S_00182-0")));
+    }
+
+    @Test
     @DisplayName("오십견 · 요통 같은 질환용 공단 영상은 어른 운동 찾기에 나오지 않는다 — 「막대 잡고 팔 안쪽?바깥 돌림」 이 나왔다")
     void 질환용_공단_영상은_운동_찾기에_나오지_않는다() throws Exception {
         list(parentUser, "q", "막대 잡고")
