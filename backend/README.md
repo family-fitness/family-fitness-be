@@ -31,7 +31,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 | `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 |
 | `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글만 | http (`APP_AI_BASE_URL`) | 없음 |
 
-- 개발용 기능(dev-login · 자동 로그인 · H2 콘솔)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
+- 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
 - 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
@@ -71,6 +71,10 @@ cd family-fitness-be/backend
 4. **시드 데이터.** 데모 가족 「데모네」(데모 엄마 PARENT·FULL, 데모 첫째 CHILD·측정 1회 있음, 데모 아빠 PARENT 미연결·초대코드 `K7M2QT`),
    데모 첫째 · 엄마의 운동할 수 있는 시간, 국민체력100 규준(실제 공공데이터), AI 운동 영상 48편 · 구간 695개(`V132`, 운영에도 들어간다), 시험용 가짜 영상 4편(`sample00002~5`).
    서버를 재시작하면 H2 인메모리라 시연 중 만든 데이터는 사라지고 시드만 남는다.
+5. **서버 시계를 앞으로 옮길 수 있다.** 2주 여정 · 월말 리그 · 30일 뒤 다시 재기 알림을 기다리지 않고 본다.
+   `POST /api/v1/dev/clock {"by":"P1D"}`(하루 뒤) 또는 `{"to":"2026-10-01T07:31:00+09:00"}`. 옮기는 동안 건너뛴 정시 작업(07:30 오늘의 운동 알림 ·
+   09:00 다시 재기 알림 · 04:00 토큰 정리 · 매월 1일 00:10 리그 정산)을 원래 시각 차례대로 돌린다. 뒤로는 못 가고, 처음으로 돌아가려면 서버를 다시 띄운다.
+   `GET /api/v1/dev/clock` 으로 지금 서버 시각을 본다. 브라우저 시계는 따로라, 화면으로 볼 때는 브라우저 날짜도 같은 날로 맞춘다(Playwright `page.clock`).
 
 자주 쓰는 첫 호출:
 ```bash

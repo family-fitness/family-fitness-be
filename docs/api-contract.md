@@ -75,6 +75,7 @@
 - 07:30 · 09:00 알림의 `createdAt` 은 제때 돈 실행이면 07:30 · 09:00 이다. 기동 따라잡기처럼 늦게 돈 실행은 실제로 만든 시각이다. 그래서 그 전에 받은 목록의 `upTo` 로 읽음 처리해도 보지 못한 알림은 읽음이 되지 않는다.
 - 정해진 일을 도는 스레드는 2개다(`spring.task.scheduling.pool.size`). 기동 따라잡기는 알림 전용 스레드에서 돌아 기동을 늦추지 않는다.
 - 서버를 여러 대로 띄울 때 스케줄러를 한 대만 돌리는 잠금(ShedLock)은 없다. 결과가 두 번 적히지는 않는다(조건부 UPDATE · 유니크 키).
+- local · compose 에서는 서버 시계를 앞으로 옮길 수 있다(`POST /dev/clock`). 옮기는 동안 위 정해진 일을 원래 시각 차례대로 돌린다 — 며칠 · 몇 주 여정을 기다리지 않고 본다.
 
 ### 오류 코드
 
@@ -147,7 +148,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 45개 · 메서드 52개)
+### 주소 목록 (경로 46개 · 메서드 54개)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
@@ -155,6 +156,7 @@
 | identity | POST | `/auth/refresh` | 토큰 없이 | 200 |
 | identity | POST | `/auth/logout` | 토큰 없이 | 204 |
 | identity | POST | `/auth/dev-login` | 토큰 없이(local · compose · test) | 200 |
+| (개발용) | GET · POST | `/dev/clock` | 로그인(local · compose) | 200 · 200 |
 | identity | GET | `/me` | 로그인 | 200 |
 | identity | POST | `/families` | 로그인 | 201 |
 | identity | POST · GET | `/families/{familyId}/profiles` | 보호자 · 같은 가족 | 201 · 200 |
@@ -344,7 +346,15 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 요청 `{providerUserId●(≤191), email?(≤255), claimCode?}`. 응답 200 `AuthResponse`(구글 없이 같은 흐름).
 시드 데모 계정 `demo-parent`(가족 데모네 · nextStep HOME) · `demo-parent-2`(프로필 없음, 초대코드 `K7M2QT` 로 claim 가능).
 같은 `providerUserId` 면 같은 계정이다. 딱 `demo-fresh` 일 때만 부를 때마다 **새 계정**(`demo-fresh-` + 무작위 8자, 프로필 없음 · nextStep `CREATE_FAMILY`)을 만든다 — FE 로그인 화면의 「새 계정 · 가족 없음」 단추가 보내는 값이라, 서버를 다시 띄우지 않고도 가족 만들기부터 몇 번이고 다시 볼 수 있다.
-local 의 자동 로그인에서 `X-Dev-User-Id` 헤더 값이 UUID 가 아니면 400.
+local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보낸 요청만 그 계정으로 인증한다(curl · 스크립트용). 헤더가 없거나 비어 있으면 401, UUID 가 아니면 400.
+
+### GET · POST /api/v1/dev/clock — 로그인 · local · compose 에서만
+`app.dev.time-travel.enabled=true` 일 때만 빈이 등록된다. 운영(prod)에는 이 경로가 없다(404). 켜면 서버 시계(`Clock` 빈)가 앞으로 옮길 수 있는 시계로 바뀐다.
+- `GET` → `{now, today, offset}` — 지금 서버 시각, 오늘(KST), 실제 시각에서 옮긴 폭(ISO 기간).
+- `POST {"by":"P1D"}` 또는 `POST {"to":"2026-10-01T07:31:00+09:00"}` — 둘 가운데 하나만(아니면 400 `TIME_TRAVEL_TARGET`). 뒤로는 못 간다(409 `TIME_TRAVEL_BACKWARD`), 한 번에 400일까지(400 `TIME_TRAVEL_TOO_FAR`).
+  옮기는 동안 건너뛴 정해진 일(「시각 · 날짜와 스케줄러」 표)을 원래 시각 차례대로, 그때마다 시계를 그 시각에 맞춰 돌린다. 간격 작업(멈춘 편성 정리)은 도착한 뒤 한 번.
+  응답 `{from, now, today, offset, ran:[{task, runs, failures, first, last}]}` — 작업마다 한 줄.
+- 처음으로 돌아가려면 서버를 다시 띄운다(H2 인메모리). 브라우저의 시계는 옮기지 않는다 — 화면이 기기 날짜로 「오늘」 을 셈하면 서버와 어긋난다.
 
 ### GET /api/v1/me — 로그인
 응답 200 `{userId, nextStep, profiles, selfProfileId|null}`. `nextStep` 은 1장 머리의 표대로다. 초대로 들어온 보호자가 참여 방식을 고르기 전에 앱을 닫았다 다시 열면 `SUPPORT_MODE` 다.

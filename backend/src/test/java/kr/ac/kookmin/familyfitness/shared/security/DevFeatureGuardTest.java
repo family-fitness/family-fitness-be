@@ -38,6 +38,15 @@ class DevFeatureGuardTest {
     }
 
     @Test
+    @DisplayName("prod 에서 시간 이동을 켜면 기동을 멈춘다")
+    void prod_에서_시간_이동을_켜면_기동을_멈춘다() {
+        MockEnvironment prod = env("prod").withProperty("app.dev.time-travel.enabled", "true");
+        assertThatThrownBy(() -> DevFeatureGuard.check(prod))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("app.dev.time-travel.enabled");
+    }
+
+    @Test
     @DisplayName("프로필 없이 자동 로그인만 켜도 기동을 멈춘다")
     void 프로필_없이_자동_로그인만_켜도_기동을_멈춘다() {
         MockEnvironment none = env().withProperty("app.auth.dev-auto-login.enabled", "true");
