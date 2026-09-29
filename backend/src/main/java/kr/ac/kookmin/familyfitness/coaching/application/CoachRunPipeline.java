@@ -145,8 +145,9 @@ public class CoachRunPipeline {
         }
         ProfileDetails subject = subjectOf(run);
         @Nullable UUID companion = requireConditions(run).withParent() ? run.getRequestedBy() : null;
-        ProposalConverter converter =
-                new ProposalConverter(subject.profileId(), subject.role(), companion, clipTitlesOf(proposal));
+        Catalog catalog = catalogOf(proposal);
+        ProposalConverter converter = new ProposalConverter(
+                subject.profileId(), subject.role(), companion, catalog.titles(), catalog.unplayableKspo());
         run.complete(
                 ProposalConverter.steps(result),
                 converter.convert(proposal),
@@ -172,12 +173,15 @@ public class CoachRunPipeline {
         written(runs.finishIfRunning(run), runId, "실패 기록");
     }
 
+    /** 칸 영상 구간 제목과, 틀 수 없는 공단 영상 id. */
+    private record Catalog(ClipTitles titles, Set<String> unplayableKspo) {}
+
     /**
      * 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다).
      * 공단 영상(video.source = kspo)의 mp4 주소는 칸에 따로 저장하지 않고 조회 때 영상 표에서 붙인다. 그래서 AI 가 고른 공단 영상이 영상 표에
-     * 없으면(BE 에 실은 AI 판이 뒤처졌다) 화면이 그 칸을 유튜브로 틀려다 실패한다 — 그런 영상을 경고로 남긴다.
+     * 없으면(BE 에 실은 AI 판이 뒤처졌다) 화면이 그 칸을 유튜브로 틀려다 실패한다 — 그런 영상은 변환기가 칸에서 빼도록 따로 모으고 경고로 남긴다.
      */
-    private ClipTitles clipTitlesOf(CoachRunResult.Proposal proposal) {
+    private Catalog catalogOf(CoachRunResult.Proposal proposal) {
         Set<String> clipIds = new LinkedHashSet<>();
         Set<String> videoIds = new LinkedHashSet<>();
         Set<String> kspoVideoIds = new LinkedHashSet<>();
@@ -190,7 +194,7 @@ public class CoachRunPipeline {
                 clipIds.add(ExerciseClip.idOf(video.videoId(), ProposalConverter.clipStart(video)));
             }
         }
-        if (videoIds.isEmpty()) return ClipTitles.none();
+        if (videoIds.isEmpty()) return new Catalog(ClipTitles.none(), Set.of());
         Map<String, String> clipTitles = clips.findAllByIds(clipIds).stream()
                 .collect(Collectors.toMap(ExerciseClip::clipId, ExerciseClip::title, (a, b) -> a));
         List<ExerciseVideo> known = videos.findAllByIds(videoIds);
@@ -199,9 +203,9 @@ public class CoachRunPipeline {
         Set<String> unplayable = new LinkedHashSet<>(kspoVideoIds);
         known.stream().filter(it -> it.getMedia().mediaUrl() != null).forEach(it -> unplayable.remove(it.getVideoId()));
         if (!unplayable.isEmpty()) {
-            log.warn("AI 가 고른 공단 영상이 영상 표에 없거나 mp4 주소가 없다 — BE 에 실은 AI 판을 올려야 한다: {}", unplayable);
+            log.warn("AI 가 고른 공단 영상이 영상 표에 없거나 mp4 주소가 없어 그 칸은 영상 없이 둔다 — BE 에 실은 AI 판을 올려야 한다: {}", unplayable);
         }
-        return ClipTitles.of(clipTitles, videoTitles);
+        return new Catalog(ClipTitles.of(clipTitles, videoTitles), unplayable);
     }
 
     /** 읽었을 때 이미 RUNNING 이 아니다(정리 작업 · 새 요청이 FAILED 로 바꿨다). 결과를 버린다. */

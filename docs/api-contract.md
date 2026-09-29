@@ -872,7 +872,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 ```
 - 숫자 칸(`duration_min` · `video_sec` · `duration_sec` · `order`)은 비어 와도 읽는다. 9/17 앞의 옛 모양(세션마다 `duration_min`)이면 그 합을 목표 분으로 쓴다.
 - `notices` 는 `CoachRunView.notices` 로 싣는다. 원문 proposal · steps JSON 은 coach_runs 에 그대로 저장한다.
-- `video.source`(youtube · kspo) · `video.media_url`(공단 영상의 mp4 주소)은 없어도 읽는다(옛 응답은 유튜브로 본다). 칸에는 videoId · 구간만 사본으로 저장하고, mp4 · 첫 장면 주소는 조회 때 `exercise_videos` 에서 붙인다. AI 가 고른 공단 영상이 영상 표에 없으면(BE 에 실은 AI 판이 뒤처짐) 경고 로그를 남긴다 — 화면이 그 칸을 틀 수 없으니 `kspo_videos_to_sql.py` 로 판을 올린다.
+- `video.source`(youtube · kspo) · `video.media_url`(공단 영상의 mp4 주소)은 없어도 읽는다(옛 응답은 유튜브로 본다). 칸에는 videoId · 구간만 사본으로 저장하고, mp4 · 첫 장면 주소는 조회 때 `exercise_videos` 에서 붙인다. AI 가 고른 공단 영상이 영상 표에 없거나 mp4 주소가 없으면(BE 에 실은 AI 판이 뒤처짐) 화면이 유튜브로 틀려다 실패하므로, 그 칸은 영상 없이(`clip` null) 저장하고 제안 대표 영상에서도 건너뛴 뒤 경고 로그를 남긴다. `kspo_videos_to_sql.py` 로 판을 올린다.
 - 제안 변환(`ProposalConverter`): missions[i] → 제안 항목 position=i, title, rationale=`reason`(비면 `copy.parent`), targetMetric=`TIMER_MINUTES`, video=(day_offset, order) 차례로 처음 영상이 있는 세션, participants=편성 대상(+ `withParent` 면 요청 보호자, 동반자), citations=evidence 가 가리키는 것(없으면 전체).
 - 칸 변환: 세션을 (day_offset, order) 차례로 세워 position 1..n 을 매긴다. 한글 단계 → `WARMUP` · `MAIN` · `COOLDOWN`, `exercise_name` → title, video → clip 사본. `clip.title` 은 `V132` 클립 표의 동작 이름이고, 없으면 영상 제목이다. `video_id` 가 없거나 비면 clip 없는 칸이다. 저장은 `coach_run_proposal_sessions`(`V135`).
 - 칸 분 배분(`SessionMinutesAllocator`, FE 목 `sessionsFor` 와 같다): 준비 · 정리 칸은 1분씩, 본운동 몫 = max(본운동 칸 수, 요청 분 − 준비 칸 수 − 정리 칸 수)를 본운동 칸에 나누고 나머지는 앞 칸부터 1분씩 더한다. 그래서 칸 분 합 = 요청 분 = targetValue 다(칸 수가 요청 분보다 많을 때만 합이 더 크다). 칸이 없으면 targetValue = `duration_min`(최소 1).

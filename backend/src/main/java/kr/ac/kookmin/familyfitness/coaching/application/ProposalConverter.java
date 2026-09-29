@@ -33,8 +33,9 @@ import org.jspecify.annotations.Nullable;
  * video=(day_offset, order) 순으로 첫 영상 있는 세션, participants=편성 대상 한 명(+ withParent 면 요청한 보호자),
  * citations=evidence 가 가리키는 것(없으면 전체), sessions=세션마다 칸 하나({@link #sessions}).
  * targetValue 는 칸이 있으면 칸 분의 합(보통 duration_min 과 같다), 칸이 없으면 duration_min(최소 1).
- * 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다. 공단 영상(video.source = kspo)의
- * mp4 주소는 칸에 저장하지 않고 조회 때 카탈로그에서 붙인다.
+ * 유튜브 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다. 공단 영상(video.source = kspo)의
+ * mp4 주소는 칸에 저장하지 않고 조회 때 카탈로그에서 붙이므로, 카탈로그에 없어 틀 수 없는 공단 영상(unplayableKspo)은 칸 · 대표 영상에서 뺀다
+ * (칸은 영상 없이 남는다).
  */
 public class ProposalConverter {
     public static final int MAX_TITLE = 120;
@@ -55,22 +56,34 @@ public class ProposalConverter {
     private final ProfileRole subjectRole;
     private final @Nullable UUID companionProfileId;
     private final ClipTitles clipTitles;
+    private final Set<String> unplayableKspo;
 
     public ProposalConverter(UUID subjectProfileId, ProfileRole subjectRole, @Nullable UUID companionProfileId) {
         this(subjectProfileId, subjectRole, companionProfileId, ClipTitles.none());
+    }
+
+    public ProposalConverter(
+            UUID subjectProfileId, ProfileRole subjectRole, @Nullable UUID companionProfileId, ClipTitles clipTitles) {
+        this(subjectProfileId, subjectRole, companionProfileId, clipTitles, Set.of());
     }
 
     /**
      * @param companionProfileId withParent 면 편성을 요청한 보호자(run.requestedBy), 아니면 null. AI 는 일간 미션에 동반자를 넣지 않으므로
      *     (ai:coach/compose.py) BE 가 붙인다(결정 2).
      * @param clipTitles 칸 영상 구간의 제목. 표 조회는 부르는 쪽이 한 번에 해 둔다
+     * @param unplayableKspo 틀 수 없는 공단 영상 id(영상 표에 없거나 mp4 주소가 없다). 이 영상을 가리키는 칸은 영상 없이 둔다
      */
     public ProposalConverter(
-            UUID subjectProfileId, ProfileRole subjectRole, @Nullable UUID companionProfileId, ClipTitles clipTitles) {
+            UUID subjectProfileId,
+            ProfileRole subjectRole,
+            @Nullable UUID companionProfileId,
+            ClipTitles clipTitles,
+            Set<String> unplayableKspo) {
         this.subjectProfileId = subjectProfileId;
         this.subjectRole = subjectRole;
         this.companionProfileId = companionProfileId;
         this.clipTitles = clipTitles;
+        this.unplayableKspo = Set.copyOf(unplayableKspo);
     }
 
     public List<CoachProposalItem> convert(CoachRunResult.Proposal proposal) {
@@ -164,7 +177,7 @@ public class ProposalConverter {
 
     /** 영상 구간의 사본. 영상 id 가 칸 표에 맞지 않으면 붙이지 않는다. 끝이 시작보다 뒤가 아니면 끝을 버린다(영상 한 편). */
     private @Nullable SessionClip clipOf(CoachRunResult.@Nullable Video video) {
-        if (video == null || !VIDEO_ID.matcher(video.videoId()).matches()) return null;
+        if (video == null || !playable(video)) return null;
         int startSec = clipStart(video);
         Integer endSec = video.endSec();
         String title = clipTitles.titleOf(video.videoId(), startSec);
@@ -203,10 +216,18 @@ public class ProposalConverter {
                 .collect(Collectors.joining(" · "));
     }
 
-    private static @Nullable ProposalVideo firstVideo(List<CoachRunResult.Session> sessions) {
+    /** 칸 표에 넣을 수 있고 틀 수 있는 영상인지. 영상 표에 없는 공단 영상은 화면이 유튜브로 틀려다 실패하므로 버린다. */
+    private boolean playable(CoachRunResult.Video video) {
+        if (!VIDEO_ID.matcher(video.videoId()).matches()) return false;
+        return !(video.isKspo() && unplayableKspo.contains(video.videoId()));
+    }
+
+    private @Nullable ProposalVideo firstVideo(List<CoachRunResult.Session> sessions) {
         for (CoachRunResult.Session session : sessions) {
             CoachRunResult.Video video = session.video();
-            if (video != null) return new ProposalVideo(video.videoId(), video.startSec());
+            if (video != null && !(video.isKspo() && unplayableKspo.contains(video.videoId()))) {
+                return new ProposalVideo(video.videoId(), video.startSec());
+            }
         }
         return null;
     }

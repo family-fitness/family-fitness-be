@@ -653,6 +653,58 @@ class CoachRunExecutorTest {
         assertThat(runs.findById(run.getId()).getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
     }
 
+    @Test
+    @DisplayName("AI 가 영상 표에 없는 공단 영상을 고르면 그 칸은 영상 없이 저장한다 — 유튜브로 틀려다 실패하지 않게. 표에 있는 공단 영상 · 유튜브 칸은 그대로")
+    void 영상_표에_없는_공단_영상_칸은_영상_없이_저장한다() {
+        videos.videos.put("0AUDLJ08S_00351", Videos.kspo("0AUDLJ08S_00351", "팔굽혀펴기", 91, 7, 12));
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> resultWithVideos(
+                id,
+                new CoachRunResult.Video("0AUDLJ08S_99999", 0, 80, "kspo", Videos.kspoMp4("0AUDLJ08S_99999")),
+                new CoachRunResult.Video("0AUDLJ08S_00351", 0, 91, "kspo", Videos.kspoMp4("0AUDLJ08S_00351")),
+                new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.sessions()).hasSize(3);
+        assertThat(item.sessions().get(0).clip()).isNull();
+        assertThat(item.sessions().get(0).title()).isEqualTo("운동1");
+        assertThat(item.sessions().get(1).clip()).isEqualTo(new SessionClip("0AUDLJ08S_00351", 0, 91, "팔굽혀펴기"));
+        assertThat(item.sessions().get(2).clip()).isEqualTo(new SessionClip("IdpXx2gm90o", 96, 156, "영상 IdpXx2gm90o"));
+        // 제안 대표 영상도 틀 수 없는 공단 영상을 건너뛴다
+        assertThat(item.video()).isEqualTo(new ProposalVideo("0AUDLJ08S_00351", 0));
+    }
+
+    /** 본운동 칸마다 영상 하나. 칸 이름은 운동1, 운동2 … */
+    private CoachRunResult resultWithVideos(String id, CoachRunResult.Video... videos) {
+        List<CoachRunResult.Session> sessions = new java.util.ArrayList<>();
+        for (int i = 0; i < videos.length; i++) {
+            sessions.add(new CoachRunResult.Session(0, "본운동", i + 1, "운동" + (i + 1), "근력", 60, videos[i], List.of(1)));
+        }
+        CoachRunResult.Mission mission = new CoachRunResult.Mission(
+                "일간",
+                "오늘",
+                Fixed.TODAY.toString(),
+                Fixed.TODAY.toString(),
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                180,
+                List.copyOf(sessions),
+                "아이",
+                "부모",
+                "이유 [1].");
+        return new CoachRunResult(
+                id,
+                "succeeded",
+                List.of(new CoachRunResult.Step(1, "assess", "ok", "측정 있음")),
+                new CoachRunResult.Proposal(List.of(mission), List.of(new Citation(1, "처방", "p:1", null)), List.of()),
+                false,
+                null);
+    }
+
     /** 첫 폴링은 일시 오류, 두 번째는 대상 아이 하루짜리 succeeded. */
     private final class StubResultOnSecondPoll {
         private final AtomicInteger calls = new AtomicInteger();
