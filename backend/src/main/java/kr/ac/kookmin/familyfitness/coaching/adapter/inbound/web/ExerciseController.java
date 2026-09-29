@@ -25,9 +25,13 @@ import org.springframework.web.bind.annotation.RestController;
  * 운동 구간(영상 속 한 동작) 목록과 구간 찜. 운동 찾기 · 직접 짜기 · 홈 영상 줄이 쓴다.
  * factor 는 한글 요인 이름(유연성 등, 영문 상수도 받는다), phase 는 WARMUP · MAIN · COOLDOWN, list 는 ALL · FAVORITES.
  * 모르는 값은 400 이다.
+ *
+ * <p>{@code /clips} 는 전환기 별칭이다 — 지금 FE(fe:src/lib/api/queries.ts useClips · useToggleClipFavorite)가 부르는 이름이라
+ * 같은 핸들러로 받는다. 문서에는 deprecated 로 싣고(OpenApiConfig.TRANSITIONAL_ALIASES), FE 가 {@code /exercises} 로 옮기면
+ * 걷는다.
  */
 @RestController
-@RequestMapping("/api/v1/exercises")
+@RequestMapping({"/api/v1/exercises", "/api/v1/clips"})
 public class ExerciseController {
     private final ExerciseService service;
 

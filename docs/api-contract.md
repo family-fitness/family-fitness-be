@@ -128,7 +128,7 @@
 
 ### 구현 상태 (2026-09-29 · develop `a880ad4`)
 
-- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다.
+- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).
@@ -139,6 +139,7 @@
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 예측은 `MAINTAIN` 만. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
+  - **전환기 별칭**: 지금 FE 는 `rest-days` · `/sessions/{seq}/done` · `/clips` 를 부른다(fe:src/lib/api/queries.ts). 그 이름으로 부르면 실제 BE 에서 404 가 나서(칸 끝 기록 실패 · 쉬는 날 카드 · 운동 찾기), 계약 이름은 그대로 두고 FE 이름도 **같은 핸들러**로 받는다. 요청 · 응답 · 권한 · 오류 코드가 계약 이름과 똑같다. OpenAPI 에는 `deprecated` 로 싣는다(`OpenApiConfig.TRANSITIONAL_ALIASES`). FE 가 계약 이름으로 옮기면 걷는다. 목록은 아래 「전환기 별칭」 표. 같은 성격의 선례: 응원 `emoji`(↔ `stickerId`), 쉬는 날 요청 `restDate`(↔ `date`), 경험치 줄 `reason` · `at`(5장).
 - **FE 가 부르지 않음 · 걷을 후보**: `POST /profiles/{id}/predictions` · `POST /coach/chat` · `GET /families/{id}/report/weekly` · `GET /videos` · `POST /videos/{id}/favorite` · `POST /videos/{id}/progress` · `POST /missions/{id}/activity/timer` · `POST /missions/{id}/activity/steps` · `POST /missions/{id}/participants/{profileId}/confirm`. 아래 각 절 제목에도 같은 표시를 붙였다.
   - 이 경로로 끝난 미션은 `MissionCompleted` 를 내지 않는다. 그래서 그날 `MISSION_READY` 알림이 남는다. 이 경로는 미션 행을 잠그지 않는다.
   - 예측 · 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
@@ -194,6 +195,19 @@
 | league | GET | `/families/{familyId}/league` | 같은 가족 | 200 |
 | notification | GET | `/notifications` | 대신 | 200 |
 | notification | POST | `/notifications/read` | 대신 | 204 |
+
+### 전환기 별칭 (deprecated · FE 가 계약 이름으로 옮기면 걷는다)
+
+지금 FE 가 부르는 이름이다. 계약 이름과 같은 핸들러라 요청 · 응답 · 권한 · 오류가 똑같다. 새로 부르는 쪽은 계약 이름을 쓴다.
+OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<메서드 이름>_transitional`(예: `completeSession_transitional`)이라 계약 경로의 operationId 는 별칭이 없을 때와 같다.
+
+| 별칭(`/api/v1` 뒤) | 메서드 | 같은 핸들러의 계약 이름 |
+|---|---|---|
+| `/families/{familyId}/rest-days` | GET · POST | `/families/{familyId}/rest-cards` |
+| `/families/{familyId}/rest-days/{restDate}` | DELETE | `/families/{familyId}/rest-cards/{restDate}` |
+| `/missions/{missionId}/sessions/{seq}/done` | POST | `/missions/{missionId}/sessions/{seq}/complete` |
+| `/clips` | GET | `/exercises` |
+| `/clips/{exerciseId}/favorite` | POST | `/exercises/{exerciseId}/favorite` |
 
 ### 공통 타입
 | 이름 | 값 |
@@ -320,6 +334,7 @@
 `app.auth.dev-login.enabled=true` 일 때만 빈이 등록된다. 운영(prod)에는 이 경로가 없다(404).
 요청 `{providerUserId●(≤191), email?(≤255), claimCode?}`. 응답 200 `AuthResponse`(구글 없이 같은 흐름).
 시드 데모 계정 `demo-parent`(가족 데모네 · nextStep HOME) · `demo-parent-2`(프로필 없음, 초대코드 `K7M2QT` 로 claim 가능).
+같은 `providerUserId` 면 같은 계정이다. 딱 `demo-fresh` 일 때만 부를 때마다 **새 계정**(`demo-fresh-` + 무작위 8자, 프로필 없음 · nextStep `CREATE_FAMILY`)을 만든다 — FE 로그인 화면의 「새 계정 · 가족 없음」 단추가 보내는 값이라, 서버를 다시 띄우지 않고도 가족 만들기부터 몇 번이고 다시 볼 수 있다.
 local 의 자동 로그인에서 `X-Dev-User-Id` 헤더 값이 UUID 가 아니면 400.
 
 ### GET /api/v1/me — 로그인
@@ -471,15 +486,18 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 쉬는 날 카드: 가족 단위로 한 달 두 장. 세 경로 모두 그달 카드 모양 `{month, perMonth: 2, left, days: ["YYYY-MM-DD"]}` 으로 답한다.
 
 ### GET /api/v1/families/{familyId}/rest-cards?month=YYYY-MM — 같은 가족
+전환기 별칭 `GET /families/{familyId}/rest-days` 도 같다(deprecated).
 응답 200 그달 카드. `month` 가 없으면 이번 달(KST), 형식이 틀리면 400.
 오류: 404 `FAMILY_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
 ### POST /api/v1/families/{familyId}/rest-cards — 보호자
+전환기 별칭 `POST /families/{familyId}/rest-days` 도 같다(deprecated).
 요청 `{date}`(설계안 이름 `restDate` 도 받는다). 응답 201 그달 카드.
 판정 차례: 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(날짜 없음 · 형식 틀림 · 오늘부터 이번 달 끝 밖 — 400 이 아니다) → 409 `ALREADY_REST_DAY` → 409 `NO_REST_CARD_LEFT` → 422 `ALREADY_MOVED`(그날 아이 누구든 이미 움직였다) → 409 `CONFLICT`.
 두 보호자가 동시에 쓰면 `(family_id, rest_month, card_no)` 유니크가 막고, 늦은 쪽은 다시 읽어 정확한 코드로 답한다(세 번까지).
 
 ### DELETE /api/v1/families/{familyId}/rest-cards/{restDate} — 보호자
+전환기 별칭 `DELETE /families/{familyId}/rest-days/{restDate}` 도 같다(deprecated).
 쉬는 날을 되돌리고 카드를 돌려준다. 응답 200 그달 카드.
 판정 차례: 400(날짜 형식) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(지난 날) → 404 `NOT_REST_DAY`.
 그날 이미 운동했는지는 보지 않는다.
@@ -578,6 +596,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 지운 뒤 `MissionCancelled` 를 낸다(알림함이 그 미션의 알림을 지운다).
 
 ### POST /api/v1/missions/{missionId}/sessions/{seq}/complete — 대신 + 참여자
+전환기 별칭 `POST /missions/{missionId}/sessions/{seq}/done` 도 같다(deprecated · 지금 FE 가 부르는 이름).
 운동 한 칸 끝. `seq` = 칸 `position`. 칸 없는 미션은 `seq` 1 을 미션 전체 한 칸(분 = targetValue, 단계 MAIN)으로 받는다.
 요청 `{profileId●, activeSeconds●(0~10800, 영상 재생 초), startedAt●, endedAt●}`.
 응답 200 `{position, verifiedBy:"VIDEO_PROGRESS", missionProgress, missionCompleted, xpGained}` — `xpGained` 는 부른 프로필 몫이다.
@@ -630,6 +649,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 읽기만 한다(진행도를 다시 저장하지 않는다). 42일 · 미션 여럿이어도 미션 · 칸 끝 · 활동 · 응원 · 쉬는 날을 한 번씩 읽는다.
 
 ### GET /api/v1/exercises?factor=&phase=&quiet=&q=&list=ALL|FAVORITES&profileId= — 로그인(`profileId` 를 주면 같은 가족)
+전환기 별칭 `GET /clips` 도 같다(deprecated · 지금 FE 가 부르는 이름).
 운동 구간(영상 속 한 동작) 목록. 운동 찾기 · 직접 짜기 · 홈 영상 줄이 쓴다.
 응답 200 `{clips:[{clipId, videoId, startSec, endSec, title, factor|null, phase, homeOk, quiet, props, favorited}], total}`.
 - 데이터는 `V132` 로 적재한 구간 가운데 켜져 있고(active) 운동인 것이다.
@@ -639,6 +659,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 판정 차례: 400(모르는 `factor` · `phase` · `list` 값) → 400 `PROFILE_REQUIRED`(`FAVORITES` 인데 `profileId` 없음) → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
 ### POST /api/v1/exercises/{exerciseId}/favorite — 같은 가족
+전환기 별칭 `POST /clips/{exerciseId}/favorite` 도 같다(deprecated).
 구간 찜. 요청 `{profileId, favorited●}`. 응답 200 `{clipId, favorited}`. 프로필마다, 멱등(`exercise_favorites`, `V141`). 보호자가 아이 프로필의 찜을 바꿀 수 있다.
 판정 차례: 400(`favorited` 없음) → 400 `PROFILE_REQUIRED` → 404 `CLIP_NOT_FOUND`(없음 · 꺼짐 · 운동 아님) → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
@@ -680,7 +701,7 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 
 ### GET /api/v1/profiles/{profileId}/progress — 같은 가족
 아이 · 부모 프로필 모두 답한다.
-응답 200 `{profileId, level, xp, levelFloorXp, nextLevelXp|null, streakDays, activeDays, achievements:[{code, title, description, earnedAt|null}], recentXp:[{kind, fromProfileId|null, amount, occurredOn}]}`.
+응답 200 `{profileId, level, xp, levelFloorXp, nextLevelXp|null, streakDays, activeDays, achievements:[{code, title, description, earnedAt|null}], recentXp:[{kind, fromProfileId|null, amount, occurredOn, reason, at}]}`.
 - `xp` = 경험치 원장(`progress_xp_events`, `V140`) 합. 원장은 INSERT 만 해서 한 번 쌓인 경험치는 줄지 않는다. (프로필, 종류, 키) 유니크라 같은 일로 두 번 쌓이지 않는다.
 
 | 종류 | 언제 | 경험치 |
@@ -694,7 +715,10 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 - `streakDays`(이어서 한 날): 운동이 잡힌 날 기준이다. 잡힌 날에 움직였으면 이어지고, 잡힌 날을 빼먹으면 끊긴다. 잡히지 않은 날과 쉬는 날은 건너뛴다(잡히지 않은 날에 스스로 움직였으면 +1). 예: 월 · 목 주 2회를 다 하면 목요일에 2일째. 읽을 때마다 센다.
 - `activeDays` = 서버가 잰 활동이 있는 날 수(기간 제한 없음).
 - `achievements` = 열두 개 전부. 받은 것은 `earnedAt`(실제로 판정한 시각), 아직이면 null. `FIRST_STEP` · `STREAK_3` · `FULL_SET` · `MIN_30` · `MIN_100` · `WEEKEND` · `TOGETHER` · `STREAK_7` · `REMEASURE` · `FIRST_STICKER` · `MIN_300` · `SIX_POWERS`. `SIX_POWERS` 는 조건이 정해지지 않아 늘 null 이다.
-- `recentXp` = 최근 경험치 다섯 줄. 문장이 아니라 값이다.
+- `recentXp` = 최근 경험치 다섯 줄, 최근 것부터. 운동(칸 · 미션)은 하루를 한 줄로 묶고(그날 끝까지 한 미션이 있으면 `MISSION_DONE`, 없으면 `SESSION_DONE`, `amount` 는 그날 합), 스티커 · 다시 재기는 한 건마다 한 줄이다. 계약은 값(`kind` · `fromProfileId` · `amount` · `occurredOn`)이다.
+- **`reason` · `at` 은 전환기 칸이다.** 지금 FE(`XpEvent {reason, amount, at}`)는 문장과 시각을 그대로 그려서, 없으면 `/kid/badges` 가 깨진다. FE 가 `kind` 로 문장을 짓게 되면 걷는다.
+  - `reason` = FE 목과 같은 문장. `SESSION_DONE` 「운동을 했어요」 · `MISSION_DONE` 「운동을 다 했어요」 · `REMEASURE` 「키 · 몸무게를 새로 쟀어요」 · `STICKER` 「○○가 붙여 준 스티커」. 붙인 사람은 줄의 주인(그 프로필)이 부르는 말이다 — 주인이 아이면 보호자는 이름 대신 「엄마」(여) · 「아빠」(남)(알림 `PRAISE` 제목과 같은 규칙), 그 밖에는 이름. 지금 가족에 없는 사람이면 「가족」. 조사 이/가 는 받침에 맞춘다.
+  - `at` = 원장에 적은 시각(`created_at`, ISO-8601 UTC). 하루로 묶은 운동 줄은 그날 가장 늦게 적은 시각.
 - 「잡힌 날」 은 `progress.api.PlannedDays` 로 읽는다. coaching 이 구현한다(하루짜리 미션은 그날, 여러 날짜리는 캘린더와 같은 규칙).
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 업적을 처음 받을 때 `AchievementEarned` 를 낸다(알림함이 아이에게 `ACHIEVEMENT` 를 만든다).
@@ -817,14 +841,14 @@ FE 화면 ↔ 주소 대응은 FE 요청서(`BACKEND_API.md`)가 원본이다. �
 | 1장 ④ | AI 9/17 클립 형식 읽기 | 있음 |
 | 1장 ⑤ | 레이더 민첩성 | 있음(latest 의 `radar`) |
 | 1장 ⑥ | 편성 단계를 끝날 때마다 저장 | 없음 — 끝에 한 번에 저장 |
-| 1장 ⑦ · ⑧ | 칸 끝 · calendar · progress | 있음(`/sessions/{seq}/complete` · `/calendar` · `/progress`) |
+| 1장 ⑦ · ⑧ | 칸 끝 · calendar · progress | 있음(`/sessions/{seq}/complete` · `/calendar` · `/progress`). FE 가 부르는 `/done` 은 전환기 별칭으로 받고, `recentXp` 에 전환기 칸 `reason` · `at` 을 싣는다 |
 | 2장 | `ProfileSummary.sex` · `/me` 의 `selfProfileId` | 있음 |
 | 2장 | `photoUrl`(프로필 사진) | 없음 |
 | 2장 | 구성원 추가 키 · 몸무게, latest 의 키 · 몸무게 | 있음 |
 | 2장 | 응원 `stickerId` · `kind` · `replyToCheerId` | 있음 |
 | 2장 | 미션 `dates[]` | 있음. `title` 은 1~50자 |
 | 3장 | 측정 이력 · `coach/runs/latest` | 있음 |
-| 3장 | availability · 클립(`/exercises`) · 클립 찜 · 받은 칭찬 · 알림 · 초대코드 미리 보기 · 리그 · 쉬는 날(`rest-cards`) | 있음 |
+| 3장 | availability · 클립(`/exercises`) · 클립 찜 · 받은 칭찬 · 알림 · 초대코드 미리 보기 · 리그 · 쉬는 날(`rest-cards`) | 있음. FE 가 부르는 `/clips` · `rest-days` 는 전환기 별칭으로 받는다 |
 | 3장 | 사진 | 없음 |
 
 아직 없는 것(주소 · 기능)

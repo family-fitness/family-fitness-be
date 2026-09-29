@@ -58,6 +58,10 @@ class ProgressServiceTest {
     private final UUID dad = UUID.randomUUID();
     private final UUID kid = UUID.randomUUID();
     private final UUID sibling = UUID.randomUUID();
+    /** 식구 이름 · 성별 — 스티커 줄이 붙인 사람을 부를 때 쓴다 */
+    private final Map<UUID, String> names = Map.of(mom, "은영", dad, "철수", kid, "서준", sibling, "하린");
+
+    private final Map<UUID, Sex> sexes = Map.of(mom, Sex.F, dad, Sex.M, kid, Sex.M, sibling, Sex.F);
 
     private final InMemoryXpLedger ledger = new InMemoryXpLedger();
     private final InMemoryAchievementStore achievements = new InMemoryAchievementStore();
@@ -84,7 +88,7 @@ class ProgressServiceTest {
             new ProgressRecorderService(ledger, awards, history, activity, profiles, clock);
     private final ProgressEventListener listener = new ProgressEventListener(ledger, awards, clock, KST);
     private final ProgressQueryService query =
-            new ProgressQueryService(ledger, achievements, history, activity, familyAccess, clock, KST);
+            new ProgressQueryService(ledger, achievements, history, activity, familyAccess, profiles, clock, KST);
 
     @BeforeEach
     void setUp() {
@@ -104,10 +108,10 @@ class ProgressServiceTest {
         return new ProfileSummary(
                 profileId,
                 familyId,
-                "이름",
+                names.getOrDefault(profileId, "이름"),
                 role,
                 role == ProfileRole.PARENT ? AgeGroup.ADULT : AgeGroup.YOUTH,
-                Sex.F,
+                sexes.getOrDefault(profileId, Sex.F),
                 true,
                 InviteStatus.CLAIMED,
                 null,
@@ -423,12 +427,18 @@ class ProgressServiceTest {
 
             List<XpLineView> lines = query.view(userId, kid).recentXp();
             assertThat(lines)
+                    .extracting(
+                            XpLineView::kind,
+                            XpLineView::fromProfileId,
+                            XpLineView::amount,
+                            XpLineView::occurredOn,
+                            XpLineView::reason)
                     .containsExactly(
-                            new XpLineView(XpKind.STICKER, dad, 10, today),
-                            new XpLineView(XpKind.STICKER, dad, 10, today),
-                            new XpLineView(XpKind.SESSION_DONE, null, 10, today),
-                            new XpLineView(XpKind.REMEASURE, null, 20, today.minusDays(1)),
-                            new XpLineView(XpKind.STICKER, mom, 10, today));
+                            tuple(XpKind.STICKER, dad, 10, today, "아빠가 붙여 준 스티커"),
+                            tuple(XpKind.STICKER, dad, 10, today, "아빠가 붙여 준 스티커"),
+                            tuple(XpKind.SESSION_DONE, null, 10, today, "운동을 했어요"),
+                            tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키 · 몸무게를 새로 쟀어요"),
+                            tuple(XpKind.STICKER, mom, 10, today, "엄마가 붙여 준 스티커"));
             // 여섯째 줄(그제 운동 5 + 5 + 20)은 다섯 줄 밖이다
             assertThat(query.view(userId, kid).xp()).isEqualTo(90);
         }
@@ -442,7 +452,46 @@ class ProgressServiceTest {
             clock.step();
             recorder.sessionDone(finished(kid, mission, 3, Verification.TIMER, today));
             assertThat(query.view(userId, kid).recentXp())
-                    .containsExactly(new XpLineView(XpKind.MISSION_DONE, null, 35, today));
+                    .extracting(XpLineView::kind, XpLineView::amount, XpLineView::occurredOn, XpLineView::reason)
+                    .containsExactly(tuple(XpKind.MISSION_DONE, 35, today, "운동을 다 했어요"));
+        }
+
+        @Test
+        @DisplayName("줄의 at 은 원장에 적은 시각이다 — 하루 운동 줄은 그날 가장 늦게 적은 시각, 최근 것부터")
+        void 최근_줄의_시각() {
+            UUID mission = UUID.randomUUID();
+            move(kid, mission, 1, Phase.WARMUP, today.minusDays(1), 1);
+            Instant yesterdayLast = clock.instant();
+            move(kid, mission, 2, Phase.MAIN, today, 1);
+            clock.step();
+            recorder.sessionDone(finished(kid, mission, 3, Verification.TIMER, today));
+            Instant todayLast = clock.instant();
+            listener.on(cheer(CheerKind.PRAISE, mom, kid, "star", null));
+            Instant stickerAt = clock.instant();
+
+            assertThat(query.view(userId, kid).recentXp())
+                    .extracting(XpLineView::kind, XpLineView::at)
+                    .containsExactly(
+                            tuple(XpKind.STICKER, stickerAt),
+                            tuple(XpKind.MISSION_DONE, todayLast),
+                            tuple(XpKind.SESSION_DONE, yesterdayLast));
+        }
+
+        @Test
+        @DisplayName("스티커 줄은 붙인 사람을 읽는 사람의 말로 부른다 — 아이에게 보호자는 엄마 · 아빠, 형제는 이름, 가족에 없으면 「가족」, 보호자가 읽으면 이름")
+        void 스티커_줄의_보낸_사람() {
+            listener.on(cheer(CheerKind.PRAISE, UUID.randomUUID(), kid, "star", null));
+            listener.on(cheer(CheerKind.PRAISE, sibling, kid, "star", null));
+            listener.on(cheer(CheerKind.PRAISE, dad, kid, "star", null));
+            listener.on(cheer(CheerKind.PRAISE, mom, kid, "star", null));
+            listener.on(cheer(CheerKind.PRAISE, dad, mom, "star", null));
+
+            assertThat(query.view(userId, kid).recentXp())
+                    .extracting(XpLineView::reason)
+                    .containsExactly("엄마가 붙여 준 스티커", "아빠가 붙여 준 스티커", "하린이 붙여 준 스티커", "가족이 붙여 준 스티커");
+            assertThat(query.view(userId, mom).recentXp())
+                    .extracting(XpLineView::reason)
+                    .containsExactly("철수가 붙여 준 스티커");
         }
 
         @Test

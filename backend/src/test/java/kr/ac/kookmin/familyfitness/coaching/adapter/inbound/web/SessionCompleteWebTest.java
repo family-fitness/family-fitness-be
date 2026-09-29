@@ -172,6 +172,14 @@ class SessionCompleteWebTest {
                         + startedAt + "\",\"endedAt\":\"" + endedAt + "\"}"));
     }
 
+    /** 전환기 별칭 {@code /done}(FE 가 부르는 이름)으로 보낸다. 몸통은 {@link #complete} 와 같다. */
+    private ResultActions done(Object missionId, int seq, String body) throws Exception {
+        return mvc.perform(post("/api/v1/missions/" + missionId + "/sessions/" + seq + "/done")
+                .header(HttpHeaders.AUTHORIZATION, auth.bearer(momUser))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
+    }
+
     private int xpOf(UUID profileId) throws Exception {
         String body = mvc.perform(get("/api/v1/profiles/" + profileId + "/progress")
                         .header(HttpHeaders.AUTHORIZATION, auth.bearer(momUser)))
@@ -315,5 +323,37 @@ class SessionCompleteWebTest {
         assertThat(Objects.requireNonNull(jdbc.queryForObject(
                         "select count(*) from mission_session_completions where profile_id = ?", Integer.class, kidId)))
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("전환기 별칭 /done(FE 가 부르는 이름)도 같은 핸들러다 — 같은 답을 주고, 그 칸을 /complete 로 다시 보내면 이미 끝낸 칸(200 · 0)")
+    void 별칭_done_도_같은_핸들러다() throws Exception {
+        Mission mission = mission(today);
+        Instant endedAt = Instant.now();
+        String body = "{\"profileId\":\"" + kidId + "\",\"activeSeconds\":45,\"startedAt\":\""
+                + endedAt.minusSeconds(600) + "\",\"endedAt\":\"" + endedAt + "\"}";
+
+        done(mission.getId(), 1, body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.position").value(1))
+                .andExpect(jsonPath("$.verifiedBy").value("VIDEO_PROGRESS"))
+                .andExpect(jsonPath("$.missionProgress").value(0.333))
+                .andExpect(jsonPath("$.missionCompleted").value(false))
+                .andExpect(jsonPath("$.xpGained").value(5));
+        complete(mission.getId(), 1, kidId, 45)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.xpGained").value(0));
+        assertThat(xpOf(kidId)).isEqualTo(5);
+
+        // 몸통 검사 · 판정도 같다
+        done(mission.getId(), 1, "{\"profileId\":\"" + kidId + "\",\"activeSeconds\":60}")
+                .andExpect(status().isBadRequest());
+        done(mission.getId(), 3, body)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("SESSION_NOT_FOUND"));
+        mvc.perform(post("/api/v1/missions/" + mission.getId() + "/sessions/1/done")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
     }
 }

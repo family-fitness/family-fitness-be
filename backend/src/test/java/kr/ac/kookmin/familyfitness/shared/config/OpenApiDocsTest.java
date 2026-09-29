@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -121,6 +122,61 @@ class OpenApiDocsTest {
 
         assertThat(properties.has("fromProfileId")).isTrue();
         assertThat(properties.has("contentPresent")).isFalse();
+    }
+
+    private boolean deprecated(String path, String method) {
+        JsonNode operation = docs.path("paths").path(path).path(method);
+        assertThat(operation.isMissingNode())
+                .as(method + " " + path + " 가 문서에 있다")
+                .isFalse();
+        JsonNode flag = operation.path("deprecated");
+        return flag.isBoolean() && flag.booleanValue();
+    }
+
+    @Test
+    @DisplayName("전환기 별칭(FE 가 부르는 옛 이름)은 문서에 deprecated 로 실리고, 같은 핸들러의 계약 이름은 그대로다")
+    void 전환기_별칭은_deprecated_다() {
+        Map<String, List<String>> aliases = Map.of(
+                "/api/v1/missions/{missionId}/sessions/{seq}/done", List.of("post"),
+                "/api/v1/families/{familyId}/rest-days", List.of("get", "post"),
+                "/api/v1/families/{familyId}/rest-days/{restDate}", List.of("delete"),
+                "/api/v1/clips", List.of("get"),
+                "/api/v1/clips/{exerciseId}/favorite", List.of("post"));
+        Map<String, List<String>> contract = Map.of(
+                "/api/v1/missions/{missionId}/sessions/{seq}/complete", List.of("post"),
+                "/api/v1/families/{familyId}/rest-cards", List.of("get", "post"),
+                "/api/v1/families/{familyId}/rest-cards/{restDate}", List.of("delete"),
+                "/api/v1/exercises", List.of("get"),
+                "/api/v1/exercises/{exerciseId}/favorite", List.of("post"));
+
+        aliases.forEach((path, methods) -> methods.forEach(method ->
+                assertThat(deprecated(path, method)).as(method + " " + path).isTrue()));
+        contract.forEach((path, methods) -> methods.forEach(method ->
+                assertThat(deprecated(path, method)).as(method + " " + path).isFalse()));
+        // 걷은 별칭이 목록에만 남아 있지 않게 — 목록의 경로는 모두 문서에 있다
+        assertThat(OpenApiConfig.TRANSITIONAL_ALIASES).containsExactlyInAnyOrderElementsOf(aliases.keySet());
+    }
+
+    private String operationId(String path, String method) {
+        return docs.path("paths").path(path).path(method).path("operationId").asString();
+    }
+
+    @Test
+    @DisplayName("별칭의 operationId 는 「계약 이름_transitional」 이다 — 계약 경로의 operationId 가 별칭 때문에 뒤붙임을 받지 않게")
+    void 계약_경로가_operationId_를_지킨다() {
+        assertThat(operationId("/api/v1/missions/{missionId}/sessions/{seq}/complete", "post"))
+                .isEqualTo("completeSession");
+        assertThat(operationId("/api/v1/missions/{missionId}/sessions/{seq}/done", "post"))
+                .isEqualTo("completeSession_transitional");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards", "get")).isEqualTo("month");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-days", "get")).isEqualTo("month_transitional");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards", "post"))
+                .isEqualTo("use");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards/{restDate}", "delete"))
+                .isEqualTo("cancel");
+        // 다른 컨트롤러와 겹치는 메서드 이름(list · favorite)은 계약 경로 쪽만 springdoc 이 뒤붙임으로 가른다
+        assertThat(operationId("/api/v1/clips", "get")).isEqualTo("list_transitional");
+        assertThat(operationId("/api/v1/clips/{exerciseId}/favorite", "post")).isEqualTo("favorite_transitional");
     }
 
     @Test

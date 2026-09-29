@@ -61,6 +61,8 @@ cd family-fitness-be/backend
    다른 계정이 되려면 `X-Dev-User-Id: 00000000-0000-4000-8000-000000000002`(아직 가족이 없는 두 번째 부모) 헤더를 보낸다. 값이 UUID 가 아니면 400 이다.
    로그인 화면을 붙일 때는 `POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"}` 로 토큰을 받아
    `Authorization: Bearer <accessToken>` 을 보내면 된다. 운영에서는 `POST /api/v1/auth/google` 이 같은 응답을 준다.
+   `{"providerUserId":"demo-fresh"}` 는 부를 때마다 가족 없는 **새 계정**(nextStep `CREATE_FAMILY`)을 만든다 — FE 로그인 화면의 「새 계정」 단추라,
+   서버를 다시 띄우지 않고도 가족 만들기부터 몇 번이고 볼 수 있다. 다른 값은 같은 값이면 같은 계정이다.
    리프레시 토큰은 한 번만 쓸 수 있다(회전). refresh 응답의 새 `refreshToken` 을 저장하고, 로그아웃할 때 `POST /api/v1/auth/logout` 을 부른다.
 2. **CORS 전부 허용.** 어느 포트·호스트에서 불러도 막지 않는다 (`app.cors.allowed-origins=*`).
    초대 링크(`shareUrl`)는 FE 개발 서버 주소 `http://localhost:3000` 으로 만든다.
@@ -84,6 +86,9 @@ curl localhost:8080/api/v1/profiles/$CHILD/progress             # 레벨 · 경�
 curl "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데모 첫째의 알림함(보호자가 계정 없는 아이 대신)
 ```
 실패는 항상 `{"error": {"code": "...", "message": "..."}}`. `code` 로 분기하고 `message` 는 화면에 그대로 띄우지 않는다.
+
+지금 FE 가 부르는 이름 `rest-days` · `/sessions/{seq}/done` · `/clips` 는 계약 이름(`rest-cards` · `/complete` · `/exercises`)의 **전환기 별칭**이라
+같은 핸들러가 답한다(Swagger 에는 deprecated). FE 가 계약 이름으로 옮기면 걷는다 — 목록은 [api-contract.md 「전환기 별칭」](../docs/api-contract.md).
 
 ## 모듈
 

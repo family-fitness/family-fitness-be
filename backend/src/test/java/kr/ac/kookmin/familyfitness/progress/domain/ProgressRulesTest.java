@@ -75,6 +75,18 @@ class ProgressRulesTest {
     }
 
     @Test
+    @DisplayName("최근 경험치 줄의 문장은 FE 목과 같다 — 스티커는 붙인 사람을 받침에 맞춰 부르고, 모르면 「가족」")
+    void 최근_줄_문장() {
+        assertThat(XpReason.of(XpKind.SESSION_DONE, null)).isEqualTo("운동을 했어요");
+        assertThat(XpReason.of(XpKind.MISSION_DONE, null)).isEqualTo("운동을 다 했어요");
+        assertThat(XpReason.of(XpKind.REMEASURE, null)).isEqualTo("키 · 몸무게를 새로 쟀어요");
+        assertThat(XpReason.of(XpKind.STICKER, "엄마")).isEqualTo("엄마가 붙여 준 스티커");
+        assertThat(XpReason.of(XpKind.STICKER, "아빠")).isEqualTo("아빠가 붙여 준 스티커");
+        assertThat(XpReason.of(XpKind.STICKER, "서준")).isEqualTo("서준이 붙여 준 스티커");
+        assertThat(XpReason.of(XpKind.STICKER, null)).isEqualTo("가족이 붙여 준 스티커");
+    }
+
+    @Test
     @DisplayName("끝까지 한 +20 은 서버가 잰 확인(TIMER · VIDEO_PROGRESS)으로 끝났을 때만")
     void 끝까지_한_몫은_서버가_잰_확인일_때만() {
         assertThat(done(true, SessionDone.Verification.TIMER).countsAsMissionDone())

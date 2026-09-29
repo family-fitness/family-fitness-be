@@ -84,9 +84,22 @@ public class AuthService {
         }));
     }
 
-    /** local/compose/test 전용. 컨트롤러가 `app.auth.dev-login.enabled` 로만 열린다. */
+    /**
+     * 개발용 로그인에 이 값을 보내면 부를 때마다 새 계정을 만든다(「demo-fresh-」 + 무작위 8자). FE 로그인 화면의 「새 계정 · 가족
+     * 없음」 단추(fe:src/app/login/page.tsx)가 보내는 값이다 — 한 번 가족을 만들고 나면 같은 계정으로는 가족 만들기부터 다시 볼 수
+     * 없어서, 메모리 DB 를 다시 띄우지 않고도 새 계정 흐름을 몇 번이고 보게 한다.
+     */
+    public static final String FRESH_DEV_USER = "demo-fresh";
+
+    /**
+     * local/compose/test 전용. 컨트롤러가 `app.auth.dev-login.enabled` 로만 열린다. 같은 providerUserId 면 같은 계정이다.
+     * 딱 {@link #FRESH_DEV_USER} 일 때만 부를 때마다 새 계정이다.
+     */
     public AuthResult devLogin(String providerUserId, @Nullable String email, @Nullable String claimCode) {
-        User user = registration.registerOrGet(User.PROVIDER_DEV, providerUserId, email);
+        String subject = FRESH_DEV_USER.equals(providerUserId)
+                ? FRESH_DEV_USER + "-" + UUID.randomUUID().toString().substring(0, 8)
+                : providerUserId;
+        User user = registration.registerOrGet(User.PROVIDER_DEV, subject, email);
         return login(user.id(), claimCode);
     }
 

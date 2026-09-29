@@ -250,6 +250,43 @@ class ExerciseWebTest {
     }
 
     @Test
+    @DisplayName("전환기 별칭 /clips(FE 가 부르는 이름)도 같은 핸들러다 — 목록 · 찜 · 오류 코드가 /exercises 와 같다")
+    void 별칭_clips_도_같은_핸들러다() throws Exception {
+        String viaAlias = mvc.perform(get("/api/v1/clips")
+                        .param("profileId", childId.toString())
+                        .param("factor", "유연성")
+                        .param("quiet", "true")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(parentUser)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String viaContract = list(parentUser, "profileId", childId.toString(), "factor", "유연성", "quiet", "true")
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(viaAlias).isEqualTo(viaContract).contains("\"clips\"").contains("\"total\"");
+
+        mvc.perform(post("/api/v1/clips/IdpXx2gm90o-518/favorite")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(parentUser))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(childId, true)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clipId").value("IdpXx2gm90o-518"))
+                .andExpect(jsonPath("$.favorited").value(true));
+        assertThat(favoriteRows()).isEqualTo(1);
+        list(parentUser, "list", "FAVORITES", "profileId", childId.toString())
+                .andExpect(jsonPath("$.clips[*].clipId", contains("IdpXx2gm90o-518")));
+
+        mvc.perform(get("/api/v1/clips")
+                        .param("list", "FAVORITES")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(parentUser)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("PROFILE_REQUIRED"));
+        mvc.perform(get("/api/v1/clips")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("모르는 단계 · 목록 종류 · 요인과 빠진 favorited 는 400 이다")
     void 모르는_단계_목록_종류_요인과_빠진_favorited_는_400_이다() throws Exception {
         list(parentUser, "phase", "STRETCH").andExpect(status().isBadRequest());

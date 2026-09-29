@@ -19,9 +19,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 쉬는 날 카드. 보기는 같은 가족 누구나, 쓰기 · 되돌리기는 보호자만. 세 주소 모두 그달 카드 모양으로 답한다. */
+/**
+ * 쉬는 날 카드. 보기는 같은 가족 누구나, 쓰기 · 되돌리기는 보호자만. 세 주소 모두 그달 카드 모양으로 답한다.
+ *
+ * <p>{@code /rest-days} 는 전환기 별칭이다 — 지금 FE(fe:src/lib/api/queries.ts useRestDays · useRestDay)가 부르는 이름이라
+ * 같은 핸들러로 받는다. 문서에는 deprecated 로 싣고(OpenApiConfig.TRANSITIONAL_ALIASES), FE 가 {@code /rest-cards} 로 옮기면
+ * 걷는다.
+ */
 @RestController
-@RequestMapping("/api/v1/families/{familyId}/rest-cards")
+@RequestMapping({"/api/v1/families/{familyId}/rest-cards", "/api/v1/families/{familyId}/rest-days"})
 public class RestCardController {
     private final RestCardService service;
 

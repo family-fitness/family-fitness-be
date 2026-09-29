@@ -5,16 +5,21 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.progress.application.port.AchievementStore;
 import kr.ac.kookmin.familyfitness.progress.application.port.XpLedger;
 import kr.ac.kookmin.familyfitness.progress.domain.Achievement;
 import kr.ac.kookmin.familyfitness.progress.domain.LevelCurve;
+import kr.ac.kookmin.familyfitness.progress.domain.XpReason;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
  * streakDays  이어서 한 날 — 잡힌 날 기준(결정 25), 읽을 때마다 센다(끊기면 줄어드는 값이라 저장하지 않는다)
  * activeDays  서버가 잰 분이 있는 날 수(기간 제한 없음)
  * achievements 받은 업적(저장된 것)과 아직인 업적 — 열두 개 전부
- * recentXp    최근 경험치 다섯 줄({@link RecentXp})
+ * recentXp    최근 경험치 다섯 줄({@link RecentXp}). 스티커 줄의 문장(전환기 reason)은 줄의 주인이 붙인 사람을 부르는 말로 짓는다
  * </pre>
  */
 @Service
@@ -41,6 +46,7 @@ public class ProgressQueryService {
     private final MoveHistory history;
     private final ActivityQuery activity;
     private final FamilyAccess familyAccess;
+    private final ProfileQuery profiles;
     private final Clock clock;
     private final ZoneId zone;
 
@@ -50,6 +56,7 @@ public class ProgressQueryService {
             MoveHistory history,
             ActivityQuery activity,
             FamilyAccess familyAccess,
+            ProfileQuery profiles,
             Clock clock,
             ZoneId appZone) {
         this.ledger = ledger;
@@ -57,6 +64,7 @@ public class ProgressQueryService {
         this.history = history;
         this.activity = activity;
         this.familyAccess = familyAccess;
+        this.profiles = profiles;
         this.clock = clock;
         this.zone = appZone;
     }
@@ -76,7 +84,25 @@ public class ProgressQueryService {
                 history.load(profileId, target.familyId(), today).streakDays(),
                 activity.verifiedSummary(profileId).activeDays(),
                 achievementsOf(profileId),
-                RecentXp.linesOf(ledger.recent(profileId, RECENT_ROWS), days -> ledger.exerciseOn(profileId, days)));
+                RecentXp.linesOf(
+                        ledger.recent(profileId, RECENT_ROWS),
+                        days -> ledger.exerciseOn(profileId, days),
+                        senders -> callNames(target, senders)));
+    }
+
+    /**
+     * 스티커를 붙인 사람들을 줄의 주인(target)이 부르는 말로. 아이에게 보호자는 엄마 · 아빠, 그 밖에는 이름이다({@link
+     * XpReason#callName}). 지금 가족에 없는 사람은 빠진다 — 문장은 「가족」 으로 부른다.
+     */
+    private Map<UUID, String> callNames(ProfileSummary target, Set<UUID> senders) {
+        boolean forKid = target.role() == ProfileRole.CHILD;
+        Map<UUID, String> calls = new HashMap<>();
+        for (ProfileSummary member : profiles.summariesOfFamily(target.familyId())) {
+            if (senders.contains(member.profileId())) {
+                calls.put(member.profileId(), XpReason.callName(member.name(), member.role(), member.sex(), forKid));
+            }
+        }
+        return calls;
     }
 
     private List<AchievementView> achievementsOf(UUID profileId) {

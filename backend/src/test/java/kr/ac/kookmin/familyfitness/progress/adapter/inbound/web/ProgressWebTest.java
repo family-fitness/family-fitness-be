@@ -4,7 +4,9 @@ import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.detai
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
@@ -245,7 +247,11 @@ class ProgressWebTest {
                 .andExpect(jsonPath(
                         "$.recentXp[?(@.kind == 'STICKER')].fromProfileId", containsInAnyOrder(momId.toString())))
                 .andExpect(jsonPath(
-                        "$.recentXp[?(@.kind == 'REMEASURE')].occurredOn", containsInAnyOrder(today.toString())));
+                        "$.recentXp[?(@.kind == 'REMEASURE')].occurredOn", containsInAnyOrder(today.toString())))
+                // 전환기 칸 — 지금 FE 는 reason · at 을 그대로 그린다. 아이가 읽는 줄이라 보호자는 「엄마」 다
+                .andExpect(jsonPath(
+                        "$.recentXp[*].reason", containsInAnyOrder("운동을 다 했어요", "엄마가 붙여 준 스티커", "키 · 몸무게를 새로 쟀어요")))
+                .andExpect(jsonPath("$.recentXp[*].at", everyItem(matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+Z"))));
 
         // 부모 프로필도 답한다 — 고마워요 스티커로는 쌓이지 않는다
         read(parentUser, momId)
