@@ -5,7 +5,7 @@
 ## 실행
 
 ```bash
-./gradlew bootRun                    # local 프로필: H2 인메모리 + 시드 + 자동 로그인 + AI 스텁. Docker·DB 불필요
+./gradlew bootRun                    # local 프로필: H2 인메모리 + 시드 + 개발용 로그인 + AI 스텁. Docker·DB 불필요
 open http://localhost:8080/swagger-ui.html
 ```
 
@@ -26,8 +26,8 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 
 | 프로필 | DB | 로그인 | AI | 시드 |
 |---|---|---|---|---|
-| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | 토큰 없으면 데모 부모 자동 인증 · dev-login · 구글 | 스텁 | 있음 |
-| `compose` | Docker Compose PostgreSQL | 자동 인증 · dev-login · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 |
+| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 구글 | 스텁 | 있음 |
+| `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 |
 | `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 |
 | `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글만 | http (`APP_AI_BASE_URL`) | 없음 |
 
@@ -57,10 +57,10 @@ cd family-fitness-be/backend
 
 로컬(`local` 프로필)에서 시연을 위해 다음이 켜져 있다. 운영(`prod`)에서는 전부 꺼진다.
 
-1. **로그인 없이 동작한다.** `Authorization` 헤더가 없으면 시드의 데모 부모(`demo-parent`, userId `…0001`)로 인증된다.
-   다른 계정이 되려면 `X-Dev-User-Id: 00000000-0000-4000-8000-000000000002`(아직 가족이 없는 두 번째 부모) 헤더를 보낸다. 값이 UUID 가 아니면 400 이다.
-   로그인 화면을 붙일 때는 `POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"}` 로 토큰을 받아
-   `Authorization: Bearer <accessToken>` 을 보내면 된다. 운영에서는 `POST /api/v1/auth/google` 이 같은 응답을 준다.
+1. **브라우저는 운영처럼 로그인부터 한다.** 토큰이 없으면 401 이라 FE 는 로그인 화면으로 간다. 로그인 화면의 개발용 계정 단추가
+   `POST /api/v1/auth/dev-login {"providerUserId":"demo-parent"}` 로 토큰을 받아 `Authorization: Bearer <accessToken>` 을 보낸다.
+   curl · 스크립트는 로그인 없이 `X-Dev-User-Id: <userId>` 헤더로 그 계정이 된다 — 데모 부모 `…0001`, 아직 가족이 없는 두 번째 부모 `…0002`.
+   값이 UUID 가 아니면 400, 헤더가 없거나 비어 있으면 401 이다. 운영에서는 `POST /api/v1/auth/google` 이 같은 응답을 준다.
    `{"providerUserId":"demo-fresh"}` 는 부를 때마다 가족 없는 **새 계정**(nextStep `CREATE_FAMILY`)을 만든다 — FE 로그인 화면의 「새 계정」 단추라,
    서버를 다시 띄우지 않고도 가족 만들기부터 몇 번이고 볼 수 있다. 다른 값은 같은 값이면 같은 계정이다.
    리프레시 토큰은 한 번만 쓸 수 있다(회전). refresh 응답의 새 `refreshToken` 을 저장하고, 로그아웃할 때 `POST /api/v1/auth/logout` 을 부른다.
@@ -76,14 +76,15 @@ cd family-fitness-be/backend
 ```bash
 FAMILY=00000000-0000-4000-8000-000000000010
 CHILD=00000000-0000-4000-8000-000000000012   # 데모 첫째
-curl localhost:8080/api/v1/me                                   # nextStep HOME · 내 프로필 · selfProfileId
-curl localhost:8080/api/v1/families/$FAMILY/fitness-map         # 홈 화면 한 번에
-curl localhost:8080/api/v1/families/$FAMILY/profiles            # 구성원
-curl -X POST localhost:8080/api/v1/families/$FAMILY/coach/runs -H 'Content-Type: application/json' \
+AS='X-Dev-User-Id: 00000000-0000-4000-8000-000000000001'   # 데모 부모로 (브라우저는 로그인 화면의 개발용 계정)
+curl -H "$AS" localhost:8080/api/v1/me                                   # nextStep HOME · 내 프로필 · selfProfileId
+curl -H "$AS" localhost:8080/api/v1/families/$FAMILY/fitness-map         # 홈 화면 한 번에
+curl -H "$AS" localhost:8080/api/v1/families/$FAMILY/profiles            # 구성원
+curl -H "$AS" -X POST localhost:8080/api/v1/families/$FAMILY/coach/runs -H 'Content-Type: application/json' \
      -d "{\"profileId\":\"$CHILD\",\"date\":\"$(date +%F)\",\"minutes\":15}"   # 데모 첫째의 오늘 편성(202)
-curl "localhost:8080/api/v1/families/$FAMILY/coach/runs/latest?profileId=$CHILD"  # 그 편성의 결과(칸 포함)
-curl localhost:8080/api/v1/profiles/$CHILD/progress             # 레벨 · 경험치 · 업적
-curl "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데모 첫째의 알림함(보호자가 계정 없는 아이 대신)
+curl -H "$AS" "localhost:8080/api/v1/families/$FAMILY/coach/runs/latest?profileId=$CHILD"  # 그 편성의 결과(칸 포함)
+curl -H "$AS" localhost:8080/api/v1/profiles/$CHILD/progress             # 레벨 · 경험치 · 업적
+curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데모 첫째의 알림함(보호자가 계정 없는 아이 대신)
 ```
 실패는 항상 `{"error": {"code": "...", "message": "..."}}`. `code` 로 분기하고 `message` 는 화면에 그대로 띄우지 않는다.
 

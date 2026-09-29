@@ -4,7 +4,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.web.ApiError;
 import org.springframework.context.annotation.Bean;
@@ -82,13 +81,8 @@ public class SecurityConfig {
                     it.authenticationEntryPoint(entryPoint);
                     it.accessDeniedHandler(deniedHandler);
                 });
-        AppProperties.DevAutoLogin autoLogin = props.auth().devAutoLogin();
-        if (autoLogin.enabled()) {
-            if (autoLogin.userId().isBlank()) {
-                throw new IllegalArgumentException("app.auth.dev-auto-login.user-id 가 비어 있다");
-            }
-            http.addFilterBefore(
-                    new DevAutoLoginFilter(UUID.fromString(autoLogin.userId())), BearerTokenAuthenticationFilter.class);
+        if (props.auth().devAutoLogin().enabled()) {
+            http.addFilterBefore(new DevAutoLoginFilter(), BearerTokenAuthenticationFilter.class);
         }
         return http.build();
     }

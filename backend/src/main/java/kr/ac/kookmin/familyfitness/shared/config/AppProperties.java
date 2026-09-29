@@ -47,15 +47,13 @@ public record AppProperties(
         }
     }
 
-    /** local 시연용. 토큰 없는 요청을 {@code userId} 로 인증한다. 운영에서는 항상 꺼져 있다. */
-    public record DevAutoLogin(
-            @DefaultValue("false") boolean enabled,
-            @DefaultValue("") String userId) {
+    /** local 시연용. `X-Dev-User-Id` 헤더를 보낸 요청을 그 계정으로 인증한다. 운영에서는 항상 꺼져 있다. */
+    public record DevAutoLogin(@DefaultValue("false") boolean enabled) {
         @ConstructorBinding
         public DevAutoLogin {}
 
         public DevAutoLogin() {
-            this(false, "");
+            this(false);
         }
     }
 
