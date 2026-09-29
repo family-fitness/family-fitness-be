@@ -4,6 +4,7 @@ import static java.util.stream.Collectors.counting;
 import static java.util.stream.Collectors.groupingBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -25,15 +26,23 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * H2 에 Flyway 로 V132(유튜브 클립 적재) · V161 · V162(공단 영상 클립 적재)를 적용한 결과를 포트로 읽는다.
- * 수는 AI 커밋 2af9002(유튜브) · 9f6e746(공단) 판 기준이다. V161(610959a, 890편)에 있던 근골격계운동 114편은 V162 가 끈다.
+ * H2 에 Flyway 로 V132(유튜브 클립 적재) · V161 · V162 · V163(공단 영상 클립 적재)을 적용한 결과를 포트로 읽는다.
+ * 수는 AI 커밋 2af9002(유튜브) · cae60cb(공단) 판 기준이다. V161(610959a, 890편)에 있던 근골격계운동 114편은 V162 가,
+ * 오십견 · 요통 같은 질환용 영상 44편은 V163 이 끈다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
 class ExerciseClipPersistenceAdapterTest {
-    /** AI 9f6e746 판 공단 영상 수. V161(610959a) 890편에서 근골격계운동 114편이 빠졌다. */
-    private static final int KSPO_ACTIVE = 776;
+    /** AI cae60cb 판 공단 영상 수. V161(610959a) 890편에서 근골격계운동 114편 · 질환용 영상 44편이 빠졌다. */
+    private static final int KSPO_ACTIVE = 732;
+
+    /** 근골격계운동 · 질환자용 표준운동(V162 가 끔). 00059 부터 00172 까지 빠진 번호 없이. */
+    private static final List<String> MSK_REHAB = kspoClips(IntStream.rangeClosed(59, 172));
+
+    /** 설명에 오십견 · 요통 · 경부통 · 발목염좌 · 부동증후군이 든 질환용 영상(V163 이 끔). 모두 성인이다. */
+    private static final List<String> DISEASE =
+            kspoClips(IntStream.concat(IntStream.rangeClosed(329, 349), IntStream.rangeClosed(603, 625)));
 
     /** 제목 끝 「-1」 「－2」 — 같은 운동의 몇 번째 영상인지. AI kspo.clean_title 가 떼는 모양이다. */
     private static final Pattern TAKE_SUFFIX = Pattern.compile("\\s*[-－]\\s*\\d+\\s*$");
@@ -167,8 +176,8 @@ class ExerciseClipPersistenceAdapterTest {
     }
 
     @Test
-    @DisplayName("공단 영상 776편을 한 편에 클립 하나로 싣고, 운동 아님 · 물속 영상은 isExercise=false 로 둔다")
-    void 공단_영상_776편을_한_편에_클립_하나로_싣는다() {
+    @DisplayName("공단 영상 732편을 한 편에 클립 하나로 싣고, 운동 아님 · 물속 영상은 isExercise=false 로 둔다")
+    void 공단_영상_732편을_한_편에_클립_하나로_싣는다() {
         List<ExerciseClip> kspo = clips.findAllActive().stream()
                 .filter(it -> it.media().mediaUrl() != null)
                 .toList();
@@ -184,12 +193,12 @@ class ExerciseClipPersistenceAdapterTest {
         });
         assertThat(kspo.stream().collect(groupingBy(ExerciseClip::ageGroup, counting())))
                 .isEqualTo(Map.of(
-                        AgeGroup.YOUTH, 108L, AgeGroup.ADOLESCENT, 186L, AgeGroup.ADULT, 362L, AgeGroup.SENIOR, 120L));
+                        AgeGroup.YOUTH, 108L, AgeGroup.ADOLESCENT, 186L, AgeGroup.ADULT, 318L, AgeGroup.SENIOR, 120L));
         List<ExerciseClip> candidates =
                 kspo.stream().filter(ExerciseClip::isExercise).toList();
         assertThat(candidates.stream().collect(groupingBy(ExerciseClip::ageGroup, counting())))
                 .isEqualTo(Map.of(
-                        AgeGroup.YOUTH, 107L, AgeGroup.ADOLESCENT, 141L, AgeGroup.ADULT, 340L, AgeGroup.SENIOR, 101L));
+                        AgeGroup.YOUTH, 107L, AgeGroup.ADOLESCENT, 141L, AgeGroup.ADULT, 302L, AgeGroup.SENIOR, 101L));
 
         // 한 편 = 클립 하나: 끝은 영상 길이, 영상 표에는 공단 채널 · 길이 · mp4 주소가 있다
         assertThat(clips.findById("0AUDLJ08S_00351-0"))
@@ -243,8 +252,8 @@ class ExerciseClipPersistenceAdapterTest {
     }
 
     @Test
-    @DisplayName("V162 는 근골격계운동(질환자용 표준운동) 공단 영상 114편의 클립을 끄고, id 로는 여전히 찾힌다")
-    void V162_는_근골격계운동_공단_영상_114편의_클립을_끈다() {
+    @DisplayName("V162 · V163 은 근골격계운동 114편과 질환용 영상 44편의 클립을 끄고, id 로는 여전히 찾힌다")
+    void V162_V163_은_질환용_공단_영상_158편의_클립을_끈다() {
         List<ExerciseClip> retired = jdbc
                 .queryForList(
                         "select c.clip_id from video_exercises c join exercise_videos v on v.video_id = c.video_id"
@@ -254,13 +263,34 @@ class ExerciseClipPersistenceAdapterTest {
                 .map(clips::findById)
                 .toList();
 
-        // 「어깨관련 질환자를 위한 단계별 표준운동」 1단계(00059)부터 근골격계운동 끝(00172)까지, 사이에 빠진 번호 없이
-        List<String> rehab = IntStream.rangeClosed(59, 172)
-                .mapToObj(n -> "0AUDLJ08S_%05d-0".formatted(n))
-                .toList();
+        List<String> rehab = new ArrayList<>(MSK_REHAB);
+        rehab.addAll(DISEASE);
         assertThat(retired).allSatisfy(it -> assertThat(it.active()).isFalse());
         assertThat(retired).extracting(ExerciseClip::clipId).containsExactlyInAnyOrderElementsOf(rehab);
         assertThat(clips.findAllActive()).extracting(ExerciseClip::clipId).doesNotContainAnyElementsOf(rehab);
+        // 「막대 잡고 팔 안쪽?바깥 돌림」(00338) 처럼 오십견용 영상은 성인 운동 찾기 후보에서 빠진다
+        assertThat(clips.findAllByIds(DISEASE)).hasSize(44).allSatisfy(it -> assertThat(it.ageGroup())
+                .isEqualTo(AgeGroup.ADULT));
+    }
+
+    @Test
+    @DisplayName("V163 은 AI 가 새로 붙인 체력요인을 싣는다 — 빠르게 걷기 · 팔굽혀펴기가 유연성이 아니고, 걷기 · 턱걸이 요인이 비지 않는다")
+    void V163_은_AI_가_새로_붙인_체력요인을_싣는다() {
+        // 1980da1: 운동처방가이드 두 편은 API 가 「유연성」 으로 적었지만 설명의 갈래를 따른다
+        assertThat(clips.findAllByIds(List.of("0AUDLJ08S_00601-0", "0AUDLJ08S_00602-0")))
+                .extracting(ExerciseClip::factor)
+                .containsExactly(FitnessFactor.CARDIO, FitnessFactor.STRENGTH);
+        ExerciseVideo pushUp = videos.findById("0AUDLJ08S_00602");
+        assertThat(pushUp).isNotNull();
+        assertThat(pushUp.getLabel().factors()).containsExactly("근력");
+        // cae60cb: API 가 요인을 비워 보낸 운동처방동영상 129편에 요인이 붙었다
+        assertThat(clips.findAllByIds(List.of("0AUDLJ08S_00181-0", "0AUDLJ08S_00216-0")))
+                .extracting(ExerciseClip::factor)
+                .containsExactly(FitnessFactor.CARDIO, FitnessFactor.STRENGTH);
+        // 운동 후보인 공단 클립 가운데 요인이 빈 것이 없다
+        assertThat(clips.findAllActive())
+                .filteredOn(it -> it.media().mediaUrl() != null && it.isExercise())
+                .allSatisfy(it -> assertThat(it.factor()).isNotNull());
     }
 
     @Test
@@ -271,7 +301,9 @@ class ExerciseClipPersistenceAdapterTest {
                 .toList();
 
         // GET /videos(ALL) · 대체 편성의 영상 한 편 편성이 이 목록을 쓴다
-        assertThat(listed).doesNotContain("0AUDLJ08S_00059", "0AUDLJ08S_00172").contains("0AUDLJ08S_00173");
+        assertThat(listed)
+                .doesNotContain("0AUDLJ08S_00059", "0AUDLJ08S_00172", "0AUDLJ08S_00338", "0AUDLJ08S_00603")
+                .contains("0AUDLJ08S_00173");
         assertThat(listed.stream().filter(it -> it.startsWith("0AUDLJ08S_"))).hasSize(KSPO_ACTIVE);
         assertThat(videos.findAllAfter("0AUDLJ08S_00058"))
                 .extracting(ExerciseVideo::getVideoId)
@@ -307,6 +339,10 @@ class ExerciseClipPersistenceAdapterTest {
         ExerciseVideo neck = videos.findById("0AUDLJ08S_00724");
         assertThat(neck).isNotNull();
         assertThat(neck.getTitle()).isEqualTo("목 스트레칭");
+    }
+
+    private static List<String> kspoClips(IntStream numbers) {
+        return numbers.mapToObj(n -> "0AUDLJ08S_%05d-0".formatted(n)).toList();
     }
 
     /** 유튜브 클립(V132)만. 공단 영상 클립(V161)은 mp4 주소가 있다. */

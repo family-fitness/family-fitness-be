@@ -203,11 +203,19 @@ class ExerciseWebTest {
     }
 
     @Test
+    @DisplayName("오십견 · 요통 같은 질환용 공단 영상은 어른 운동 찾기에 나오지 않는다 — 「막대 잡고 팔 안쪽?바깥 돌림」 이 나왔다")
+    void 질환용_공단_영상은_운동_찾기에_나오지_않는다() throws Exception {
+        list(parentUser, "q", "막대 잡고")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
+    }
+
+    @Test
     @DisplayName("profileId 가 없으면 호출한 계정의 자기 프로필(성인) 연령대로 거르고, 프로필이 없는 계정은 빈 목록이다")
     void profileId_가_없으면_호출한_계정의_자기_프로필_연령대로_거르고_프로필이_없는_계정은_빈_목록이다() throws Exception {
         list(parentUser)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(243))
+                .andExpect(jsonPath("$.total").value(217))
                 .andExpect(jsonPath("$.clips[0].clipId").value("IhShIA-WJNE-20"))
                 .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00173-0"));
         list(outsiderUser)
