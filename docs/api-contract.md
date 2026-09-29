@@ -138,7 +138,7 @@
   - 4차(PR #24~#26): 운동 한 칸 끝 · 끝낸 칸 기준 진행도 · 활동 초 단위 · 경험치 연결. 프로필 고치기 · 동의 이력 · 만 14세 경계 · 가족 쓰기 낙관적 잠금. league 모듈(월 단위 달성률 · 다섯 티어 · 월초 정산).
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
-  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP 마다 한 시간 30번 · 모두 합쳐 300번, prod 는 X-Forwarded-For 를 읽음).
+  - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 공단 영상을 AI 새 판 776편으로 고침 — 질환자용 근골격계운동 114편 끔 · 제목 끝 「-1」 「-2」 뗌(`V162`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP 마다 한 시간 30번 · 모두 합쳐 300번, prod 는 X-Forwarded-For 를 읽음).
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -705,7 +705,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 전환기 별칭 `GET /clips` 도 같다(deprecated · 지금 FE 가 부르는 이름).
 운동 구간(영상 속 한 동작) 목록. 운동 찾기 · 직접 짜기 · 홈 영상 줄이 쓴다.
 응답 200 `{clips:[{clipId, videoId, startSec, endSec, title, factor|null, phase, homeOk, quiet, props, favorited, mediaUrl|null, thumbnailUrl|null}], total}`.
-- 데이터는 `V132`(유튜브 구간) · `V161`(공단 영상, 한 편 = 구간 하나) 로 적재한 구간 가운데 켜져 있고(active) 운동인 것이다.
+- 데이터는 `V132`(유튜브 구간) · `V161` · `V162`(공단 영상, 한 편 = 구간 하나) 로 적재한 구간 가운데 켜져 있고(active) 운동인 것이다.
 - `mediaUrl` · `thumbnailUrl`: 공단 영상 구간이면 mp4 주소 · 첫 장면 이미지이고 `startSec` 0 · `endSec` 영상 길이다. 유튜브 구간은 둘 다 null(지금처럼 videoId 로 유튜브 구간을 튼다).
 - 연령대: `profileId` 의 연령대 구간만 준다. 없으면 호출 계정의 자기 프로필 연령대로 거르고, 계정에 프로필이 없으면 빈 목록이다. 어르신은 어르신 구간과 성인 구간을 함께 받는다(노인 전용 영상을 따로 만들지 않고 성인 영상을 똑같이 쓰기로 한 팀 결정. 유튜브 어르신 구간은 0개, 공단 어르신 영상은 101개). 성인은 어르신 구간을 받지 않는다.
 - 첫 쪽에 두 출처가 함께 서도록 유튜브 구간과 공단 영상을 하나씩 번갈아 세운다(유튜브 먼저, 출처 안에서는 영상 id · 시작 초 차례, 한쪽이 떨어지면 남은 쪽을 잇는다). 다음 쪽은 없다 — `factor` · `phase` · `q` 로 좁혀 찾는다. 같은 제목이면 영상 id 차례로 앞선 구간(대개 공단)이 대표로 남는다.
@@ -720,16 +720,18 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### 운동 영상 · 구간 카탈로그
 - `exercise_videos` 에 AI 영상 48편, `video_exercises` 에 구간 695개(운동 651 · 운동 아님 44)를 `V132` 가 넣는다. 모든 프로필(prod 포함)에 들어간다. local · compose · test 시드의 가짜 영상 4편(`sample00002~5`)은 시험용이다.
-- 공단 「국민체력100 동영상 정보」 오픈API(공공데이터포털 15108846) 영상 890편을 `V161` 이 더한다(AI 커밋 `610959a` 의 `data/release/kspo_videos.csv` · `kspo_video_labels.csv`, `backend/scripts/kspo_videos_to_sql.py`). 한 편에 운동 하나라 자르지 않고 한 편 = 구간 하나(`clip_id` = `{videoId}-0`, seq 1, 0초 ~ 영상 길이)다.
+- 공단 「국민체력100 동영상 정보」 오픈API(공공데이터포털 15108846) 영상을 `V161`(AI 커밋 `610959a`, 890편) 이 더하고 `V162`(AI 커밋 `9f6e746`, 776편) 가 새 판으로 고친다(`data/release/kspo_videos.csv` · `kspo_video_labels.csv`, `backend/scripts/kspo_videos_to_sql.py`). 한 편에 운동 하나라 자르지 않고 한 편 = 구간 하나(`clip_id` = `{videoId}-0`, seq 1, 0초 ~ 영상 길이)다.
   - 영상: `channel_name` 「국민체력100 동영상 정보」 · `channel_type` PUBLIC · `media_url`(mp4) · `thumbnail_url`(첫 장면 이미지) · 길이 · 연령 범위 · 요인(라벨) · 준비물(API 도구 칸) · 소음(라벨 quiet → QUIET) · 공간(라벨 home_ok → SMALL_ROOM). 유튜브 영상은 `media_url` · `thumbnail_url` 이 null 이다.
-  - 연령대별 영상 수: 유소년 108 · 청소년 186 · 성인 476(공통 포함) · 어르신 120. 그중 운동 후보(`is_exercise`)는 유소년 107 · 청소년 141 · 성인 434 · 어르신 101 = 783개. 운동이 아니라고 라벨된 86개와 물속 영상(장소가 수영장뿐이거나 제목에 수영 · 아쿠아 등) 21개는 AI `catalog.py` 처럼 후보에서 빼려고 `is_exercise=false` 로 싣는다. 유아기 영상은 mp4 가 열리지 않아(302 → /error.html) AI 가 싣지 않았다.
+  - 연령대별 영상 수(`V162` 뒤): 유소년 108 · 청소년 186 · 성인 362(공통 포함) · 어르신 120 = 776편. 그중 운동 후보(`is_exercise`)는 유소년 107 · 청소년 141 · 성인 340 · 어르신 101 = 689개. 운동이 아니라고 라벨된 66개와 물속 영상(장소가 수영장뿐이거나 제목에 수영 · 아쿠아 등) 21개는 AI `catalog.py` 처럼 후보에서 빼려고 `is_exercise=false` 로 싣는다. 유아기 영상은 mp4 가 열리지 않아(302 → /error.html) AI 가 싣지 않았다.
+  - `V161` 에 있던 근골격계운동 · 질환자용 표준운동 114편(`0AUDLJ08S_00059` ~ `00172`)은 `V162` 가 구간을 끈다(`active=false`). 영상 행은 지난 미션 · 시청 기록 · 즐겨찾기가 가리킬 수 있어 남기되, 구간이 꺼진 공단 영상은 `GET /videos` 목록 · 대체 편성 후보에 나오지 않는다.
+  - 구간 이름과 영상 제목에서 제목 끝 「-1」 「-2」(같은 운동의 몇 번째 영상인지)를 뗀다(`V162`, AI `kspo.clean_title` 와 같다). 「목 스트레칭」 여러 편은 운동 찾기에서 한 이름으로 하나만 선다.
   - 다음 판은 `kspo_videos_to_sql.py --ref <AI 커밋>` 으로 새 V 파일을 만든다. 판에서 빠진 공단 구간만 끄고 유튜브 구간은 건드리지 않는다. 거꾸로 `ai_clips_to_sql.py` 의 끄기 문장도 이제 유튜브 구간(`media_url` 이 null 인 영상)만 끈다.
 - 구간 id(`clip_id`) = `{videoId}-{startSec}`. AI 가 영상을 다시 끊어도 운동 구간의 (videoId, startSec) 는 유지됐다(9/17 → 9/22 판에서 491/491).
 - 단계(`phase`)는 영상 화면 표시 → 라벨 → 본운동 순으로 정한다. AI 새 판은 `backend/scripts/ai_clips_to_sql.py` 로 새 V 파일을 만들어 적재한다. 판에서 빠진 구간은 지우지 않고 `active=false`.
 - 설계안의 `GET /videos/{videoId}/exercises` 는 없다.
 
 ### GET /api/v1/videos?list=ALL|FAVORITES|RECENT&profileId=&ageGroup=&factor=&cursor=&size=20 — 로그인 · FE 가 부르지 않음 · 걷을 후보
-응답 200 `{videos:[{videoId, title, url("https://www.youtube.com/watch?v=" · 공단 영상은 mp4 주소), thumbnailUrl("https://i.ytimg.com/vi/{id}/hqdefault.jpg" · 공단 영상은 첫 장면 이미지), durationSec|null, label:{ageFrom, ageTo, factors[], intensity, space, noise, model}, badges[], favorited, maxProgress|null, mediaUrl|null}], nextCursor|null}`. 공단 영상(`V161`)도 목록에 들어온다 — `mediaUrl` 이 있으면 mp4 다.
+응답 200 `{videos:[{videoId, title, url("https://www.youtube.com/watch?v=" · 공단 영상은 mp4 주소), thumbnailUrl("https://i.ytimg.com/vi/{id}/hqdefault.jpg" · 공단 영상은 첫 장면 이미지), durationSec|null, label:{ageFrom, ageTo, factors[], intensity, space, noise, model}, badges[], favorited, maxProgress|null, mediaUrl|null}], nextCursor|null}`. 공단 영상(`V161` · `V162`)도 목록에 들어온다 — `mediaUrl` 이 있으면 mp4 다. 구간이 꺼진 공단 영상(`V162` 가 끈 질환자용 114편)은 목록에 나오지 않는다(`videoId` 로 부르는 즐겨찾기 · 진행률은 그대로 된다).
 `FAVORITES`·`RECENT` 는 profileId 필수(400). `profileId` 를 주면 같은 가족이어야 한다. size 1~100. `ageGroup` 안전 필터: 라벨 연령 범위와 교차하는 영상만(라벨 없는 영상은 아이 연령대에 나가지 않음). 커서 = 마지막 videoId(정렬 videoId 오름차순). `RECENT` 는 최근 시청순이고 커서를 무시한다.
 
 ### POST /api/v1/videos/{videoId}/favorite — 같은 가족 · FE 가 부르지 않음 · 걷을 후보
@@ -887,7 +889,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 | AI 409 · 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
 | 요청 뒤 대상의 동의를 거둠 | FAILED(`CONSENT_REQUIRED`) |
 
-- 대체 편성은 클립 표(`V132` 유튜브 구간 + `V161` 공단 영상 구간)에서 대상 연령대 · 요인에 맞는 구간을 고른다. 어르신은 성인 클립도 후보로 넣는다. 순위는 AI `_age_rank` 와 같다 — 요인 · 처방 어휘 점수가 먼저이고, 같은 점수 안에서만 제 연령대(어르신이면 공단 어르신 영상)를 앞에 세운다. 공단 영상 구간을 고르면 AI 와 같게 칸 video 에 `source:"kspo"` · `media_url` 을, 인용에 `chunkId` `kspo:<videoId>` · 라벨 「국민체력100 동영상 정보 · 제목」 · url mp4 주소를 싣는다. 준비 · 본 · 정리 가짓수는 AI `catalog.py` 와 같다: 10분까지 1·3·1, 20분까지 2·4·1, 35분까지 2·5·2, 그 위 3·6·3. 맞는 클립이 없으면(클립 표가 비었거나 조건에 걸려 본운동이 없으면) 본운동 한 칸이다. 스텁도 실제 클립 경계로 칸을 낸다 — 7~12세는 `Eg3GpTv7z8s`, 만 19세 위(성인 · 어르신)는 `IhShIA-WJNE`, 그 밖의 나이는 영상 없이.
+- 대체 편성은 클립 표(`V132` 유튜브 구간 + `V161` · `V162` 공단 영상 구간)에서 대상 연령대 · 요인에 맞는 구간을 고른다. 어르신은 성인 클립도 후보로 넣는다. 순위는 AI `_age_rank` 와 같다 — 요인 · 처방 어휘 점수가 먼저이고, 같은 점수 안에서만 제 연령대(어르신이면 공단 어르신 영상)를 앞에 세운다. 공단 영상 구간을 고르면 AI 와 같게 칸 video 에 `source:"kspo"` · `media_url` 을, 인용에 `chunkId` `kspo:<videoId>` · 라벨 「국민체력100 동영상 정보 · 제목」 · url mp4 주소를 싣는다. 준비 · 본 · 정리 가짓수는 AI `catalog.py` 와 같다: 10분까지 1·3·1, 20분까지 2·4·1, 35분까지 2·5·2, 그 위 3·6·3. 맞는 클립이 없으면(클립 표가 비었거나 조건에 걸려 본운동이 없으면) 본운동 한 칸이다. 스텁도 실제 클립 경계로 칸을 낸다 — 7~12세는 `Eg3GpTv7z8s`, 만 19세 위(성인 · 어르신)는 `IhShIA-WJNE`, 그 밖의 나이는 영상 없이.
 - AI 는 같은 프로필이 든 실행이 돌고 있으면 409 를 낸다. 서버 잠금은 (대상, 날짜) 단위라, 같은 아이의 다른 날 편성이 동시에 돌면 뒤의 것은 AI 409 로 FAILED(`ERROR`)가 된다.
 - AI 가 도중에 죽으면 폴링 40회를 다 채운 뒤 대체 편성으로 넘어간다. 연결이 곧바로 거절되면 약 60초(간격 1.5초 × 39), 응답이 없어 시간 초과가 나면 최대 약 220초(폴링마다 연결 1초 + 읽기 3초가 더해짐)다.
 
