@@ -797,7 +797,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 ```
 - `profile_refs` 는 편성 대상 한 명뿐이다. 가족 전원을 보내지 않으므로 AI 의 「1~4명」 제한과 형제 사이 409 가 생기지 않는다. 동의가 없는 프로필은 싣지 않는다.
 - 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. `measurements` 가 비면 칸을 null 로 보낸다.
-- `focus_factor` · `with_companion` 은 AI 계약에 아직 없다. AI 가 모르는 칸을 무시하므로 http 모드에서는 고른 힘이 반영되지 않는다(대체 편성 · 스텁은 반영).
+- `focus_factor` 는 AI 가 대상 요인으로 쓴다(AI-14 — AI 의 `feature/AI-14-focus-factor` 가 머지된 뒤부터. 그 전 AI 는 이 칸을 무시해 http 모드에서 고른 힘이 반영되지 않는다). 모르는 이름이면 AI 가 가장 낮은 요인으로 짠다. `with_companion` 은 AI 계약에 아직 없어 AI 가 무시한다. 대체 편성 · 스텁은 둘 다 반영한다.
 - 응답 202 `{run_id, status:"running", poll_after_ms}`.
 
 ### 편성 결과 `GET /v1/coach/runs/{run_id}` — 서버가 읽는 것

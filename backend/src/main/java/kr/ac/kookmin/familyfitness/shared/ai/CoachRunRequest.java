@@ -11,7 +11,8 @@ public record CoachRunRequest(List<Participant> profiles, String startDate, int 
     /**
      * daysPerWeek · minutesPerSession — 일간 미션. weeklyMinutes — 주간 미션(null 이면 만들지 않는다).
      * quiet · smallSpace · noProps — 클립 조건(ai:video/catalog.py Conditions).
-     * focusFactor(한글 요인 라벨) · withCompanion — AI 계약에 아직 없는 칸이다. AI 는 모르는 칸을 무시한다(pydantic 기본값).
+     * focusFactor(한글 요인 라벨) — 부모가 고른 키울 힘. AI 가 대상 요인으로 쓴다(AI-14, 모르는 이름이면 가장 낮은 요인).
+     * withCompanion — AI 계약에 아직 없는 칸이다. AI 는 모르는 칸을 무시한다(pydantic 기본값).
      */
     public record Constraints(
             int daysPerWeek,
