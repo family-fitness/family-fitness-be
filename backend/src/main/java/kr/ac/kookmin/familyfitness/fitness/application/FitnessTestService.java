@@ -13,7 +13,7 @@ import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FutureTestDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.GradeTable;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
-import kr.ac.kookmin.familyfitness.fitness.domain.PercentileCalculator;
+import kr.ac.kookmin.familyfitness.fitness.domain.PeerTable;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
@@ -47,7 +47,7 @@ public class FitnessTestService {
     public static final int HISTORY_MAX_SIZE = 100;
 
     private final FitnessTestRepository tests;
-    private final NormCatalog norms;
+    private final PeerCatalog peers;
     private final GradeCatalog grades;
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
@@ -57,7 +57,7 @@ public class FitnessTestService {
 
     public FitnessTestService(
             FitnessTestRepository tests,
-            NormCatalog norms,
+            PeerCatalog peers,
             GradeCatalog grades,
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
@@ -65,7 +65,7 @@ public class FitnessTestService {
             Clock clock,
             ZoneId zone) {
         this.tests = tests;
-        this.norms = norms;
+        this.peers = peers;
         this.grades = grades;
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
@@ -89,7 +89,7 @@ public class FitnessTestService {
         }
 
         FitnessTest earliestBefore = tests.findEarliestByProfileId(profileId);
-        PercentileCalculator calculator = norms.calculator();
+        PeerTable peerTable = peers.table();
         GradeTable gradeTable = grades.table();
         FitnessTest test = FitnessTest.register(
                 UUID.randomUUID(),
@@ -100,8 +100,7 @@ public class FitnessTestService {
                 command.heightCm(),
                 command.weightKg(),
                 command.measurements(),
-                (item, value) ->
-                        calculator.percentile(item, details.sex(), ageAtTest, value.doubleValue(), ageMonthsAtTest),
+                (item, value) -> peerTable.percentile(item, details.sex(), ageAtTest, ageMonthsAtTest, value),
                 (item, value) -> gradeTable.grade(item, details.sex(), ageAtTest, ageMonthsAtTest, value),
                 clock.instant());
         FitnessTest saved = tests.save(test);
@@ -166,7 +165,7 @@ public class FitnessTestService {
         return LocalDate.now(clock.withZone(zone));
     }
 
-    /** testedOn 기준 만 나이. 미래 날짜는 400, 만 4세 미만은 규준이 없어 422 NOT_MEASURABLE. */
+    /** testedOn 기준 만 나이. 미래 날짜는 400, 만 4세 미만은 또래 분포 · 기준표가 없어 422 NOT_MEASURABLE. */
     private int measurableAgeOn(ProfileDetails details, LocalDate testedOn) {
         if (testedOn.isAfter(today())) throw new FutureTestDateException(testedOn);
         int age = Ages.fullYears(details.birthDate(), testedOn);

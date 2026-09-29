@@ -81,23 +81,6 @@ Table cheers {
 (reply_to_cheer_id is null or kind = 'THANKS')'''
 }
 
-Table fitness_norms {
-  id bigint [pk, increment]
-  item_code varchar(3) [not null]
-  sex varchar(1) [not null]
-  age_from smallint [not null]
-  age_to smallint [not null]
-  percentile smallint [not null]
-  norm_value numeric(8,3) [not null]
-  source_year smallint [not null]
-  age_unit varchar(4) [not null]
-  indexes {
-    (item_code, sex, age_unit, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
-  }
-  Note: '''(sex in ('M', 'F'))
-(age_unit in ('세', '개월'))'''
-}
-
 Table fitness_tests {
   id uuid [pk, not null]
   profile_id uuid [not null]
@@ -123,8 +106,8 @@ Table fitness_test_items {
   indexes {
     (fitness_test_id, item_code) [pk]
   }
-  Note: '''(percentile is null or (percentile between 1 and 99))
-(band is null or band in ('strength', 'steady', 'growth'))'''
+  Note: '''(band is null or band in ('strength', 'steady', 'growth'))
+(percentile is null or (percentile between 0 and 100))'''
 }
 
 Table activity_daily {
@@ -601,6 +584,23 @@ Table fitness_grade_thresholds {
 (grade in ('1등급', '2등급', '3등급'))
 (op in ('>=', '<=', '<', 'between'))
 ((op = 'between' and cutoff_upper is not null) or (op <> 'between' and cutoff_upper is null))'''
+}
+
+Table fitness_value_quantiles {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age_unit varchar(4) [not null]
+  age smallint [not null]
+  item_code varchar(3) [not null]
+  n int [not null]
+  quantiles varchar(1000) [not null]
+  indexes {
+    (age_group, sex, age, item_code) [unique, name: 'uq_fitness_value_quantile']
+  }
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))
+(n >= 0)'''
 }
 
 Ref: profiles.family_id > families.id

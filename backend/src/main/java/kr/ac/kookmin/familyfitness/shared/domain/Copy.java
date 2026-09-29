@@ -7,8 +7,11 @@ public final class Copy {
 
     private Copy() {}
 
-    /** 백분위 70 → 「상위 30%」. 문장으로 바꾸는 것도 서버 책임이다. */
+    /**
+     * 백분위 70 → 「상위 30%」. 문장으로 바꾸는 것도 서버 책임이다. 백분위는 AI 처럼 100 도 나오는데 「상위 0%」 는 말이 안 돼
+     * 1% 아래로 내리지 않는다.
+     */
     public static String topPercentText(int percentile) {
-        return "상위 " + (100 - percentile) + "%";
+        return "상위 " + Math.max(1, 100 - percentile) + "%";
     }
 }

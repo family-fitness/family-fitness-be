@@ -2,8 +2,8 @@ package kr.ac.kookmin.familyfitness.fitness.application;
 
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.childAccountOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.detailsOf;
-import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.norms;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.parentOf;
+import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.peers;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.summaryOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,7 +22,6 @@ import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered.Round;
-import kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.NormPair;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
@@ -35,7 +34,6 @@ import kr.ac.kookmin.familyfitness.fitness.domain.ItemNotForAgeGroupException;
 import kr.ac.kookmin.familyfitness.fitness.domain.Measurement;
 import kr.ac.kookmin.familyfitness.fitness.domain.NoItemsException;
 import kr.ac.kookmin.familyfitness.fitness.domain.NormAgeUnit;
-import kr.ac.kookmin.familyfitness.fitness.domain.NormPoint;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
 import kr.ac.kookmin.familyfitness.fitness.domain.ThresholdOp;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
@@ -63,11 +61,11 @@ class FitnessTestServiceTest {
     private final InMemoryFitnessTestRepository tests = new InMemoryFitnessTestRepository();
     private final FamilyAccess familyAccess = mock(FamilyAccess.class);
     private final ProfileQuery profileQuery = mock(ProfileQuery.class);
-    private final NormCatalog norms = normCatalog();
+    private final PeerCatalog peers = peerCatalog();
     private final GradeCatalog grades = gradeCatalog();
     private final List<Object> published = new ArrayList<>();
     private final FitnessTestService service =
-            new FitnessTestService(tests, norms, grades, familyAccess, profileQuery, published::add, clock, zone);
+            new FitnessTestService(tests, peers, grades, familyAccess, profileQuery, published::add, clock, zone);
 
     /** 여아 기준 몇 줄. 유소년 028 은 7~12세 한 구간, 유아기 020 은 개월 구간 둘(48~53 · 54~59)이다. */
     private static GradeCatalog gradeCatalog() {
@@ -89,19 +87,10 @@ class FitnessTestServiceTest {
                 ageGroup, Sex.F, unit, from, to, grade, itemCode, ThresholdOp.AT_LEAST, new BigDecimal(cutoff), null);
     }
 
-    private static NormCatalog normCatalog() {
-        List<NormPoint> points = new ArrayList<>(norms(
-                "028",
-                Sex.F,
-                7,
-                12,
-                new NormPair(5, 22.0),
-                new NormPair(25, 30.0),
-                new NormPair(50, 36.0),
-                new NormPair(75, 42.0),
-                new NormPair(95, 52.0)));
-        points.addAll(norms("012", Sex.F, 7, 12, new NormPair(5, -2.0), new NormPair(50, 9.0), new NormPair(95, 20.0)));
-        NormCatalog catalog = new NormCatalog(new StaticNormRepository(points));
+    /** 여아 만 9세(유소년) 또래 분포 두 칸. 028 은 백분위 i 의 값이 i - 33, 012 는 i - 41 이다. */
+    private static PeerCatalog peerCatalog() {
+        PeerCatalog catalog = new PeerCatalog(() -> List.of(
+                peers(AgeGroup.YOUTH, Sex.F, 9, "028", -33, 1), peers(AgeGroup.YOUTH, Sex.F, 9, "012", -41, 1)));
         catalog.refresh();
         return catalog;
     }
@@ -163,7 +152,7 @@ class FitnessTestServiceTest {
     }
 
     @Test
-    @DisplayName("등록하면 백분위가 규준으로, 등급이 공식 기준표로 계산돼 굳고 구간이 붙는다")
+    @DisplayName("등록하면 백분위가 또래 분포로, 등급이 공식 기준표로 계산돼 굳고 구간이 붙는다")
     void 등록하면_백분위가_규준으로_등급이_기준표로_계산돼_굳고_구간이_붙는다() {
         childProfile();
         FitnessTest test =
@@ -171,8 +160,9 @@ class FitnessTestServiceTest {
 
         assertThat(test.getAgeAtTest()).isEqualTo(9);
         assertThat(test.getAgeGroup()).isEqualTo(AgeGroup.YOUTH);
+        // 42 는 75번째 칸 하나 — 아래 · 위 자리 75 · 76 의 가운데 75.5 를 짝수 쪽으로 반올림해 76(AI percentile_of 와 같다)
         FitnessTestItem grip = itemOf(test, "028");
-        assertThat(grip.percentile()).isEqualTo(75);
+        assertThat(grip.percentile()).isEqualTo(76);
         assertThat(grip.score().grade()).isEqualTo(Grade.SECOND);
         assertThat(grip.score().band()).isEqualTo(Band.STRENGTH);
         assertThat(itemOf(test, "012").percentile()).isEqualTo(50);
@@ -182,8 +172,8 @@ class FitnessTestServiceTest {
         assertThat(test.getStrongest().itemCode()).isEqualTo("028");
         assertThat(tests.saved).containsKey(test.getId());
 
-        // 규준표가 바뀌어도 저장된 값은 그대로다
-        assertThat(itemOf(tests.findById(test.getId()), "028").percentile()).isEqualTo(75);
+        // 저장된 값을 그대로 읽는다
+        assertThat(itemOf(tests.findById(test.getId()), "028").percentile()).isEqualTo(76);
     }
 
     @Test
@@ -226,8 +216,8 @@ class FitnessTestServiceTest {
     }
 
     @Test
-    @DisplayName("규준 없는 항목은 백분위 null 로 저장된다")
-    void 규준_없는_항목은_백분위_null_로_저장된다() {
+    @DisplayName("또래 분포가 없는 항목은 백분위 null 로 저장된다")
+    void 또래_분포가_없는_항목은_백분위_null_로_저장된다() {
         childProfile();
         FitnessTest test = service.register(actorId, profileId, command(new ItemPair("009", 20)));
         assertThat(test.getItems())

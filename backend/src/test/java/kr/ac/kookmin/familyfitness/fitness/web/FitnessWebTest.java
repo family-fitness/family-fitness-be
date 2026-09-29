@@ -50,7 +50,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * H2 + Flyway(V1~V3, 국민체력100 규준 2024-07~2026-07) 위에서 fitness 웹 어댑터를 끝까지 돈다.
+ * H2 + Flyway(국민체력100 또래 분포 V156 · 등급 기준표 V154) 위에서 fitness 웹 어댑터를 끝까지 돈다. 백분위 기대값은 AI
+ * stats/tables.py percentile_of 가 같은 값에 낸 것과 같다.
  * identity 는 목: 같은 가족 판단과 프로필 상세를 흉내 낸다.
  */
 @SpringBootTest
@@ -91,7 +92,7 @@ class FitnessWebTest {
     private final LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
     private final LocalDate testedOn = today.minusDays(1);
 
-    /** 항상 만 11세(유소년, 실측 규준이 있는 나이)가 되도록 생년월일을 오늘 기준으로 잡는다. */
+    /** 항상 만 11세(유소년, 또래 분포가 있는 나이)가 되도록 생년월일을 오늘 기준으로 잡는다. */
     private final LocalDate birthDate = today.minusYears(11).minusMonths(4);
 
     @BeforeEach
@@ -200,8 +201,8 @@ class FitnessWebTest {
     }
 
     @Test
-    @DisplayName("유소년 여아 11세 측정을 등록하면 국민체력100 규준으로 백분위가 붙는다")
-    void 유소년_여아_11세_측정을_등록하면_국민체력100_규준으로_백분위가_붙는다() throws Exception {
+    @DisplayName("유소년 여아 11세 측정을 등록하면 AI 와 같은 또래 분포 · 계산식으로 백분위가 붙는다")
+    void 유소년_여아_11세_측정을_등록하면_AI_와_같은_백분위가_붙는다() throws Exception {
         registerYouthTest()
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.fitnessTestId").isNotEmpty())
@@ -212,11 +213,11 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].grade", contains("2등급")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='012')].topPercentText", contains("상위 52%")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(35)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='020')].percentile", contains(36)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].grade", contains("3등급")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(63)))
-                // 022 는 3등급 줄이 없다 — 2등급(≥ 146)에 못 미치면 백분위 63 이어도 참가
+                .andExpect(jsonPath("$.items[?(@.itemCode=='022')].percentile", contains(62)))
+                // 022 는 3등급 줄이 없다 — 2등급(≥ 146)에 못 미치면 백분위 62 여도 참가
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].grade", contains("참가")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='022')].band", contains("steady")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].percentile", contains(10)))
@@ -225,7 +226,7 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.weakest.factor").value("근력"))
                 .andExpect(jsonPath("$.weakest.percentile").value(10))
                 .andExpect(jsonPath("$.strongest.itemCode").value("022"))
-                .andExpect(jsonPath("$.strongest.percentile").value(63))
+                .andExpect(jsonPath("$.strongest.percentile").value(62))
                 .andExpect(jsonPath("$.disclaimer").value(Copy.FITNESS_DISCLAIMER));
     }
 
@@ -364,8 +365,8 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.radar[0].percentile").value(10))
                 .andExpect(jsonPath("$.radar[1].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.radar[2].percentile").value(48))
-                .andExpect(jsonPath("$.radar[3].percentile").value(35))
-                .andExpect(jsonPath("$.radar[4].percentile").value(63))
+                .andExpect(jsonPath("$.radar[3].percentile").value(36))
+                .andExpect(jsonPath("$.radar[4].percentile").value(62))
                 .andExpect(jsonPath("$.radar[5].percentile").value(nullValue()))
                 .andExpect(jsonPath("$.items", hasSize(4)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='028')].grade", contains("참가")))
@@ -375,25 +376,28 @@ class FitnessWebTest {
     }
 
     @Test
-    @DisplayName("044 벽패스는 V155 규준 백분위와 V154 공식 기준 등급을 받고, 레이더에는 들어가지 않는다")
-    void 벽패스_044_는_규준_백분위와_공식_기준_등급을_받고_레이더에는_들어가지_않는다() throws Exception {
-        // 여아 만 11세: 규준 1~30 백분위가 0회(몰린 값은 가운데 16), 80 백분위 5회 · 99 백분위 12회. 기준은 1등급 ≥ 19 · 2등급 ≥ 13
+    @DisplayName("044 벽패스는 또래 분포 백분위와 V154 공식 기준 등급을 받고, 레이더에는 들어가지 않는다")
+    void 벽패스_044_는_또래_분포_백분위와_공식_기준_등급을_받고_레이더에는_들어가지_않는다() throws Exception {
+        // 여아 만 11세 또래 분포: 0~35 번째 칸이 0회라 0회는 가운데 자리 18, 13회는 99번째 값(12회)과 맨 끝(36회) 사이라 100.
+        // 기준은 1등급 ≥ 19 · 2등급 ≥ 13
         register(testedOn, "135.5", "31.2", new Item("044", "0"), new Item("028", "30"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].itemLabel", contains("눈-손협응력(벽패스)")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].unit", contains("회")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].percentile", contains(16)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].percentile", contains(18)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].band", contains("growth")))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].topPercentText", contains("상위 84%")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].topPercentText", contains("상위 82%")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].grade", contains("참가")))
-                // 028 30% 는 백분위 10 — 벽패스 0회(16)보다 낮아 가장 낮은 항목은 여전히 근력이다
+                // 028 30% 는 백분위 10 — 벽패스 0회(18)보다 낮아 가장 낮은 항목은 여전히 근력이다
                 .andExpect(jsonPath("$.weakest.itemCode").value("028"))
                 .andExpect(jsonPath("$.strongest.itemCode").value("044"))
                 .andExpect(jsonPath("$.strongest.factor").value("협응력"));
 
         register(testedOn.minusDays(1), "135.5", "31.2", new Item("044", "13"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items[0].percentile").value(99))
+                .andExpect(jsonPath("$.items[0].percentile").value(100))
+                // AI 백분위는 100 도 나온다 — 문구는 「상위 0%」 가 아니라 「상위 1%」
+                .andExpect(jsonPath("$.items[0].topPercentText").value("상위 1%"))
                 .andExpect(jsonPath("$.items[0].grade").value("2등급"));
         register(testedOn.minusDays(2), "135.5", "31.2", new Item("044", "5"))
                 .andExpect(status().isCreated())
@@ -415,17 +419,17 @@ class FitnessWebTest {
     @Test
     @DisplayName("043 반복옆뛰기를 재면 레이더 민첩성 꼭지점에 백분위가 들어간다")
     void 반복옆뛰기_043_을_재면_레이더_민첩성_꼭지점에_백분위가_들어간다() throws Exception {
-        // 여아 만 11세 규준에서 35회는 85번째 백분위, 공식 기준표로는 1등급(≥ 32회)
+        // 여아 만 11세 또래 분포에서 35회는 87번째 백분위, 공식 기준표로는 1등급(≥ 32회)
         register(testedOn, "135.5", "31.2", new Item("043", "35"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items[0].percentile").value(85))
+                .andExpect(jsonPath("$.items[0].percentile").value(87))
                 .andExpect(jsonPath("$.items[0].grade").value("1등급"));
 
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-tests/latest")
                         .header(HttpHeaders.AUTHORIZATION, bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.radar[5].factor").value("민첩성"))
-                .andExpect(jsonPath("$.radar[5].percentile").value(85))
+                .andExpect(jsonPath("$.radar[5].percentile").value(87))
                 .andExpect(jsonPath("$.radar[0].percentile").value(nullValue()));
     }
 
@@ -681,6 +685,17 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.members[0].latest.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.members[0].latest.strongest").value(nullValue()))
                 .andExpect(jsonPath("$.members[0].latest.coachDirection").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("예전 백분위 표(fitness_norms)는 걷었고, 또래 분포 표는 AI value_quantiles.csv 의 1,746줄이다")
+    void 예전_백분위_표는_걷었고_또래_분포_표는_AI_와_같은_줄_수다() {
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from information_schema.tables where lower(table_name) = 'fitness_norms'",
+                        Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject("select count(*) from fitness_value_quantiles", Integer.class))
+                .isEqualTo(1746);
     }
 
     @Test

@@ -140,7 +140,7 @@ public class FitnessTest {
                 .orElse(null);
     }
 
-    /** 측정 항목 백분위의 평균(반올림, 1~99). 규준이 붙은 항목이 없으면 null. 가족 체력 지도 카드의 한 줄 요약에 쓴다. */
+    /** 측정 항목 백분위의 평균(반올림, 1~99 로 자름). 백분위가 붙은 항목이 없으면 null. 가족 체력 지도 카드의 한 줄 요약. */
     public @Nullable Integer getOverallPercentile() {
         List<Integer> percentiles =
                 scoredItems().stream().map(FitnessTestItem::percentile).toList();
@@ -165,7 +165,7 @@ public class FitnessTest {
     }
 
     /**
-     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(규준 없으면 null), {@code grader} 가 (항목, 값) → 공식 기준표 등급(기준
+     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(또래 분포가 없으면 null), {@code grader} 가 (항목, 값) → 공식 기준표 등급(기준
      * 줄이 없으면 null)을 돌려주고, 둘 다 저장 시점 값으로 굳는다.
      */
     public static FitnessTest register(

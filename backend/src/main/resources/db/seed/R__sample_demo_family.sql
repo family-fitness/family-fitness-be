@@ -48,7 +48,8 @@ where not exists (select 1 from profiles where id = '00000000-0000-4000-8000-000
 update profiles set claim_code_issued_by = '00000000-0000-4000-8000-000000000011'
 where id = '00000000-0000-4000-8000-000000000013' and claim_code = 'K7M2QT' and claim_code_issued_by is null;
 
--- 데모 첫째의 측정 1회 (2026-09-07, 만 11세 · 유소년 F). 백분위는 V3 규준, 등급은 V154 공식 기준표로 앱이 계산한 값을 그대로 굳힌 것.
+-- 데모 첫째의 측정 1회 (2026-09-07, 만 11세 · 유소년 F). 백분위는 V156 또래 분포(AI percentile_of 와 같은 식), 등급은 V154
+-- 공식 기준표로 앱이 계산한 값을 그대로 굳힌 것.
 -- 홈 체력 지도·코치 실행이 측정 없이도 바로 시연되게 한다.
 insert into fitness_tests (id, profile_id, tested_on, source, age_at_test, height_cm, weight_kg, created_at)
 select '00000000-0000-4000-8000-000000000021', '00000000-0000-4000-8000-000000000012', date '2026-09-07', 'SELF_INPUT', 11, 148.0, 41.0,
@@ -58,7 +59,7 @@ insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentil
 select '00000000-0000-4000-8000-000000000021', '012', 4.0, 24, '3등급', 'growth'
 where not exists (select 1 from fitness_test_items where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '012');
 insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentile, grade, band)
-select '00000000-0000-4000-8000-000000000021', '020', 70, 79, '1등급', 'strength'
+select '00000000-0000-4000-8000-000000000021', '020', 70, 80, '1등급', 'strength'
 where not exists (select 1 from fitness_test_items where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '020');
 insert into fitness_test_items (fitness_test_id, item_code, raw_value, percentile, grade, band)
 select '00000000-0000-4000-8000-000000000021', '028', 41.3, 50, '2등급', 'steady'
@@ -67,3 +68,7 @@ where not exists (select 1 from fitness_test_items where fitness_test_id = '0000
 update fitness_test_items set grade = '3등급' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '012';
 update fitness_test_items set grade = '1등급' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '020';
 update fitness_test_items set grade = '2등급' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '028';
+-- 이미 들어간 데모 회차도 새 백분위 식으로 맞춘다(012 4.0 → 24 · 020 70회 → 80 · 028 41.3% → 50).
+update fitness_test_items set percentile = 24, band = 'growth' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '012';
+update fitness_test_items set percentile = 80, band = 'strength' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '020';
+update fitness_test_items set percentile = 50, band = 'steady' where fitness_test_id = '00000000-0000-4000-8000-000000000021' and item_code = '028';

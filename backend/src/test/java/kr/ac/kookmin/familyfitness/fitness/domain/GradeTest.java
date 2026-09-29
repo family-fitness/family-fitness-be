@@ -33,6 +33,14 @@ class GradeTest {
     }
 
     @Test
+    @DisplayName("AI 백분위는 0 과 100 도 나온다 — 100 은 「상위 0%」 가 아니라 「상위 1%」")
+    void 백분위_100_은_상위_1퍼센트다() {
+        assertThat(ItemScore.of(100, null)).isEqualTo(new ItemScore(100, null, Band.STRENGTH, "상위 1%"));
+        assertThat(ItemScore.of(99, null).topPercentText()).isEqualTo("상위 1%");
+        assertThat(ItemScore.of(0, null)).isEqualTo(new ItemScore(0, null, Band.GROWTH, "상위 100%"));
+    }
+
+    @Test
     @DisplayName("규준이 없으면 백분위 · 구간 · 문구는 null 이고 등급은 기준표대로 남는다")
     void 규준이_없으면_백분위_쪽만_null() {
         assertThat(ItemScore.of(null, Grade.SECOND)).isEqualTo(new ItemScore(null, Grade.SECOND, null, null));
