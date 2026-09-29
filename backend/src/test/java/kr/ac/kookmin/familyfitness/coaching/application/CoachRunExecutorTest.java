@@ -521,6 +521,28 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName(
+            "AI 장애 때 보호자가 고른 역량이 없으면 가장 낮은 요인으로 짠다 — 모든 요인이 백분위 75 를 넘어도 강한 요인을 고르지 않는다(ai:coach/compose.py target_factor)")
+    void AI_장애_때_고른_역량이_없으면_가장_낮은_요인으로_짠다() {
+        fitness.measured(
+                family.child.profileId(),
+                new FactorPoint(FitnessFactor.FLEXIBILITY, "012", 80),
+                new FactorPoint(FitnessFactor.CARDIO, "020", 95),
+                new FakeFitness.Item("012", 15.0));
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachProposalItem item = runs.findById(run.getId()).getProposals().getFirst();
+        assertThat(item.title()).isEqualTo("유연성 키우기 20분");
+        assertThat(item.citations().stream().map(ProposalCitation::label).toList())
+                .anyMatch(it -> it.startsWith("국민체력100 규준") && it.endsWith("유연성 백분위 80"));
+    }
+
+    @Test
     @DisplayName("AI 장애 때 보호자가 키워 주고 싶은 역량이 있으면 측정 없는 만 3세도 그 요인의 연령대 영상으로 대체 편성한다")
     void AI_장애_때_고른_힘이_있으면_측정_없이도_대체_편성한다() {
         ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3));

@@ -78,7 +78,7 @@ public class LabelBasedProposalPlanner {
     }
 
     /** 고른 요인과, 규준으로 짚을 수 있으면 그 백분위. */
-    private record Target(FitnessFactor factor, @Nullable FactorPoint point, String direction) {}
+    private record Target(FitnessFactor factor, @Nullable FactorPoint point) {}
 
     /** 인용과 그 인용을 가리키는 세션들. */
     private record Plan(
@@ -88,7 +88,8 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 편성 대상(subject)의 runDate 하루 미션 하나. 참여자는 대상 한 명(주행자)이고, 보호자 덧붙이기는 변환기가 한다.
-     * 요인: 보호자가 키워 주고 싶은 역량(focusFactor)이 있으면 그것, 없으면 측정의 가장 약한 요인(백분위 75 이하), 아니면 가장 강한 요인.
+     * 요인: 보호자가 키워 주고 싶은 역량(focusFactor)이 있으면 그것, 없으면 측정에서 백분위가 가장 낮은 요인이다.
+     * 모든 요인이 높아도 가장 낮은 요인을 고른다(ai:coach/compose.py {@code target_factor} 와 같다).
      * 칸: 클립 표(video_exercises)에서 대상 연령대 · 조건에 맞는 운동 클립을 AI 가짓수 규칙({@link SessionClipCounts})대로
      * 준비 → 본 → 정리 차례로 고른다({@link #routine}). 본운동 클립이 하나도 없으면 예전처럼 영상 한 편을 본운동 한 칸에 넣는다.
      * 고를 요인이 없으면(측정 전이거나 백분위가 없는 만 7~10세이고, 보호자가 키워 주고 싶은 역량도 없음) {@link #wholeBody} 로 짠다.
@@ -124,7 +125,7 @@ public class LabelBasedProposalPlanner {
                 subject,
                 runDate,
                 minutes,
-                factor.getLabel() + " " + target.direction() + " " + minutes + "분",
+                factor.getLabel() + " 키우기 " + minutes + "분",
                 "오늘은 " + factor.getLabel() + "을 키우는 동작을 해볼까요",
                 point == null
                         ? "고르신 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다"
@@ -411,7 +412,11 @@ public class LabelBasedProposalPlanner {
         return names;
     }
 
-    /** 보호자가 키워 주고 싶은 역량이 먼저다. 그 요인의 백분위는 측정의 약점 · 강점과 같을 때만 인용한다. */
+    /**
+     * 대상 요인. ai:coach/compose.py {@code target_factor} 와 같은 규칙이다 — 보호자가 키워 주고 싶은 역량이 있으면 그것이고,
+     * 없으면 측정에서 백분위가 가장 낮은 요인이다. 백분위가 높아도 강한 요인으로 넘어가지 않는다. 고른 역량의 백분위는 측정의
+     * 약점 · 강점과 같은 요인일 때만 인용한다(그 밖의 항목 백분위는 여기서 모른다).
+     */
     private static @Nullable Target target(@Nullable FitnessFactor focus, @Nullable LatestFitness latest) {
         FactorPoint weakest = latest == null ? null : latest.weakest();
         FactorPoint strongest = latest == null ? null : latest.strongest();
@@ -419,13 +424,9 @@ public class LabelBasedProposalPlanner {
             FactorPoint point = weakest != null && weakest.factor() == focus
                     ? weakest
                     : (strongest != null && strongest.factor() == focus ? strongest : null);
-            return new Target(focus, point, "키우기");
+            return new Target(focus, point);
         }
-        FactorPoint point = weakest != null && weakest.percentile() <= Band.STRENGTH_FROM
-                ? weakest
-                : (strongest != null ? strongest : weakest);
-        if (point == null) return null;
-        return new Target(point.factor(), point, point == weakest ? "키우기" : "강점 강화");
+        return weakest == null ? null : new Target(weakest.factor(), weakest);
     }
 
     private static int ageSpan(ExerciseVideo video) {
