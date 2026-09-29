@@ -19,6 +19,7 @@ FE 가 부르지 않는 옛 주소 8개(대화 · 주간 요약 · 영상 셋 ·
 | 백엔드 | [`backend/`](./backend) — Java · Spring Boot 4.1 · Spring Modulith · Java 25 (툴체인 자동 설치) |
 | API 계약 | [`docs/api-contract.md`](./docs/api-contract.md) · 서버의 `/swagger-ui.html` |
 | 구조 | [`docs/architecture.md`](./docs/architecture.md) · [`docs/erd.dbml`](./docs/erd.dbml) |
+| 공공데이터 · AI | [`docs/public-data-and-ai.md`](./docs/public-data-and-ai.md) — 쓰는 공공데이터, 보고서에 쓸 AI 설명, 세 저장소 진행 상황과 남은 결정 |
 | 설계 원본 | Notion(API 명세서 · AI 인터페이스 명세) · [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf) |
 | AI 서비스 | `family-fitness-ai` (FastAPI). `/v1` 아래 평가 · 추이 · 영상 검색 · 편성 · 대화 다섯 주소를 연다(서버는 추이를 부르지 않는다). 로컬(`bootRun`)은 AI 없이 뜨도록 스텁이 기본이고, 운영(`prod`)은 http 로 부른다 |
 
@@ -26,7 +27,7 @@ FE 가 부르지 않는 옛 주소 8개(대화 · 주간 요약 · 영상 셋 ·
 
 ```
 backend/    Spring Boot 모듈러 모놀리스 (identity · fitness · activity · progress · coaching · league · notification)
-docs/       API 계약 · 아키텍처 · ERD · ADR
+docs/       API 계약 · 아키텍처 · ERD · ADR · 공공데이터와 AI 정리
 .github/    CI (포맷 검사 + 빌드·테스트)
 ```
 

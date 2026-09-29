@@ -2,7 +2,7 @@
 
 출처: Notion 「API 명세서」(2026-09-08 · 09-17) · FE 저장소 `BACKEND_API.md`(2026-09-25, 이하 FE 요청서) · `family-fitness-ai/docs/인터페이스-명세.md` · FigJam 보드 F0~F4.
 구현 기준 문서다. 여기 없는 것은 추정하지 말고 코드 주석에 `▲ 확정 필요` 로 남긴다.
-기준 시점은 develop `a880ad4`(2026-09-29, PR #4~#33 머지 뒤)다. 살아 있는 스키마는 서버의 `/v3/api-docs` 다.
+기준 시점은 `feature/BE-35-launch-readiness`(2026-09-29)다 — develop `56421ae`(PR #4~#34 머지 뒤)에 출시 준비 커밋을 얹은 것이고 아직 develop 에 병합하지 않았다. 살아 있는 스키마는 서버의 `/v3/api-docs` 다.
 - null 이 될 수 있는 칸(jspecify `@Nullable`)은 스키마에 `type: [T, "null"]` 로 싣는다. 다른 스키마를 가리키는 칸은 `oneOf: [$ref, {type: "null"}]` 다. `@NotNull` 이 같이 붙은 요청 칸은 null 을 싣지 않는다. required 목록은 그대로다.
 - 로그인 계정 인자(`CurrentUser`)는 JWT 에서 채우므로 스키마에 `user` 쿼리 파라미터로 싣지 않는다. 응원 요청의 검증용 `contentPresent` 도 싣지 않는다.
 
@@ -127,7 +127,7 @@
 - AI 가 내는 `RUN_IN_PROGRESS`(409) · `RUN_NOT_FOUND`(404)는 편성 실행기 안에서만 쓰이고 클라이언트로 나가지 않는다. 편성은 202 로 접수된 뒤라, 실패는 `CoachRunView.failureCode` 로 알린다(4장).
 - FE 요청서 7장의 「화면이 가르는 코드」 중 서버가 내지 않는 것: `CONSENT_WITHDRAWN`(만들지 않는다 — 동의를 거둬도 `CONSENT_REQUIRED`) · `ALREADY_RUN_THIS_WEEK`(없앴다).
 
-### 구현 상태 (2026-09-29 · develop `a880ad4`)
+### 구현 상태 (2026-09-29 · `feature/BE-35-launch-readiness`)
 
 - 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local · compose · prod)에만 있다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
@@ -502,7 +502,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### GET /api/v1/profiles/{profileId}/fitness-tests?size= — 같은 가족
 측정 이력. 응답 200 `{tests:[{fitnessTestId, testedOn, overallPercentile|null, heightCm|null, weightKg|null}]}` — testedOn 이 늦은 회차부터. 이력이 없으면 빈 목록.
-`size` 기본 20, 1~100 밖이면 400. `overallPercentile` 은 `fitness-map` 의 것과 같은 셈(항목 백분위 평균, 규준 붙은 항목이 없으면 null). 키 · 몸무게는 그 회차에 같이 적은 값이다. 아이 계정이면 `weightKg` 는 늘 null.
+`size` 기본 20, 1~100 밖이면 400. `overallPercentile` 은 `fitness-map` 의 것과 같은 셈(항목 백분위 평균, 백분위가 나온 항목이 없으면 null). 키 · 몸무게는 그 회차에 같이 적은 값이다. 아이 계정이면 `weightKg` 는 늘 null.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
 ### GET /api/v1/profiles/{profileId}/fitness-tests/latest — 같은 가족
@@ -853,7 +853,9 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 ```
 - `profile_refs` 는 편성 대상 한 명뿐이다. 가족 전원을 보내지 않으므로 AI 의 「1~4명」 제한과 형제 사이 409 가 생기지 않는다. 동의가 없는 프로필은 싣지 않는다.
 - 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. 그 회차에 체지방률 · 허리둘레를 적었으면 `measurements` 에 `003` · `004` 로 같이 싣는다(AI 가 BMI · 허리둘레-신장비와 함께 3등급 판정에 쓴다). `measurements` 가 비면 칸을 null 로 보낸다.
-- `focus_factor`(보호자가 키워 주고 싶은 역량)는 AI develop 의 `ConstraintsIn` 에 아직 없어 AI 가 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다 — 그동안 http 모드에서는 이 값이 편성에 반영되지 않는다. `with_companion` 도 AI 계약에 아직 없어 AI 가 버린다. 대체 편성 · 스텁은 둘 다 반영한다.
+- `focus_factor`(보호자가 키워 주고 싶은 역량)와 `with_companion` 은 AI develop 의 `ConstraintsIn` 에 아직 없어 AI 가 받아서 버린다 — 그동안 http 모드에서는 이 값이 편성에 반영되지 않는다. 대체 편성 · 스텁은 둘 다 반영한다.
+  - AI 로컬 브랜치 `feature/AI-kspo-video-api`(`b070698`, 아직 병합 전)가 두 칸을 받는다. `focus_factor` 는 측정으로 고른 가장 낮은 요인보다 먼저 대상 요인이 되고(처방 근거 · 규칙 편성 · LLM 편성 모두), `with_companion` 은 참여자를 늘리지 않고 LLM 문구에만 쓴다. 병합 · 배포 뒤부터 http 모드에도 반영된다.
+  - 그 브랜치는 여덟 요인 밖의 이름을 400 으로 거절한다(빈 글자는 안 고른 것으로 본다). 서버는 `FitnessFactor` 의 한글 라벨이나 null 만 보내므로 걸리지 않는다.
 - 응답 202 `{run_id, status:"running", poll_after_ms}`.
 
 ### 편성 결과 `GET /v1/coach/runs/{run_id}` — 서버가 읽는 것
@@ -887,7 +889,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 - AI 는 같은 프로필이 든 실행이 돌고 있으면 409 를 낸다. 서버 잠금은 (대상, 날짜) 단위라, 같은 아이의 다른 날 편성이 동시에 돌면 뒤의 것은 AI 409 로 FAILED(`ERROR`)가 된다.
 - AI 가 도중에 죽으면 폴링 40회를 다 채운 뒤 대체 편성으로 넘어간다. 연결이 곧바로 거절되면 약 60초(간격 1.5초 × 39), 응답이 없어 시간 초과가 나면 최대 약 220초(폴링마다 연결 1초 + 읽기 3초가 더해짐)다.
 
-## 9. FE 요청서와 맞대 본 상태 (develop `a880ad4`)
+## 9. FE 요청서와 맞대 본 상태 (`feature/BE-35-launch-readiness`)
 FE 화면 ↔ 주소 대응은 FE 요청서(`BACKEND_API.md`)가 원본이다. 여기에는 서버가 어디까지 했는지만 적는다.
 
 | FE 요청서 | 요청 | 서버 |

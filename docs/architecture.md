@@ -1,7 +1,8 @@
 # 아키텍처
 
 Spring Boot 하나의 모듈러 모놀리스(Spring Modulith). 업무 모듈은 일곱 개다. 모듈 = 패키지 = ERD 묶음이며, 각 모듈은
-`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 develop `a880ad4`(2026-09-29)다.
+`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 `feature/BE-35-launch-readiness`(2026-09-29)다 — develop `56421ae` 위에 출시 준비
+커밋을 얹은 것이고 아직 develop 에 병합하지 않았다.
 
 ## 모듈과 의존
 
@@ -39,7 +40,7 @@ flowchart LR
 
 | 모듈 | 부르는 모듈(`api` 만) | 밖으로 여는 `api` |
 |---|---|---|
-| `identity` | 없음 | `ProfileSummary` · `ProfileDetails` · `ProfileQuery` · `FamilyAccess` · `CheerQuery` · `CheerView` · `CheerKind` · `CheerSent` · `AvailabilityQuery` · `AvailabilitySlot` · `InviteStatus` · `MissionLookup`(SPI) 와 예외들 |
+| `identity` | 없음 | `ProfileSummary` · `ProfileDetails` · `ProfileQuery` · `FamilyAccess` · `CheerQuery` · `CheerView` · `CheerKind` · `CheerSent` · `AvailabilityQuery` · `AvailabilitySlot` · `InviteStatus` · `ReviewFamilyCreated` · `MissionLookup`(SPI) 와 예외들 |
 | `fitness` | identity | `FitnessQuery` · `LatestFitness` · `FactorPoint` · `FitnessTestRegistered` |
 | `activity` | identity | `ActivityRecorder` · `ActivityQuery` · `RestDayQuery` · `ActivitySource` 와 조회 값 |
 | `progress` | identity · activity · fitness | `ProgressRecorder` · `SessionDone` · `AchievementEarned` · `PlannedDays`(SPI) · `PlannedDaysSinceCreated`(SPI) |
@@ -68,11 +69,13 @@ flowchart LR
 ## 도메인 이벤트
 
 이벤트는 발행한 쪽의 트랜잭션 안에서 낸다. 이벤트 발행 기록 저장소(spring-modulith event publication registry)는 쓰지 않는다.
-그래서 커밋 뒤에 받는 쪽이 실패하면 다시 보내지 않는다. 받는 쪽은 이것을 보고 두 가지로 나눴다.
+그래서 커밋 뒤에 받는 쪽이 실패하면 다시 보내지 않는다. 받는 쪽은 이것을 보고 같은 트랜잭션에서 동기로 듣는 것과 커밋 뒤에 듣는 것으로 나눴다.
 
 - **경험치(progress)는 같은 트랜잭션에서 동기로 듣는다**(`@EventListener`). 원장은 줄지 않는 값이라 빠진 적립을 되살릴 길이 없다.
   같은 트랜잭션이면 적립과 원래 일(응원 · 측정)이 함께 저장되거나 함께 되돌려진다. FE 가 곧바로 다시 읽는 레벨에도 이미 반영돼 있다.
   원장 · 업적 넣기는 `ON CONFLICT DO NOTHING` 이다. 두 요청이 같은 적립을 동시에 넣어도 늦은 쪽은 건너뛸 뿐, 원래 요청이 되돌려지지 않는다.
+- **심사용 체험 가족의 측정(fitness)도 같은 트랜잭션에서 동기로 듣는다.** 로그인 응답이 나가기 전에 두 아이의 측정과 등급이 서 있어야
+  심사위원이 홈에서 바로 결과를 본다. 측정을 넣다 실패하면 계정 · 가족까지 함께 되돌린다.
 - **알림(notification)은 커밋 뒤에 듣는다**(`@TransactionalEventListener(AFTER_COMMIT, fallbackExecution = true)`). 알림이 실패해도
   원래 일은 되돌아가지 않는다. 실패는 로그만 남긴다.
   - 리스너는 일을 알림 전용 스레드 풀(`notificationTaskExecutor`, 스레드 2 · 대기열 1000)에 넘기기만 한다. 쓰기는 그 스레드가
@@ -88,6 +91,7 @@ flowchart LR
 |---|---|---|---|
 | `identity.api.CheerSent` | `CheerService.cheer` — 응원을 저장한 뒤 | progress: 스티커 붙은 `PRAISE` 면 `STICKER` +10(같은 미션에 한 번) · 업적 판정 | 같은 트랜잭션, 동기 |
 | | | notification: `KID_DONE` · `KID_THANKS` · `PRAISE` | 커밋 뒤 |
+| `identity.api.ReviewFamilyCreated` | `ReviewLoginService` — 심사용 계정의 체험 가족을 만든 뒤 | fitness `ReviewFamilyFitness`: 두 아이(하윤 · 서준)의 측정 회차를 사흘 전 날짜로 넣는다. 보호자가 화면에서 넣는 `FitnessTestService.register` 를 그대로 거친다 | 같은 트랜잭션, 동기 |
 | `fitness.api.FitnessTestRegistered` | `FitnessTestService.register` — 측정 회차를 저장한 뒤 | progress: 다시 잰 회차가 생기면 `REMEASURE` +20 · 업적 판정 | 같은 트랜잭션, 동기 |
 | | | notification: 그 아이의 지난 측정 회차로 만든 `REMEASURE` 를 부모 알림함에서 지운다 | 커밋 뒤 |
 | `coaching.api.SessionCompleted` | `SessionCompletionService` — 칸 끝을 새로 적은 사람마다(번진 보호자 포함) | 지금 듣는 곳이 없다 | — |
