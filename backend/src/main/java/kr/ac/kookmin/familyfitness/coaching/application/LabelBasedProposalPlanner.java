@@ -74,10 +74,10 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 편성 대상(subject)의 runDate 하루 미션 하나. 참여자는 대상 한 명(주행자)이고, 보호자 덧붙이기는 변환기가 한다.
-     * 요인: 부모가 고른 힘(focusFactor)이 있으면 그것, 없으면 측정의 가장 약한 요인(백분위 75 이하), 아니면 가장 강한 요인.
+     * 요인: 보호자가 키워 주고 싶은 역량(focusFactor)이 있으면 그것, 없으면 측정의 가장 약한 요인(백분위 75 이하), 아니면 가장 강한 요인.
      * 칸: 클립 표(video_exercises)에서 대상 연령대 · 조건에 맞는 운동 클립을 AI 가짓수 규칙({@link SessionClipCounts})대로
      * 준비 → 본 → 정리 차례로 고른다({@link #routine}). 본운동 클립이 하나도 없으면 예전처럼 영상 한 편을 본운동 한 칸에 넣는다.
-     * 고를 요인이 없거나(측정도 고른 힘도 없음) 인용이 하나도 없으면 null (제안을 만들 근거가 없다 → FAILED).
+     * 고를 요인이 없거나(측정도 보호자가 키워 주고 싶은 역량도 없음) 인용이 하나도 없으면 null (제안을 만들 근거가 없다 → FAILED).
      */
     public @Nullable CoachRunResult plan(
             ProfileDetails subject,
@@ -267,7 +267,7 @@ public class LabelBasedProposalPlanner {
                         "assess",
                         "ok",
                         "측정 " + (latest == null ? "없음" : "있음") + " · 대상 요인 = " + factor.getLabel()
-                                + (conditions.focusFactor() == null ? "" : "(부모가 고름)")),
+                                + (conditions.focusFactor() == null ? "" : "(보호자가 고름)")),
                 new CoachRunResult.Step(2, "retrieve", "partial", "AI 서비스 장애(" + failureSummary + ") → " + retrieved),
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
@@ -309,7 +309,7 @@ public class LabelBasedProposalPlanner {
         return names;
     }
 
-    /** 부모가 고른 힘이 먼저다. 그 요인의 백분위는 측정의 약점 · 강점과 같을 때만 인용한다. */
+    /** 보호자가 키워 주고 싶은 역량이 먼저다. 그 요인의 백분위는 측정의 약점 · 강점과 같을 때만 인용한다. */
     private static @Nullable Target target(@Nullable FitnessFactor focus, @Nullable LatestFitness latest) {
         FactorPoint weakest = latest == null ? null : latest.weakest();
         FactorPoint strongest = latest == null ? null : latest.strongest();

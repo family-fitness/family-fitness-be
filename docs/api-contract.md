@@ -831,7 +831,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 ```
 - `profile_refs` 는 편성 대상 한 명뿐이다. 가족 전원을 보내지 않으므로 AI 의 「1~4명」 제한과 형제 사이 409 가 생기지 않는다. 동의가 없는 프로필은 싣지 않는다.
 - 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. 그 회차에 체지방률 · 허리둘레를 적었으면 `measurements` 에 `003` · `004` 로 같이 싣는다(AI 가 BMI · 허리둘레-신장비와 함께 3등급 판정에 쓴다). `measurements` 가 비면 칸을 null 로 보낸다.
-- `focus_factor` 는 AI 가 대상 요인으로 쓴다(AI-14 — AI 의 `feature/AI-14-focus-factor` 가 머지된 뒤부터. 그 전 AI 는 이 칸을 무시해 http 모드에서 고른 힘이 반영되지 않는다). 모르는 이름이면 AI 가 가장 낮은 요인으로 짠다. `with_companion` 은 AI 계약에 아직 없어 AI 가 무시한다. 대체 편성 · 스텁은 둘 다 반영한다.
+- `focus_factor`(보호자가 키워 주고 싶은 역량)는 AI develop 의 `ConstraintsIn` 에 아직 없어 AI 가 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다 — 그동안 http 모드에서는 이 값이 편성에 반영되지 않는다. `with_companion` 도 AI 계약에 아직 없어 AI 가 버린다. 대체 편성 · 스텁은 둘 다 반영한다.
 - 응답 202 `{run_id, status:"running", poll_after_ms}`.
 
 ### 편성 결과 `GET /v1/coach/runs/{run_id}` — 서버가 읽는 것
@@ -855,7 +855,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 |---|---|
 | `succeeded` | 제안 저장, `AWAITING_APPROVAL` |
 | `refused` | FAILED(`NO_CITATIONS`), `ai_refused=true` · 거부 사유 |
-| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인도 인용할 근거(측정 · 고른 힘)도 없으면 FAILED(`AI_FAILED`) |
+| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인도 인용할 근거(측정 · 보호자가 키워 주고 싶은 역량)도 없으면 FAILED(`AI_FAILED`) |
 | 폴링 한 번의 일시 오류(시간 초과 · 503 · 응답을 읽지 못함) | 그 회차만 건너뛰고 다음 폴링. 40회가 다 차면 위 대체 편성 |
 | AI 409 · 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
 | 요청 뒤 대상의 동의를 거둠 | FAILED(`CONSENT_REQUIRED`) |

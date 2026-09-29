@@ -270,7 +270,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("부모가 고른 힘은 focus_factor 로 AI 에 실리고 스텁 제안의 요인이 된다")
+    @DisplayName("보호자가 키워 주고 싶은 역량은 focus_factor 로 AI 에 실리고 스텁 제안의 요인이 된다")
     void 부모가_고른_힘은_focus_factor_로_실린다() {
         CoachRun run = runningRun(family.child.profileId(), false, FitnessFactor.AGILITY);
 
@@ -352,7 +352,7 @@ class CoachRunExecutorTest {
         assertFallback(fallback, "편성 실패");
         assertThat(fallback.getAiRunId()).isEqualTo("cr_x");
 
-        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3)); // 측정도 고른 힘도 없다
+        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3)); // 측정도 키워 주고 싶은 역량도 없다
         CoachRun noBasis = runningRun(toddler.profileId(), false, null);
         executor.execute(noBasis.getId());
 
@@ -428,7 +428,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("AI 에 닿지 못했는데 고른 힘도 측정 약점도 없으면 FAILED(AI_FAILED)로 끝나고 상태 전이는 한 번만 일어난다")
+    @DisplayName("AI 에 닿지 못했는데 키워 주고 싶은 역량도 측정 약점도 없으면 FAILED(AI_FAILED)로 끝나고 상태 전이는 한 번만 일어난다")
     void AI_장애인데_근거가_없으면_FAILED_로_끝난다() {
         CoachRun run = runningRun();
         gateway.onStart = request -> {
@@ -474,7 +474,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("AI 장애 때 부모가 고른 힘이 있으면 측정 없는 만 3세도 그 요인의 연령대 영상으로 대체 편성한다")
+    @DisplayName("AI 장애 때 보호자가 키워 주고 싶은 역량이 있으면 측정 없는 만 3세도 그 요인의 연령대 영상으로 대체 편성한다")
     void AI_장애_때_고른_힘이_있으면_측정_없이도_대체_편성한다() {
         ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3));
         CoachRun run = runningRun(toddler.profileId(), false, FitnessFactor.BALANCE);

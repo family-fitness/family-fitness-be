@@ -109,7 +109,7 @@ class StubAiGatewayTest {
     }
 
     @Test
-    @DisplayName("고른 힘은 미션 요인이 되고, 시드 영상 연령(7~12세) 밖의 주행자에게는 영상을 붙이지 않는다")
+    @DisplayName("보호자가 키워 주고 싶은 역량은 미션 요인이 되고, 시드 영상 연령(7~12세) 밖의 주행자에게는 영상을 붙이지 않는다")
     void 고른_힘은_미션_요인이_되고_연령_밖이면_영상을_붙이지_않는다() {
         CoachRunResult result =
                 gateway.getCoachRun(gateway.startCoachRun(request("민첩성", new Participant(toddler, "주행자")))

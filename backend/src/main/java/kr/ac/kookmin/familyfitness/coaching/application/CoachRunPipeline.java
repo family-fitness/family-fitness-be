@@ -85,7 +85,8 @@ public class CoachRunPipeline {
      * AI 로 이름 · 생년월일은 나가지 않는다. 대상의 보호자 동의가 그 사이 거둬졌으면 예외 → FAILED(CONSENT_REQUIRED).
      * constraints: 하루 한 번(days_per_week 1) · minutes · 주간 미션 없음(weekly_minutes null) · quiet ·
      * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
-     * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(AI 가 대상 요인으로 쓴다, AI-14) ·
+     * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(보호자가 키워 주고 싶은 역량 — AI develop 은 아직 이 칸을 몰라
+     * 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다) ·
      * with_companion(AI 계약에 아직 없어 AI 가 무시한다).
      * 대기열에서 기다리는 사이 정리 작업이 끝낸 실행이면 null — 호출자는 AI 를 부르지 않는다.
      */

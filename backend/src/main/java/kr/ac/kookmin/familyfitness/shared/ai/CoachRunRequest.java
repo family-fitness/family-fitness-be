@@ -11,7 +11,8 @@ public record CoachRunRequest(List<Participant> profiles, String startDate, int 
     /**
      * daysPerWeek · minutesPerSession — 일간 미션. weeklyMinutes — 주간 미션(null 이면 만들지 않는다).
      * quiet · smallSpace · noProps — 클립 조건(ai:video/catalog.py Conditions).
-     * focusFactor(한글 요인 라벨) — 부모가 고른 키울 힘. AI 가 대상 요인으로 쓴다(AI-14, 모르는 이름이면 가장 낮은 요인).
+     * focusFactor(한글 요인 라벨) — 보호자가 키워 주고 싶은 역량. AI develop 은 아직 이 칸을 몰라 받아서 버린다. AI 에서 이 칸을
+     * 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다. 대체 편성 · 스텁은 지금도 쓴다.
      * withCompanion — AI 계약에 아직 없는 칸이다. AI 는 모르는 칸을 무시한다(pydantic 기본값).
      */
     public record Constraints(

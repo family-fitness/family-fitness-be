@@ -124,7 +124,7 @@ FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 �
   1. AI 저장소 README 순서대로 가상환경 · `.env`(LLM 키) · 임베딩 서버를 준비하고 `make serve` 로 띄운다(`http://127.0.0.1:8000`).
   2. `./gradlew bootRun --args='--app.ai.mode=http'` — `app.ai.base-url` 기본값이 `http://localhost:8000` 이다.
 - 편성은 아이 한 명의 하루다. 서버는 AI 에 편성 대상 한 명만 보내고, AI 의 클립 단위 응답(`phase · order · duration_sec · video`)을 제안 칸으로 옮긴다.
-  칸마다 분은 서버가 나눈다(준비 · 정리 1분씩, 남은 분은 본운동 칸에). `focus_factor`(부모가 고른 키울 힘)는 AI 가 대상 요인으로 쓴다(AI 저장소 `feature/AI-14-focus-factor`). `with_companion` 은 AI 가 아직 모르는 칸이라 무시한다.
+  칸마다 분은 서버가 나눈다(준비 · 정리 1분씩, 남은 분은 본운동 칸에). `focus_factor`(보호자가 키워 주고 싶은 역량)는 AI develop 이 아직 몰라 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다. 대체 편성 · 스텁은 지금도 쓴다. `with_companion` 은 AI 가 아직 모르는 칸이라 무시한다.
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나 실행 단위로 실패하면(failed · 폴링 만료 · 404) 대체 편성으로 넘어간다. 실패 까닭은 응답의 `failureCode` 다.
   요청 · 응답 모양과 결과 처리 표는 [docs/api-contract.md](../docs/api-contract.md) 8장.
 

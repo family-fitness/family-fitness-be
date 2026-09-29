@@ -30,7 +30,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *   <li>AI 가 succeeded(제안 있음) → AWAITING_APPROVAL.
  *   <li>AI 가 refused → FAILED(NO_CITATIONS). 근거가 없다는 AI 의 판단이라 대체 편성도 하지 않는다.
  *   <li>AI 에 닿지 못함(연결 실패 · 5xx) · AI 가 failed · 폴링 만료 · 폴링 404(실행이 사라짐) → 라벨 기반 대체 편성.
- *       대체 편성할 근거(측정 · 고른 힘)가 없거나 대체 편성이 실패하면 FAILED(AI_FAILED).
+ *       대체 편성할 근거(측정 · 보호자가 키워 주고 싶은 역량)가 없거나 대체 편성이 실패하면 FAILED(AI_FAILED).
  *   <li>폴링 한 번의 일시 오류(타임아웃 · 연결 실패 · 5xx)는 그 회차만 건너뛰고 다음 폴링으로 넘긴다.
  *   <li>보호자 동의가 그 사이 거둬졌으면 FAILED(CONSENT_REQUIRED), 그 밖의 예외(AI 400 등)는 FAILED(ERROR).
  * </ol>
@@ -142,7 +142,7 @@ public class CoachRunExecutor {
                 pipeline.fail(
                         runId,
                         CoachRunFailureCode.AI_FAILED,
-                        "AI 로 짜지 못했고(" + detail + ") 대체 편성 근거(측정 · 고른 힘)도 없다",
+                        "AI 로 짜지 못했고(" + detail + ") 대체 편성 근거(측정 · 보호자가 키워 주고 싶은 역량)도 없다",
                         aiSteps,
                         false,
                         null);

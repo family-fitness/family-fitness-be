@@ -206,8 +206,9 @@ final class AiWire {
         record Period(@JsonProperty("start_date") String startDate, int weeks) {}
 
         /**
-         * focus_factor 는 AI 가 대상 요인으로 쓴다(AI-14). with_companion 은 AI ConstraintsIn 에 아직 없다. AI 가 무시하므로 먼저
-         * 보낸다(CO-07).
+         * focus_factor(보호자가 키워 주고 싶은 역량)와 with_companion 은 AI develop 의 ConstraintsIn 에 아직 없어 AI 가 받아서 버린다.
+         * focus_factor 는 AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다.
+         * 버려져도 요청이 깨지지 않으므로 먼저 보낸다(CO-07).
          */
         record Constraints(
                 @JsonProperty("days_per_week") int daysPerWeek,

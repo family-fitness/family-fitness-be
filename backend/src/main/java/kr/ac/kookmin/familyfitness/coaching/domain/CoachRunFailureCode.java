@@ -8,7 +8,7 @@ public enum CoachRunFailureCode {
     /** AI 가 인용할 근거를 찾지 못해 편성을 거부했다(refused — no_relevant_source · no_citation_generated). */
     NO_CITATIONS,
 
-    /** AI 가 짜지 못했고(연결 실패 · failed · 폴링 만료 · 실행 없음) 대체 편성할 근거(측정 · 고른 힘)도 없었다. */
+    /** AI 가 짜지 못했고(연결 실패 · failed · 폴링 만료 · 실행 없음) 대체 편성할 근거(측정 · 보호자가 키워 주고 싶은 역량)도 없었다. */
     AI_FAILED,
 
     /** 편성 대상의 보호자 동의가 요청 뒤에 거둬졌다. */
