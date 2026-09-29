@@ -11,6 +11,9 @@
 규칙은 AI 의 src/family_fitness_ai/video/catalog.py _kspo_clips() 와 같다.
 - 클립: clip_id = {video_id}-0, seq 1, 0초 ~ duration_sec. 연령대는 영상 표의 age_group(공통은 AI 가 이미 성인으로 세웠다).
 - 제목은 exercise_name → name_on_video → 영상 제목 순이다. 단계는 라벨 phase(없으면 본운동)다.
+- 제목 끝 「-1」 「-2」 는 같은 운동의 몇 번째 영상인지라 뗀다(AI kspo.clean_title 와 같은 식). 클립 이름뿐 아니라
+  영상 제목(exercise_videos.title)에서도 뗀다 — 제안 · 미션의 video.title 이 이 칸이라 「넙다리 안쪽 스트레칭-1」 이 화면에 나갔다.
+  AI 는 인용 라벨에만 공단 원제목을 두는데, BE 는 영상 제목 칸 하나로 화면 이름과 대체 편성 인용을 함께 내므로 뗀 이름을 쓴다.
 - AI 는 운동이 아니라고 라벨된 것과 물속 영상(장소가 수영장뿐이거나 제목에 수영 · 아쿠아 · 물속 · 영법 이름)을 후보에서 뺀다.
   여기서는 행은 모두 넣고 그 둘을 is_exercise=false 로 둔다 — 운동 찾기 · 대체 편성이 is_exercise 로 후보를 가른다.
 - 영상: channel_name '국민체력100 동영상 정보', channel_type 'PUBLIC', media_url(mp4) · thumbnail_url(첫 장면 이미지),
@@ -28,7 +31,7 @@
         > src/main/resources/db/migration/V161__coaching_kspo_videos.sql
   다음 판(칸은 이미 있다):
     python scripts/kspo_videos_to_sql.py --ref <AI 커밋> ../../family-fitness-ai \
-        > src/main/resources/db/migration/V<다음 번호>__coaching_kspo_release_<AI 커밋>.sql
+        --note "앞 판에서 바뀐 것 한 줄" > src/main/resources/db/migration/V<다음 번호>__coaching_kspo_release_<AI 커밋>.sql
 적용된 버전 마이그레이션은 고칠 수 없으니 새 V 파일을 만든다.
 """
 import argparse
@@ -49,6 +52,8 @@ INPUTS = ("data/release/kspo_videos.csv", "data/release/kspo_video_labels.csv")
 # AI catalog.py in_water 와 같은 기준. 집이나 동네에서 가족이 할 수 없는 물속 영상이다.
 WATER_PLACES = frozenset({"수영장"})
 WATER_TITLE = re.compile(r"수영|아쿠아|물속|자유형|배영|평영|접영")
+# AI kspo.py _SUFFIX 와 같다. 제목 끝 「-2」 「－3」 은 같은 운동의 몇 번째 영상인지다.
+TAKE_SUFFIX = re.compile(r"\s*[-－]\s*\d+\s*$")
 
 ADD_COLUMNS = """alter table exercise_videos add column media_url varchar(300);
 alter table exercise_videos add column thumbnail_url varchar(300);"""
@@ -57,6 +62,10 @@ alter table exercise_videos add column thumbnail_url varchar(300);"""
 def read_csv(ai_root: Path, ref: str, path: str) -> list[dict[str, str]]:
     text = git(ai_root, "show", f"{ref}:{path}")
     return list(csv.DictReader(io.StringIO(text)))
+
+
+def clean_title(title: str) -> str:
+    return TAKE_SUFFIX.sub("", title or "").strip()
 
 
 def in_water(video: dict[str, str]) -> bool:
@@ -106,13 +115,13 @@ def build(videos: list[dict[str, str]], labels: list[dict[str, str]]) -> list[di
         if not video["thumbnail_url"].startswith("https://"):
             fail(f"썸네일 주소가 https 가 아니다: {video_id} {video['thumbnail_url']}")
         exercise_name = label.get("exercise_name") or None
-        name_on_video = label.get("name_on_video") or video["title"]
+        name_on_video = clean_title(label.get("name_on_video") or video["title"])
         factor = label.get("fitness_factor") or ""
         age = age_of(video)
         water = in_water(video)
         out.append({
             "video_id": video_id,
-            "video_title": video["title"],
+            "video_title": clean_title(video["title"]),
             "duration_sec": duration,
             "age": age,
             "factor_label": factor,
@@ -221,7 +230,7 @@ def deactivate_statement(clip_ids: list[str]) -> str:
     )
 
 
-def main(ai_root: Path, ref: str, add_columns: bool) -> None:
+def main(ai_root: Path, ref: str, add_columns: bool, notes: list[str]) -> None:
     commit = git(ai_root, "rev-parse", ref)
     input_commit, committed_at = git(ai_root, "log", "-1", "--format=%h %cI", commit, "--", *INPUTS).split(" ", 1)
     collected_at = committed_at.replace("T", " ")
@@ -253,6 +262,8 @@ def main(ai_root: Path, ref: str, add_columns: bool) -> None:
     print("-- 이미 적재된 DB 에 다시 돌려도 된다: 있는 clip_id 는 고치고 켜고, 없으면 넣고, 이번 판에 없는 공단 클립은 끈다.", file=out)
     print("--   영상은 labeled_by='AI' 행만 고치고, 없으면 넣는다. 유튜브 영상 · 클립은 건드리지 않는다.", file=out)
     print("-- PostgreSQL 과 H2(MODE=PostgreSQL) 양쪽에서 그대로 실행되는 문법만 쓴다.", file=out)
+    for note in notes:
+        print(f"-- {note}", file=out)
     if add_columns:
         print(ADD_COLUMNS, file=out)
     for row in rows:
@@ -269,5 +280,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--add-columns", action="store_true", help="exercise_videos 에 media_url · thumbnail_url 칸도 더한다. 첫 적재에만 쓴다."
     )
+    parser.add_argument(
+        "--note", action="append", default=[], help="머리 주석에 한 줄 더 적는다(앞 판에서 무엇이 바뀌었는지). 여러 번 줄 수 있다."
+    )
     args = parser.parse_args()
-    main(args.ai_root, args.ref, args.add_columns)
+    main(args.ai_root, args.ref, args.add_columns, args.note)

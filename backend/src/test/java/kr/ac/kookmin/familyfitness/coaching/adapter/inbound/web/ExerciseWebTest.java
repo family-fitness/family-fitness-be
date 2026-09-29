@@ -2,8 +2,10 @@ package kr.ac.kookmin.familyfitness.coaching.adapter.inbound.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.matchesRegex;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
@@ -192,13 +194,22 @@ class ExerciseWebTest {
     }
 
     @Test
+    @DisplayName("공단 영상 이름에 제목 끝 「-1」 「-2」 가 붙어 나가지 않고, 「목 스트레칭」 여러 편은 한 이름으로 하나만 선다")
+    void 공단_영상_이름에_제목_끝_번호가_붙어_나가지_않는다() throws Exception {
+        list(parentUser, "q", "스트레칭")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clips[*].title", everyItem(not(matchesRegex(".*[-－]\\s*\\d+\\s*$")))))
+                .andExpect(jsonPath("$.clips[?(@.title == '목 스트레칭')]", hasSize(1)));
+    }
+
+    @Test
     @DisplayName("profileId 가 없으면 호출한 계정의 자기 프로필(성인) 연령대로 거르고, 프로필이 없는 계정은 빈 목록이다")
     void profileId_가_없으면_호출한_계정의_자기_프로필_연령대로_거르고_프로필이_없는_계정은_빈_목록이다() throws Exception {
         list(parentUser)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(324))
+                .andExpect(jsonPath("$.total").value(243))
                 .andExpect(jsonPath("$.clips[0].clipId").value("IhShIA-WJNE-20"))
-                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00059-0"));
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00173-0"));
         list(outsiderUser)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(0))
@@ -221,9 +232,9 @@ class ExerciseWebTest {
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.clips[*].clipId", contains("IdpXx2gm90o-424", "IdpXx2gm90o-602")));
         // 성인 유튜브 「점프 스쿼트」 는 제목이 처방 어휘(앉았다 일어서면서 점프하기)라 영상에 뜬 이름으로는 찾히지 않는다.
-        // 「스쿼트」 로 찾히는 것은 제목에 그 말이 든 공단 영상뿐이다
+        // 제목에 「스쿼트」 가 든 성인 공단 영상은 모두 근골격계운동(질환자용 표준운동)이라 V162 가 껐다 — 하나도 나오지 않는다
         list(parentUser, "q", "스쿼트")
-                .andExpect(jsonPath("$.total").value(7))
+                .andExpect(jsonPath("$.total").value(0))
                 .andExpect(jsonPath("$.clips[*].clipId", not(hasItem("In2fsTmsggw-114"))));
         // 같은 제목의 공단 영상(0AUDLJ08S_00311)이 영상 id 차례로 앞서 유튜브 구간 대신 대표로 남는다
         list(parentUser, "q", "점프하기")
