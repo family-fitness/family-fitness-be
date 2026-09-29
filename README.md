@@ -8,9 +8,9 @@
 
 ## 상태
 
-API 경로 46개(메서드까지 53개)가 있다(2026-09-29 develop `a880ad4` 기준). 프론트 요청(FE 저장소 `BACKEND_API.md`)의 새 주소 — 칸 끝 · 캘린더 · 레벨 · 리그 · 알림 · 쉬는 날 · 운동 구간 · 운동할 수 있는 시간 · 초대코드 미리 보기 — 는 모두 열었다.
+API 경로 45개(메서드까지 52개, 전환기 별칭 제외)가 있다(2026-09-29 `feature/BE-35-launch-readiness` 기준). 프론트 요청(FE 저장소 `BACKEND_API.md`)의 새 주소 — 칸 끝 · 캘린더 · 레벨 · 리그 · 알림 · 쉬는 날 · 운동 구간 · 운동할 수 있는 시간 · 초대코드 미리 보기 — 는 모두 열었다.
 아직 없는 것은 프로필 사진, 앱 밖 푸시 · 재촉 알림, 미션 고치기 등이고 [docs/api-contract.md](./docs/api-contract.md) 9장에 적었다.
-FE 가 부르지 않는 옛 주소 9개(예측 · 대화 · 주간 요약 · 영상 셋 · 타이머 · 걸음수 · 보호자 확인)는 남아 있고, 걷을지는 결정을 기다린다.
+FE 가 부르지 않는 옛 주소 8개(대화 · 주간 요약 · 영상 셋 · 타이머 · 걸음수 · 보호자 확인)는 남아 있고, 걷을지는 결정을 기다린다. 10년 예측은 걷었다(FE 도 부르지 않는다).
 프론트는 `cd backend && ./gradlew bootRun` 한 줄로 뜬 서버(H2 · 개발 로그인 · AI 스텁)에 바로 붙을 수 있다.
 연동 방법은 [backend/README.md](./backend/README.md), 계약은 [docs/api-contract.md](./docs/api-contract.md).
 
@@ -20,7 +20,7 @@ FE 가 부르지 않는 옛 주소 9개(예측 · 대화 · 주간 요약 · 영
 | API 계약 | [`docs/api-contract.md`](./docs/api-contract.md) · 서버의 `/swagger-ui.html` |
 | 구조 | [`docs/architecture.md`](./docs/architecture.md) · [`docs/erd.dbml`](./docs/erd.dbml) |
 | 설계 원본 | Notion(API 명세서 · AI 인터페이스 명세) · [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf) |
-| AI 서비스 | `family-fitness-ai` (FastAPI). `/v1` 아래 평가 · 추이 · 영상 검색 · 편성 · 대화 다섯 주소를 연다. 로컬(`bootRun`)은 AI 없이 뜨도록 스텁이 기본이고, 운영(`prod`)은 http 로 부른다 |
+| AI 서비스 | `family-fitness-ai` (FastAPI). `/v1` 아래 평가 · 추이 · 영상 검색 · 편성 · 대화 다섯 주소를 연다(서버는 추이를 부르지 않는다). 로컬(`bootRun`)은 AI 없이 뜨도록 스텁이 기본이고, 운영(`prod`)은 http 로 부른다 |
 
 ## 구조
 

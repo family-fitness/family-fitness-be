@@ -66,7 +66,7 @@ cd family-fitness-be/backend
    리프레시 토큰은 한 번만 쓸 수 있다(회전). refresh 응답의 새 `refreshToken` 을 저장하고, 로그아웃할 때 `POST /api/v1/auth/logout` 을 부른다.
 2. **CORS 전부 허용.** 어느 포트·호스트에서 불러도 막지 않는다 (`app.cors.allowed-origins=*`).
    초대 링크(`shareUrl`)는 FE 개발 서버 주소 `http://localhost:3000` 으로 만든다.
-3. **AI 서버는 스텁.** AI 서비스 없이도 뜨도록 코치 제안·대화·예측을 결정적인 가짜 응답으로 낸다(`app.ai.mode=stub`). 스텁 제안도 실제 클립 경계로 칸을 낸다.
+3. **AI 서버는 스텁.** AI 서비스 없이도 뜨도록 코치 제안·대화를 결정적인 가짜 응답으로 낸다(`app.ai.mode=stub`). 스텁 제안도 실제 클립 경계로 칸을 낸다.
    실제 AI 에 붙이는 방법은 아래 「AI 서비스」 절. AI 주소가 죽어 있어도 코치 제안은 영상 구간 표(`V132`)의 라벨로 대체 편성되어 빈 화면이 나지 않는다.
 4. **시드 데이터.** 데모 가족 「데모네」(데모 엄마 PARENT·FULL, 데모 첫째 CHILD·측정 1회 있음, 데모 아빠 PARENT 미연결·초대코드 `K7M2QT`),
    데모 첫째 · 엄마의 운동할 수 있는 시간, 국민체력100 규준(실제 공공데이터), AI 운동 영상 48편 · 구간 695개(`V132`, 운영에도 들어간다), 시험용 가짜 영상 4편(`sample00002~5`).
@@ -98,23 +98,23 @@ curl "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데모 첫째�
 | 모듈 | 범위 | 주소 |
 |---|---|---|
 | `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
-| `fitness` | 측정 항목 · 측정 등록(백분위 굳힘) · 결과 · 이력 · 가족 체력 지도 · 예측 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` · `profiles/{id}/predictions` |
+| `fitness` | 측정 항목 · 측정 등록(백분위 굳힘) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
 | `coaching` | 하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
 | `league` | 가족 리그(월 단위 달성률 · 다섯 티어 · 월초 정산) | `families/{id}/league` |
 | `notification` | 알림함(응원 · 새 운동 · 업적 · 다시 재기) | `notifications` · `notifications/read` |
 
-경로 46개(메서드까지 53개). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
-FE 가 부르지 않는 주소 9개: predictions · coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
+경로 45개(메서드까지 52개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
+FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
 
 ## AI 서비스
 
 `shared.ai.AiGateway` 하나로 FastAPI(`family-fitness-ai`)의 `{app.ai.base-url}/v1` 을 부른다. AI 는 `/v1` 아래 다섯 주소
 (fitness/assessment · fitness/trajectory · videos/search · coach/runs · coach/messages)와 헬스 체크 `/health` 를 연다.
-AI 가 서비스 테이블에 쓰는 경로는 없다.
+서버는 fitness/trajectory 를 부르지 않는다(10년 예측을 걷었다, `V153`). AI 가 서비스 테이블에 쓰는 경로는 없다.
 
-- `app.ai.mode=stub` 이면 AI 없이 결정적 가짜 응답으로 승인 게이트·대화·예측 흐름을 끝까지 돌릴 수 있다. prod 밖에서는 기본값이다(`APP_AI_MODE` 로 바꾼다).
+- `app.ai.mode=stub` 이면 AI 없이 결정적 가짜 응답으로 승인 게이트·대화 흐름을 끝까지 돌릴 수 있다. prod 밖에서는 기본값이다(`APP_AI_MODE` 로 바꾼다).
 - 실제 AI 에 붙이기
   1. AI 저장소 README 순서대로 가상환경 · `.env`(LLM 키) · 임베딩 서버를 준비하고 `make serve` 로 띄운다(`http://127.0.0.1:8000`).
   2. `./gradlew bootRun --args='--app.ai.mode=http'` — `app.ai.base-url` 기본값이 `http://localhost:8000` 이다.
@@ -146,7 +146,7 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V152` 이고 다음은 `V153` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V153` 이고 다음은 `V154` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

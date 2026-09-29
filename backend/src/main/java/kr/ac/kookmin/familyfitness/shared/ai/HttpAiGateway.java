@@ -23,7 +23,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * `{app.ai.base-url}/v1` 의 FastAPI 를 부르는 {@link AiGateway} 구현(app.ai.mode=http).
- * 엔드포인트별 타임아웃·재시도(계약 §5): assessment·trajectory 3s·2회 / videos/search 4s·2회 /
+ * 엔드포인트별 타임아웃·재시도(계약 §5): assessment 3s·2회 / videos/search 4s·2회 /
  * coach/messages 10s·0회 / POST coach/runs 2s·0회 / GET coach/runs/{id} 3s.
  * 오류 봉투 `{"error":{"code","message"}}` → 409 {@link AiRunInProgressException} · 404 {@link AiRunNotFoundException} ·
  * 400 {@link AiBadRequestException} · 그 외와 연결 실패·타임아웃 → {@link AiUnavailableException}(503).
@@ -86,19 +86,6 @@ public class HttpAiGateway implements AiGateway {
                         AiWire.ProfileBody.of(request.profile()),
                         AiWire.AssessmentBody.class,
                         AiWire.AssessmentBody::toDomain));
-    }
-
-    @Override
-    public TrajectoryResponse trajectory(TrajectoryRequest request) {
-        return withRetry(
-                2,
-                "fitness/trajectory",
-                () -> post(
-                        assessmentClient,
-                        "/fitness/trajectory",
-                        AiWire.TrajectoryRequestBody.of(request),
-                        AiWire.TrajectoryBody.class,
-                        AiWire.TrajectoryBody::toDomain));
     }
 
     @Override

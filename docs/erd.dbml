@@ -127,32 +127,6 @@ Table fitness_test_items {
 (band is null or band in ('strength', 'steady', 'growth'))'''
 }
 
-Table predictions {
-  id uuid [pk, not null]
-  profile_id uuid [not null]
-  fitness_test_id uuid
-  item_code varchar(3) [not null]
-  horizon_years smallint [not null]
-  model_version varchar(40) [not null]
-  basis varchar(60) [not null]
-  notice varchar(300) [not null]
-  created_at timestamptz [not null]
-}
-
-Table prediction_points {
-  prediction_id uuid [not null]
-  scenario varchar(20) [not null]
-  item_code varchar(3) [not null]
-  years_from_now smallint [not null]
-  p10 numeric(8,3)
-  p50 numeric(8,3)
-  p90 numeric(8,3)
-  indexes {
-    (prediction_id, scenario, item_code, years_from_now) [pk]
-  }
-  Note: '''(scenario in ('MAINTAIN', 'IMPROVE'))'''
-}
-
 Table activity_daily {
   id uuid [pk, not null]
   profile_id uuid [not null]
@@ -614,9 +588,6 @@ Ref: cheers.from_profile_id > profiles.id
 Ref: cheers.to_profile_id > profiles.id
 Ref: fitness_tests.profile_id > profiles.id
 Ref: fitness_test_items.fitness_test_id > fitness_tests.id
-Ref: predictions.profile_id > profiles.id
-Ref: predictions.fitness_test_id > fitness_tests.id
-Ref: prediction_points.prediction_id > predictions.id
 Ref: activity_daily.profile_id > profiles.id
 Ref: video_interactions.profile_id > profiles.id
 Ref: video_interactions.video_id > exercise_videos.video_id

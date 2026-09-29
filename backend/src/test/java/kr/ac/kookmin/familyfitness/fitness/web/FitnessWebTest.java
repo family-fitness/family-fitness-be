@@ -4,12 +4,12 @@ import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.child
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.detailsOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.parentOf;
 import static kr.ac.kookmin.familyfitness.fitness.application.FitnessFakes.summaryOf;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,9 +28,6 @@ import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
-import kr.ac.kookmin.familyfitness.shared.ai.AiGateway;
-import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
-import kr.ac.kookmin.familyfitness.shared.ai.TrajectoryResponse;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.Copy;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -45,6 +42,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -53,7 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * H2 + Flyway(V1~V3, 국민체력100 규준 2024-07~2026-07) 위에서 fitness 웹 어댑터를 끝까지 돈다.
- * identity·AI 는 목: 같은 가족 판단과 프로필 상세, 예측 응답을 흉내 낸다.
+ * identity 는 목: 같은 가족 판단과 프로필 상세를 흉내 낸다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -78,8 +76,8 @@ class FitnessWebTest {
     @MockitoBean
     CheerQuery cheerQuery;
 
-    @MockitoBean
-    AiGateway ai;
+    @Autowired
+    JdbcTemplate jdbc;
 
     /** 보호자 계정 */
     private final UUID userId = UUID.randomUUID();
@@ -102,8 +100,6 @@ class FitnessWebTest {
         childId = rows.profile(familyId, birthDate, Sex.F);
         when(familyAccess.requireSameFamilyAsProfile(userId, childId))
                 .thenReturn(summaryOf(childId, familyId, AgeGroup.YOUTH));
-        // 예측은 대신할 수 있는 프로필만(계정 없는 아이를 보호자가 대신) — requireActingAs
-        when(familyAccess.requireActingAs(userId, childId)).thenReturn(summaryOf(childId, familyId, AgeGroup.YOUTH));
         when(familyAccess.requireParentOfProfile(userId, childId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
         when(familyAccess.requireMember(userId, familyId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
         when(profileQuery.findDetails(childId))
@@ -606,51 +602,20 @@ class FitnessWebTest {
     }
 
     @Test
-    @DisplayName("예측은 AI 응답을 MAINTAIN 포인트로 저장해 201 로 돌려준다")
-    void 예측은_AI_응답을_MAINTAIN_포인트로_저장해_201_로_돌려준다() throws Exception {
+    @DisplayName("10년 예측은 걷었다 — POST /profiles/{id}/predictions 는 없는 주소(404)이고 예측 표도 없다")
+    void 예측_주소와_예측_표는_없다() throws Exception {
         registerYouthTest().andExpect(status().isCreated());
-        when(ai.trajectory(any()))
-                .thenReturn(new TrajectoryResponse(
-                        "cross_sectional_group_distribution",
-                        "028",
-                        "상대악력",
-                        "%",
-                        List.of(
-                                new TrajectoryResponse.Band(11, 28.0, 36.0, 44.0, 120),
-                                new TrajectoryResponse.Band(14, 32.0, 40.0, 50.0, 110),
-                                new TrajectoryResponse.Band(21, 45.0, 60.0, 75.0, 90)),
-                        Copy.TRAJECTORY_NOTICE,
-                        false));
 
         mvc.perform(post("/api/v1/profiles/" + childId + "/predictions")
                         .header(HttpHeaders.AUTHORIZATION, bearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"horizonYears\":10,\"itemCode\":\"028\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.predictionId").isNotEmpty())
-                .andExpect(jsonPath("$.modelVersion").value("ai-trajectory-v1"))
-                .andExpect(jsonPath("$.basis").value("cross_sectional_group_distribution"))
-                .andExpect(jsonPath("$.notice").value(Copy.TRAJECTORY_NOTICE))
-                .andExpect(jsonPath("$.points", hasSize(3)))
-                .andExpect(jsonPath("$.points[*].scenario", contains("MAINTAIN", "MAINTAIN", "MAINTAIN")))
-                .andExpect(jsonPath("$.points[*].yearsFromNow", contains(0, 3, 10)))
-                .andExpect(jsonPath("$.points[1].itemCode").value("028"))
-                .andExpect(jsonPath("$.points[1].p10").value(32.0))
-                .andExpect(jsonPath("$.points[1].p50").value(40.0))
-                .andExpect(jsonPath("$.points[1].p90").value(50.0));
-    }
-
-    @Test
-    @DisplayName("예측 오류 — 측정 없음 422, AI 장애 503")
-    void 예측_오류_측정_없음_422_AI_장애_503() throws Exception {
-        mvc.perform(post("/api/v1/profiles/" + childId + "/predictions").header(HttpHeaders.AUTHORIZATION, bearer()))
-                .andExpect(status().is(422))
-                .andExpect(jsonPath("$.error.code").value("NO_FITNESS_TEST"));
-
-        registerYouthTest().andExpect(status().isCreated());
-        when(ai.trajectory(any())).thenThrow(new AiUnavailableException("AI 서비스 응답 없음"));
-        mvc.perform(post("/api/v1/profiles/" + childId + "/predictions").header(HttpHeaders.AUTHORIZATION, bearer()))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("TEMPORARILY_UNAVAILABLE"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from information_schema.tables"
+                                + " where lower(table_name) in ('predictions', 'prediction_points')",
+                        Integer.class))
+                .isZero();
     }
 }

@@ -8,13 +8,13 @@ Spring Boot 하나의 모듈러 모놀리스(Spring Modulith). 업무 모듈은 
 ```mermaid
 flowchart LR
     identity["identity\n계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간"]
-    fitness["fitness\n측정 항목 · 측정 회차 · 백분위 · 이력 · 체력 지도 · 예측"]
+    fitness["fitness\n측정 항목 · 측정 회차 · 백분위 · 등급 · 이력 · 체력 지도"]
     activity["activity\n일별 활동(초) · 쉬는 날 카드"]
     progress["progress\n경험치 원장 · 레벨 · 업적 · 이어서 한 날"]
     coaching["coaching\n하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약"]
     league["league\n가족 리그(월 단위 달성률 · 티어)"]
     notification["notification\n알림함"]
-    ai["AI 서비스 (FastAPI)\n평가 · 추이 · 영상 검색 · 편성 · 대화"]
+    ai["AI 서비스 (FastAPI)\n평가 · 영상 검색 · 편성 · 대화"]
     fitness --> identity
     activity --> identity
     progress --> identity
@@ -33,7 +33,6 @@ flowchart LR
     notification --> progress
     notification --> coaching
     coaching -. AiGateway .-> ai
-    fitness -. AiGateway .-> ai
 ```
 
 화살표는 「이 모듈이 저 모듈의 `api` 패키지를 부른다」 는 뜻이다.
@@ -123,7 +122,7 @@ flowchart LR
   - `requireParent` · `requireParentOfProfile`: 그 가족의 보호자. 아이 계정이면 403 `NOT_A_PARENT`.
   - `requireActingAs`: 그 프로필 이름으로 행동할 수 있는가(`Family.canActAs`). 본인 계정의 프로필이거나, 같은 가족 보호자가 계정 없는 아이
     프로필을 대신할 때만 된다. 아니면 403 `FORBIDDEN`. 응원 보내기 · 칸 끝 · 운동 느낌 · 알림함, 그리고 FE 가 부르지 않는 옛 주소
-    (타이머 · 걸음수 · 영상 진행 · 코치 대화 · 예측)가 쓴다.
+    (타이머 · 걸음수 · 영상 진행 · 코치 대화)가 쓴다.
 - 보호자 동의가 필요한데 없거나 거둔 프로필(`ProfileSummary` 의 `consentRequired && !consentGiven`)은 새 기록(측정 · 편성 · 승인 ·
   미션 · 칸 끝 · 느낌 · 활동)에서 422 `CONSENT_REQUIRED` 다. 거둔 동의는 만 14세가 지나도 풀리지 않는다.
 - 가족 쓰기는 프로필 행 낙관적 잠금(`profiles.version`)을 건다. 겹친 쓰기의 늦은 쪽은 409 `CONFLICT` 다. 그 밖에도 읽은 행을 다른
@@ -144,6 +143,7 @@ flowchart LR
 - 호출 계약은 `shared.ai.AiGateway` 하나다. `app.ai.mode=http` 면 `{base-url}/v1` 의 FastAPI 를 부르고,
   `stub` 이면 AI 서비스 없이 결정적 가짜 응답을 낸다(local · compose 기본, prod 는 http).
   AI 서비스는 `/v1` 아래 다섯 주소(assessment · trajectory · videos/search · coach/runs · coach/messages)와 `/health` 를 연다.
+  서버는 trajectory 를 부르지 않는다 — 10년 예측을 걷었다(`V153`).
 - AI 가 돌려준 제안은 보호자가 승인하기 전에는 미션이 아니다. `CoachRun` 이 `AWAITING_APPROVAL` 에서 멈추고,
   미션 INSERT 는 승인 트랜잭션과 직접 만들기에서만 일어난다.
 - 편성 한 번은 아이 한 명의 하루다. AI 에는 편성 대상 한 명만 보낸다. 같은 (대상, 날짜)의 동시 실행은
@@ -153,13 +153,13 @@ flowchart LR
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나, 실행 단위로 실패(`failed` · 폴링 만료 · 폴링 404)하면 라벨 기반 대체 편성(`LabelBasedProposalPlanner`)으로
   넘어간다. 폴링 한 번의 일시 오류는 다음 폴링으로 넘긴다. AI 가 근거가 없다고 거부하면 FAILED(`NO_CITATIONS`), AI 400 · 409 는 FAILED(`ERROR`)다.
 - AI 가 200 을 줬어도 본문을 읽지 못하거나(깨진 JSON · text/html) 서버 모양으로 바꾸지 못하면(칸 누락) `HttpAiGateway` 가
-  `AiUnavailableException` 으로 바꾼다. 그래서 연결 실패와 같게 대체 편성으로 가고, 예측 · 대화는 503 `TEMPORARILY_UNAVAILABLE` 이다.
+  `AiUnavailableException` 으로 바꾼다. 그래서 연결 실패와 같게 대체 편성으로 가고, 대화는 503 `TEMPORARILY_UNAVAILABLE` 이다.
 - 실패 까닭은 `CoachRunView.failureCode` 로 알린다. 코드 목록과 결과 처리 표는 [api-contract.md](./api-contract.md) 8장.
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V152`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
-  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 33개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V153`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 31개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.
 - 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 규준표는 국민체력100 공공데이터 산출물(V3, `kspo_norms_to_sql.py`),
@@ -172,7 +172,7 @@ flowchart LR
 | 모듈 | 표 |
 |---|---|
 | identity | `users` · `families` · `profiles` · `consent_events` · `cheers` · `profile_availability_slots` · `refresh_tokens` |
-| fitness | `fitness_norms` · `fitness_tests` · `fitness_test_items` · `predictions` · `prediction_points` |
+| fitness | `fitness_norms` · `fitness_tests` · `fitness_test_items` |
 | activity | `activity_daily` · `rest_cards` |
 | progress | `progress_xp_events` · `progress_achievements` |
 | coaching | `exercise_videos` · `video_exercises` · `video_interactions` · `exercise_favorites` · `coach_runs` · `coach_run_proposal_items` · `coach_run_proposal_sessions` · `missions` · `mission_participants` · `mission_sessions` · `mission_session_completions` · `mission_feedback` · `coach_messages` · `coach_message_citations` |

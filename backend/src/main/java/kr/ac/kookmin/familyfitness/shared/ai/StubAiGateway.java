@@ -104,29 +104,6 @@ public class StubAiGateway implements AiGateway {
     }
 
     @Override
-    public TrajectoryResponse trajectory(TrajectoryRequest request) {
-        AiProfile p = request.profile();
-        int ageYears = p.ageUnit().equals("개월") ? p.age() / 12 : p.age();
-        double base = p.measurements().getOrDefault(request.itemCode(), 50.0);
-        List<TrajectoryResponse.Band> bands = List.of(0, 4, 8, 10).stream()
-                .filter(it -> it <= request.horizonYears())
-                .map(offset -> {
-                    double p50 = round1(base * (1 + 0.02 * offset));
-                    return new TrajectoryResponse.Band(
-                            ageYears + offset, round1(p50 * 0.8), p50, round1(p50 * 1.2), 120);
-                })
-                .toList();
-        return new TrajectoryResponse(
-                "cross_sectional_group_distribution",
-                request.itemCode(),
-                ITEM_NAME.getOrDefault(request.itemCode(), request.itemCode()),
-                UNIT_OF.getOrDefault(request.itemCode(), ""),
-                bands,
-                Copy.TRAJECTORY_NOTICE,
-                false);
-    }
-
-    @Override
     public VideoSearchResponse searchVideos(VideoSearchRequest request) {
         List<String> matched = request.exerciseNames().stream().limit(1).toList();
         if (matched.isEmpty()) matched = List.of(EXERCISES.getFirst());
@@ -283,9 +260,5 @@ public class StubAiGateway implements AiGateway {
                 "국민체력100 · 초등학생의 기초체력향상과 운동능력발달을 위한 운동",
                 "video:" + SAMPLE_VIDEO,
                 "https://www.youtube.com/watch?v=" + SAMPLE_VIDEO + "&t=" + SAMPLE_VIDEO_START + "s");
-    }
-
-    private double round1(double v) {
-        return Math.round(v * 10) / 10.0;
     }
 }

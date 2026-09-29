@@ -12,8 +12,6 @@ import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunRequest;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
 import kr.ac.kookmin.familyfitness.shared.ai.StubAiGateway;
-import kr.ac.kookmin.familyfitness.shared.ai.TrajectoryRequest;
-import kr.ac.kookmin.familyfitness.shared.ai.TrajectoryResponse;
 import kr.ac.kookmin.familyfitness.shared.ai.VideoSearchRequest;
 import kr.ac.kookmin.familyfitness.shared.ai.VideoSearchResponse;
 import org.jspecify.annotations.Nullable;
@@ -39,11 +37,6 @@ public class FakeAiGateway implements AiGateway {
     @Override
     public AssessmentResponse assess(AssessmentRequest request) {
         return delegate.assess(request);
-    }
-
-    @Override
-    public TrajectoryResponse trajectory(TrajectoryRequest request) {
-        return delegate.trajectory(request);
     }
 
     @Override

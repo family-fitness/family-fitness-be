@@ -162,33 +162,6 @@ class StubAiGatewayTest {
     }
 
     @Test
-    @DisplayName("trajectory 는 현재·+4·+8·+10 세 구간을 고정 notice 와 함께 돌려준다")
-    void trajectory_는_현재_4_8_10_세_구간을_고정_notice_와_함께_돌려준다() {
-        AiProfile measured = new AiProfile(
-                child.profileRef(),
-                child.age(),
-                child.ageUnit(),
-                child.sex(),
-                child.heightCm(),
-                child.weightKg(),
-                Map.of("028", 40.0));
-        TrajectoryResponse response = gateway.trajectory(new TrajectoryRequest(measured, "028", 10));
-
-        assertThat(response.basis()).isEqualTo("cross_sectional_group_distribution");
-        assertThat(response.itemCode()).isEqualTo("028");
-        assertThat(response.notice()).isEqualTo(Copy.TRAJECTORY_NOTICE);
-        assertThat(response.bands().stream().map(TrajectoryResponse.Band::age).toList())
-                .containsExactly(11, 15, 19, 21);
-        assertThat(response.bands().getFirst().p50()).isEqualTo(40.0);
-        assertThat(response.bands().stream().allMatch(it -> it.p10() < it.p50() && it.p50() < it.p90()))
-                .isTrue();
-        assertThat(gateway.trajectory(new TrajectoryRequest(parent, "028", 5)).bands().stream()
-                        .map(TrajectoryResponse.Band::age)
-                        .toList())
-                .containsExactly(41, 45);
-    }
-
-    @Test
     @DisplayName("assess 와 searchVideos 는 계약 모양의 단순 응답을 돌려준다")
     void assess_와_searchVideos_는_계약_모양의_단순_응답을_돌려준다() {
         AssessmentResponse assessment = gateway.assess(new AssessmentRequest(child));

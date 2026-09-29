@@ -4,7 +4,6 @@ package kr.ac.kookmin.familyfitness.shared.domain;
 public final class Copy {
     public static final String FITNESS_DISCLAIMER =
             "국민체력100 측정 데이터를 바탕으로 한 참고 정보입니다. 질병의 진단·치료를 위한 것이 아니며, 건강에 관한 판단은 전문가와 상담하세요.";
-    public static final String TRAJECTORY_NOTICE = "집단 분포를 바탕으로 한 참고 범위입니다. 개인의 변화를 나타내지 않습니다.";
 
     private Copy() {}
 

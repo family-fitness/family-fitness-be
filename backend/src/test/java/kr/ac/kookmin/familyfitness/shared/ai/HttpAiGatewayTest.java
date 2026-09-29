@@ -356,17 +356,16 @@ class HttpAiGatewayTest {
     }
 
     @Test
-    @DisplayName("400 은 재시도 없이 AI_BAD_REQUEST 이고 trajectory 는 item_code·horizon_years 를 보낸다")
-    void 은_재시도_없이_AI_BAD_REQUEST_이고_trajectory_는_item_code_horizon_years_를_보낸다() {
-        server.expect(ExpectedCount.once(), requestTo("http://ai.internal:8000/v1/fitness/trajectory"))
-                .andExpect(jsonPath("$.item_code").value("028"))
-                .andExpect(jsonPath("$.horizon_years").value(10))
+    @DisplayName("400 은 재시도 없이 AI_BAD_REQUEST 이고 AI 가 준 코드를 문구에 싣는다")
+    void 은_재시도_없이_AI_BAD_REQUEST_이고_AI_가_준_코드를_문구에_싣는다() {
+        server.expect(ExpectedCount.once(), requestTo("http://ai.internal:8000/v1/fitness/assessment"))
+                .andExpect(jsonPath("$.profile_ref").value(child.profileRef()))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"error\":{\"code\":\"ITEM_NOT_ALLOWED\",\"message\":\"005\"}}"));
 
-        AiBadRequestException e = assertThrows(
-                AiBadRequestException.class, () -> gateway.trajectory(new TrajectoryRequest(child, "028", 10)));
+        AiBadRequestException e =
+                assertThrows(AiBadRequestException.class, () -> gateway.assess(new AssessmentRequest(child)));
 
         assertThat(e.getCode()).isEqualTo("AI_BAD_REQUEST");
         assertThat(e.getMessage()).contains("ITEM_NOT_ALLOWED");
