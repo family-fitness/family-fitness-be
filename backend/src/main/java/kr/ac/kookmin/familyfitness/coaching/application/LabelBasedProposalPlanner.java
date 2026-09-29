@@ -47,6 +47,9 @@ public class LabelBasedProposalPlanner {
 
     static final String MAIN_PHASE = "본운동";
 
+    /** 고를 요인이 없을 때 미션 이름에 쓰는 말(ai:coach/compose.py {@code read.factor or '전신'}). */
+    static final String WHOLE_BODY = "전신";
+
     /** 한 세트로 삼기 좋은 클립 길이(ai:video/catalog.py SET_SECONDS). 같은 순위면 이 길이에 가까운 것부터 고른다. */
     static final int SET_SECONDS = 60;
 
@@ -77,7 +80,8 @@ public class LabelBasedProposalPlanner {
      * 요인: 보호자가 키워 주고 싶은 역량(focusFactor)이 있으면 그것, 없으면 측정의 가장 약한 요인(백분위 75 이하), 아니면 가장 강한 요인.
      * 칸: 클립 표(video_exercises)에서 대상 연령대 · 조건에 맞는 운동 클립을 AI 가짓수 규칙({@link SessionClipCounts})대로
      * 준비 → 본 → 정리 차례로 고른다({@link #routine}). 본운동 클립이 하나도 없으면 예전처럼 영상 한 편을 본운동 한 칸에 넣는다.
-     * 고를 요인이 없거나(측정도 보호자가 키워 주고 싶은 역량도 없음) 인용이 하나도 없으면 null (제안을 만들 근거가 없다 → FAILED).
+     * 고를 요인이 없으면(측정 전이거나 백분위가 없는 만 7~10세이고, 보호자가 키워 주고 싶은 역량도 없음) {@link #wholeBody} 로 짠다.
+     * 인용이 하나도 없으면 null (제안을 만들 근거가 없다 → FAILED).
      */
     public @Nullable CoachRunResult plan(
             ProfileDetails subject,
@@ -87,9 +91,9 @@ public class LabelBasedProposalPlanner {
             String failureSummary) {
         LatestFitness latest = fitnessQuery.latestOf(subject.profileId());
         Target target = target(conditions.focusFactor(), latest);
-        if (target == null) return null;
-        FitnessFactor factor = target.factor();
         AgeGroup ageGroup = AgeGroup.of(subject.birthDate(), today);
+        if (target == null) return wholeBody(subject, runDate, conditions, latest, ageGroup, failureSummary);
+        FitnessFactor factor = target.factor();
 
         List<Citation> base = new ArrayList<>();
         FactorPoint point = target.point();
@@ -105,26 +109,76 @@ public class LabelBasedProposalPlanner {
         if (plan.citations().isEmpty()) return null;
 
         int minutes = conditions.minutes();
+        return result(
+                subject,
+                runDate,
+                minutes,
+                factor.getLabel() + " " + target.direction() + " " + minutes + "분",
+                "오늘은 " + factor.getLabel() + "을 키우는 동작을 해볼까요",
+                point == null
+                        ? "고르신 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다"
+                        : factor.getLabel() + "은 "
+                                + Band.ofPercentile(point.percentile()).getCopy() + " 입니다. 오늘 " + minutes + "분이면 충분합니다",
+                plan,
+                steps(latest, factor, conditions, failureSummary, routine, plan));
+    }
+
+    /**
+     * 고를 요인이 없을 때의 편성. AI 규칙 편성(ai:coach/compose.py {@code _by_rule} 을 요인 빈 채로 부른 것)처럼 그 연령대 클립을
+     * 요인 가산점 없이 가짓수만큼 골라 「전신 기르기」 미션 하나를 낸다. 칸 요인은 클립 라벨 그대로(없으면 빈 값), 인용은 클립이 나온 영상마다
+     * 하나다. 본운동 클립이 없으면 null — 요인도 없이 영상 한 편을 통째로 고를 기준이 없다.
+     */
+    private @Nullable CoachRunResult wholeBody(
+            ProfileDetails subject,
+            LocalDate runDate,
+            CoachRunConditions conditions,
+            @Nullable LatestFitness latest,
+            AgeGroup ageGroup,
+            String failureSummary) {
+        List<ExerciseClip> routine = routine(ageGroup, null, conditions);
+        if (routine.isEmpty()) return null;
+        Plan plan = clipPlan(List.of(), routine, null);
+        int minutes = conditions.minutes();
+        return result(
+                subject,
+                runDate,
+                minutes,
+                WHOLE_BODY + " 기르기 " + minutes + "분",
+                "오늘도 몸을 움직여 볼까요",
+                latest == null
+                        ? "측정 전이라 온몸을 고루 쓰는 동작으로 " + minutes + "분을 짰습니다. 측정을 하면 요인을 짚어 드릴 수 있습니다"
+                        : "측정값으로 짚을 요인이 없어 온몸을 고루 쓰는 동작으로 " + minutes + "분을 짰습니다",
+                plan,
+                steps(latest, null, conditions, failureSummary, routine, plan));
+    }
+
+    /** 대상 한 명(주행자)의 runDate 하루 미션 하나로 감싼다. */
+    private static CoachRunResult result(
+            ProfileDetails subject,
+            LocalDate runDate,
+            int minutes,
+            String title,
+            String copyChild,
+            String copyParent,
+            Plan plan,
+            List<CoachRunResult.Step> steps) {
         String day = runDate.toString();
         CoachRunResult.Mission mission = new CoachRunResult.Mission(
                 DAILY,
-                factor.getLabel() + " " + target.direction() + " " + minutes + "분",
+                title,
                 day,
                 day,
                 List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(subject.profileId()), CoachRoles.DRIVER)),
                 minutes,
                 plan.videoSec(),
                 plan.sessions(),
-                "오늘은 " + factor.getLabel() + "을 키우는 동작을 해볼까요",
-                point == null
-                        ? "고르신 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다"
-                        : factor.getLabel() + "은 "
-                                + Band.ofPercentile(point.percentile()).getCopy() + " 입니다. 오늘 " + minutes + "분이면 충분합니다",
+                copyChild,
+                copyParent,
                 "");
         return new CoachRunResult(
                 "fallback:" + UUID.randomUUID(),
                 "succeeded",
-                steps(latest, factor, conditions, failureSummary, routine, plan),
+                steps,
                 new CoachRunResult.Proposal(List.of(mission), plan.citations(), List.of()),
                 false,
                 null);
@@ -137,7 +191,7 @@ public class LabelBasedProposalPlanner {
      * 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼. 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
      */
-    List<ExerciseClip> routine(AgeGroup ageGroup, FitnessFactor factor, CoachRunConditions conditions) {
+    List<ExerciseClip> routine(AgeGroup ageGroup, @Nullable FitnessFactor factor, CoachRunConditions conditions) {
         List<ExerciseClip> pool = clips.findAllActive().stream()
                 .filter(ExerciseClip::isExercise)
                 .filter(it -> it.suits(ageGroup))
@@ -170,8 +224,11 @@ public class LabelBasedProposalPlanner {
         return picked;
     }
 
-    /** 클립마다 칸 하나. 인용은 규준(있으면) + 클립이 나온 영상마다 하나, 칸은 규준과 제 영상 인용을 가리킨다. */
-    private Plan clipPlan(List<Citation> base, List<ExerciseClip> routine, FitnessFactor factor) {
+    /**
+     * 클립마다 칸 하나. 인용은 규준(있으면) + 클립이 나온 영상마다 하나, 칸은 규준과 제 영상 인용을 가리킨다.
+     * 칸 요인은 클립 라벨, 없으면 미션 요인, 그것도 없으면(전신) 빈 값이다(AI 와 같다).
+     */
+    private Plan clipPlan(List<Citation> base, List<ExerciseClip> routine, @Nullable FitnessFactor factor) {
         List<Citation> citations = new ArrayList<>(base);
         Map<String, ExerciseVideo> videoById =
                 videos
@@ -198,7 +255,7 @@ public class LabelBasedProposalPlanner {
                     PHASE_NAME.get(clip.phase()),
                     sessions.size() + 1,
                     clip.title(),
-                    (clipFactor == null ? factor : clipFactor).getLabel(),
+                    clipFactor != null ? clipFactor.getLabel() : (factor != null ? factor.getLabel() : ""),
                     clip.endSec() - clip.startSec(),
                     new CoachRunResult.Video(clip.videoId(), clip.startSec(), clip.endSec()),
                     List.copyOf(evidence)));
@@ -247,7 +304,7 @@ public class LabelBasedProposalPlanner {
 
     private static List<CoachRunResult.Step> steps(
             @Nullable LatestFitness latest,
-            FitnessFactor factor,
+            @Nullable FitnessFactor factor,
             CoachRunConditions conditions,
             String failureSummary,
             List<ExerciseClip> routine,
@@ -266,8 +323,11 @@ public class LabelBasedProposalPlanner {
                         1,
                         "assess",
                         "ok",
-                        "측정 " + (latest == null ? "없음" : "있음") + " · 대상 요인 = " + factor.getLabel()
-                                + (conditions.focusFactor() == null ? "" : "(보호자가 고름)")),
+                        "측정 " + (latest == null ? "없음" : "있음")
+                                + (factor == null
+                                        ? " · 짚을 요인 없음 → " + WHOLE_BODY
+                                        : " · 대상 요인 = " + factor.getLabel()
+                                                + (conditions.focusFactor() == null ? "" : "(보호자가 고름)"))),
                 new CoachRunResult.Step(2, "retrieve", "partial", "AI 서비스 장애(" + failureSummary + ") → " + retrieved),
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
@@ -281,10 +341,13 @@ public class LabelBasedProposalPlanner {
         return !clip.needsProps();
     }
 
-    /** 작을수록 앞. 요인이 같으면 −2, 처방 어휘 이름이 있으면 −1(ai:video/catalog.py _rank 에서 처방 동작 −4 를 뺀 것). */
-    private static int score(ExerciseClip clip, FitnessFactor factor) {
+    /**
+     * 작을수록 앞. 요인이 같으면 −2, 처방 어휘 이름이 있으면 −1(ai:video/catalog.py _rank 에서 처방 동작 −4 를 뺀 것).
+     * 요인이 없으면(전신) 요인 가산점도 없다.
+     */
+    private static int score(ExerciseClip clip, @Nullable FitnessFactor factor) {
         int score = 0;
-        if (clip.factor() == factor) score -= 2;
+        if (factor != null && clip.factor() == factor) score -= 2;
         if (clip.exerciseName() != null) score -= 1;
         return score;
     }

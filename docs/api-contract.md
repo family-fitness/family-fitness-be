@@ -855,7 +855,7 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 |---|---|
 | `succeeded` | 제안 저장, `AWAITING_APPROVAL` |
 | `refused` | FAILED(`NO_CITATIONS`), `ai_refused=true` · 거부 사유 |
-| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인도 인용할 근거(측정 · 보호자가 키워 주고 싶은 역량)도 없으면 FAILED(`AI_FAILED`) |
+| `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인(측정 백분위 · 보호자가 키워 주고 싶은 역량)이 없으면(측정 전 · 만 7~10세) 그 연령대 클립으로 「전신 기르기」 미션을 짠다(AI 규칙 편성과 같다). 짤 클립도 인용할 근거도 없으면 FAILED(`AI_FAILED`) |
 | 폴링 한 번의 일시 오류(시간 초과 · 503 · 응답을 읽지 못함) | 그 회차만 건너뛰고 다음 폴링. 40회가 다 차면 위 대체 편성 |
 | AI 409 · 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
 | 요청 뒤 대상의 동의를 거둠 | FAILED(`CONSENT_REQUIRED`) |

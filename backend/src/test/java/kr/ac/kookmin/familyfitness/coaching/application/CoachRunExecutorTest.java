@@ -258,6 +258,53 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName("AI 장애 때 요인도 백분위도 없으면(측정 전 · 만 7~10세) 그 연령대 클립으로 전신 미션을 짠다 — AI 규칙 편성과 같다")
+    void AI_장애_때_요인도_백분위도_없으면_그_연령대_클립으로_전신_미션을_짠다() {
+        // 기본 측정은 백분위가 없다(만 7~10세처럼). 키워 주고 싶은 역량도 없다
+        String eg = "Eg3GpTv7z8s";
+        List.of(
+                        clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 500, 560, "팔 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                        clip(eg, 600, 640, "제자리 걷기", MAIN, null, AgeGroup.YOUTH),
+                        clip(eg, 1426, 1466, "다리 뒤 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip("toddler", 0, 60, "유아 늘이기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.TODDLER))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+        assertThat(saved.getSteps().get(0).summary()).isEqualTo("측정 있음 · 짚을 요인 없음 → 전신");
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨 기반 편성 · 클립 4개");
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.title()).isEqualTo("전신 기르기 20분");
+        assertThat(item.sessions().stream().map(MissionSession::title).toList())
+                .containsExactly("나비자세", "팔 펴기", "제자리 걷기", "다리 뒤 늘리기");
+        assertThat(item.sessions().get(2).factor()).isNull();
+        assertThat(item.citations().stream().map(ProposalCitation::chunkId).toList())
+                .containsExactly("video:" + eg);
+        assertThat(participantIds(item)).containsExactly(family.child.profileId(), family.parent.profileId());
+
+        // 측정 전인 만 3세도 그 연령대(유아기) 클립으로 짠다
+        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3));
+        CoachRun toddlerRun = runningRun(toddler.profileId(), false, null);
+        executor.execute(toddlerRun.getId());
+
+        CoachRun toddlerSaved = runs.findById(toddlerRun.getId());
+        assertThat(toddlerSaved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(toddlerSaved.getSteps().get(0).summary()).isEqualTo("측정 없음 · 짚을 요인 없음 → 전신");
+        assertThat(toddlerSaved.getProposals().getFirst().sessions().stream()
+                        .map(MissionSession::title)
+                        .toList())
+                .containsExactly("유아 늘이기");
+    }
+
+    @Test
     @DisplayName("withParent 가 아니면 참여자는 대상 아이뿐이다 — 응원 부모도 다른 구성원도 들어가지 않는다")
     void withParent_가_아니면_참여자는_대상_아이뿐이다() {
         CoachRun run = runningRun(family.child.profileId(), false, null);
