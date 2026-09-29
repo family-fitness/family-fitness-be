@@ -233,6 +233,34 @@ class CoachRunServiceTest {
     }
 
     @Test
+    @DisplayName("심사용 계정을 모두 합친 오늘 AI 한도가 차면 실행은 그대로 생기고 AI 를 부르지 않는 라벨 편성으로 넘긴다")
+    void 모두_합친_AI_한도가_차면_라벨_편성으로_넘긴다() {
+        reviewAccounts.add(family.parentUser);
+        CoachRunService reviewing = new CoachRunService(
+                runs,
+                missions,
+                videos,
+                identity,
+                identity,
+                fitness,
+                events::add,
+                Fixed.time(),
+                timeLimit,
+                new ReviewRunQuota(reviewAccounts::contains, Fixed.time(), ReviewRunQuota.MAX_RUNS_PER_DAY, 1),
+                JSON);
+        UUID child = family.child.profileId();
+
+        CoachRunAcceptedView first = reviewing.start(family.parentUser, family.familyId, on(child, Fixed.TODAY));
+        CoachRunAcceptedView second =
+                reviewing.start(family.parentUser, family.familyId, on(child, Fixed.TODAY.plusDays(1)));
+
+        assertThat(second.status()).isEqualTo(CoachRunStatus.RUNNING);
+        assertThat(events)
+                .containsExactly(
+                        new CoachRunRequested(first.coachRunId()), new CoachRunRequested(second.coachRunId(), true));
+    }
+
+    @Test
     @DisplayName("동시에 들어온 요청이 잠금을 먼저 잡았으면(유니크 인덱스 위반) 409 RUN_IN_PROGRESS 이고 이벤트도 없다")
     void 동시_요청이_잠금을_먼저_잡았으면_RUN_IN_PROGRESS() {
         InMemoryCoachRunRepository racing = new InMemoryCoachRunRepository() {

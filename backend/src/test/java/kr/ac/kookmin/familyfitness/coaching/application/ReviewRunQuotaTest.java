@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.application;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -53,6 +54,27 @@ class ReviewRunQuotaTest {
 
         clock.now = Instant.parse("2026-09-09T15:00:00Z"); // 9/10 00:00 KST
         assertThatCode(() -> quota.acquire(review)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("심사용 계정을 모두 합쳐 하루(KST) AI 편성 한도를 채우면 그다음은 라벨 편성으로 돌린다 — 429 가 아니라 모든 심사위원이 편성은 계속 받는다")
+    void 모두_합친_AI_한도를_채우면_라벨_편성으로_돌린다() {
+        ReviewRunQuota all = new ReviewRunQuota(id -> !id.equals(google), new AppTime(clock, KST));
+
+        for (int i = 0; i < ReviewRunQuota.MAX_AI_RUNS_PER_DAY; i++) {
+            assertThat(all.acquire(UUID.randomUUID())).isEqualTo(ReviewRunQuota.Planner.AI);
+        }
+
+        // 새 계정이어도 오늘 AI 몫은 끝났다. 구글 계정은 세지 않고 늘 AI 다
+        UUID late = UUID.randomUUID();
+        assertThat(all.acquire(late)).isEqualTo(ReviewRunQuota.Planner.LABELS);
+        assertThat(all.acquire(google)).isEqualTo(ReviewRunQuota.Planner.AI);
+        // 라벨 편성도 그 계정의 하루 20번에는 센다
+        for (int i = 1; i < ReviewRunQuota.MAX_RUNS_PER_DAY; i++) all.acquire(late);
+        assertThatThrownBy(() -> all.acquire(late)).isInstanceOf(ReviewRunLimitException.class);
+
+        clock.now = Instant.parse("2026-09-09T15:00:00Z"); // 9/10 00:00 KST
+        assertThat(all.acquire(UUID.randomUUID())).isEqualTo(ReviewRunQuota.Planner.AI);
     }
 
     @Test

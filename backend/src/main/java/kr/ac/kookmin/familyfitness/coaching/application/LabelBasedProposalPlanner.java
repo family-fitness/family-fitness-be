@@ -51,6 +51,9 @@ public class LabelBasedProposalPlanner {
     /** 고를 요인이 없을 때 미션 이름에 쓰는 말(ai:coach/compose.py {@code read.factor or '전신'}). */
     static final String WHOLE_BODY = "전신";
 
+    /** AI 를 부르지 않고 짤 때의 까닭(심사용 계정 모두의 오늘 AI 몫이 끝남, {@link ReviewRunQuota}). 장애가 아니라 단계 요약을 달리 적는다. */
+    public static final String AI_LIMIT_REACHED = "심사용 계정의 오늘 AI 편성 몫이 끝남";
+
     /** 한 세트로 삼기 좋은 클립 길이(ai:video/catalog.py SET_SECONDS). 같은 순위면 이 길이에 가까운 것부터 고른다. */
     static final int SET_SECONDS = 60;
 
@@ -357,7 +360,14 @@ public class LabelBasedProposalPlanner {
                                         ? " · 짚을 요인 없음 → " + WHOLE_BODY
                                         : " · 대상 요인 = " + factor.getLabel()
                                                 + (conditions.focusFactor() == null ? "" : "(보호자가 고름)"))),
-                new CoachRunResult.Step(2, "retrieve", "partial", "AI 서비스 장애(" + failureSummary + ") → " + retrieved),
+                new CoachRunResult.Step(
+                        2,
+                        "retrieve",
+                        "partial",
+                        (AI_LIMIT_REACHED.equals(failureSummary) ? "AI 를 부르지 않음(" : "AI 서비스 장애(")
+                                + failureSummary
+                                + ") → "
+                                + retrieved),
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
                         4, "verify", "ok", "인용 " + plan.citations().size() + "건 · 연령 필터 확인"));

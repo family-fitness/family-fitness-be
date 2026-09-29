@@ -654,6 +654,26 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName("라벨로만 짜라는 이벤트(심사용 계정의 오늘 AI 한도가 참)면 AI 를 부르지 않고 라벨 대체 편성으로 짜고, 까닭을 장애가 아니라 한도로 적는다")
+    void 라벨로만_짜라는_이벤트면_AI_를_부르지_않는다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+
+        executor.on(new CoachRunRequested(run.getId(), true));
+
+        assertThat(gateway.startRequests).isEmpty();
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().get(1).status()).isEqualTo("partial");
+        assertThat(saved.getSteps().get(1).summary())
+                .startsWith("AI 를 부르지 않음(" + LabelBasedProposalPlanner.AI_LIMIT_REACHED + ")");
+        assertThat(saved.getProposals())
+                .singleElement()
+                .extracting(CoachProposalItem::title)
+                .isEqualTo("유연성 키우기 20분");
+    }
+
+    @Test
     @DisplayName("AI 가 영상 표에 없는 공단 영상을 고르면 그 칸은 영상 없이 저장한다 — 유튜브로 틀려다 실패하지 않게. 표에 있는 공단 영상 · 유튜브 칸은 그대로")
     void 영상_표에_없는_공단_영상_칸은_영상_없이_저장한다() {
         videos.videos.put("0AUDLJ08S_00351", Videos.kspo("0AUDLJ08S_00351", "팔굽혀펴기", 91, 7, 12));

@@ -32,6 +32,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *   <li>AI 에 닿지 못함(연결 실패 · 5xx) · AI 가 failed · 폴링 만료 · 폴링 404(실행이 사라짐) → 라벨 기반 대체 편성.
  *       고를 요인(측정 · 보호자가 키워 주고 싶은 역량)이 없으면 그 연령대 클립으로 전신 미션을 짠다. 그 클립도 없거나 대체 편성이
  *       실패하면 FAILED(AI_FAILED).
+ *   <li>이벤트가 labelsOnly(심사용 계정 모두의 오늘 AI 몫이 끝남)면 AI 를 부르지 않고 곧바로 라벨 기반 대체 편성.
  *   <li>폴링 한 번의 일시 오류(타임아웃 · 연결 실패 · 5xx)는 그 회차만 건너뛰고 다음 폴링으로 넘긴다.
  *   <li>보호자 동의가 그 사이 거둬졌으면 FAILED(CONSENT_REQUIRED), 그 밖의 예외(AI 400 등)는 FAILED(ERROR).
  * </ol>
@@ -73,7 +74,7 @@ public class CoachRunExecutor {
     public void on(CoachRunRequested event) {
         UUID runId = event.runId();
         try {
-            threads.execute(() -> execute(runId));
+            threads.execute(() -> execute(runId, event.labelsOnly()));
         } catch (TaskRejectedException e) {
             log.warn("편성 스레드와 대기열이 가득 차 시작하지 못했다: run={} ({})", runId, e.getMessage());
             failQuietly(runId, CoachRunFailureCode.BUSY, "busy: 편성 스레드와 대기열이 가득 차 받지 못했다");
@@ -81,7 +82,20 @@ public class CoachRunExecutor {
     }
 
     public void execute(UUID runId) {
+        execute(runId, false);
+    }
+
+    /** {@code labelsOnly} 면 AI 를 부르지 않고 라벨 대체 편성으로 짠다(심사용 계정 모두의 오늘 AI 몫이 끝남, {@link ReviewRunQuota}). */
+    public void execute(UUID runId, boolean labelsOnly) {
         try {
+            if (labelsOnly) {
+                // 기다리는 사이 정리 작업이 끝낸 실행이면 prepare 가 null 이다
+                if (pipeline.prepare(runId) != null) {
+                    fallbackOrFail(
+                            runId, LabelBasedProposalPlanner.AI_LIMIT_REACHED, "review quota: AI 를 부르지 않는다", null);
+                }
+                return;
+            }
             CoachRunRequest request = pipeline.prepare(runId);
             if (request == null) return; // 기다리는 사이 정리 작업이 끝낸 실행
             CoachRunAccepted accepted = gateway.startCoachRun(request);
