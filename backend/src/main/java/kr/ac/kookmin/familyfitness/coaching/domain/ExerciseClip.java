@@ -41,4 +41,12 @@ public record ExerciseClip(
     public static String idOf(String videoId, int startSec) {
         return videoId + "-" + startSec;
     }
+
+    /**
+     * 이 연령대(viewer)에게 보여 줄 구간인지. 연령대가 같으면 된다. 어르신은 성인 구간도 받는다 — 어르신 라벨 구간이 따로 없어
+     * (V132 에 0개) 같은 연령대만 고집하면 65세 넘은 가족은 영상을 하나도 못 받는다. 성인은 어르신 구간을 받지 않는다.
+     */
+    public boolean suits(AgeGroup viewer) {
+        return ageGroup == viewer || (viewer == AgeGroup.SENIOR && ageGroup == AgeGroup.ADULT);
+    }
 }

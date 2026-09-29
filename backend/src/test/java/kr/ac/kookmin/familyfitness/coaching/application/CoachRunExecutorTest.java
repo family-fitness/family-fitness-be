@@ -230,6 +230,34 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName("AI 장애 때 어르신은 어르신 클립과 성인 클립에서 고른다 — 어르신 라벨 클립이 먼저")
+    void AI_장애_때_어르신은_어르신_클립과_성인_클립에서_고른다() {
+        ProfileDetails grandma = family.addChild("할머니", Fixed.TODAY.minusYears(70));
+        List.of(
+                        clip("adult", 10, 70, "손목 돌리기", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.ADULT),
+                        clip("adult", 80, 140, "앉았다 일어서기", MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                        clip("adult", 150, 220, "벽 밀기", MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                        clip("senior", 0, 60, "의자 잡고 일어서기", MAIN, FitnessFactor.STRENGTH, AgeGroup.SENIOR),
+                        clip("adult", 220, 280, "목 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.ADULT),
+                        // 다른 연령대는 고르지 않는다
+                        clip("youth", 0, 60, "버피", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRun(grandma.profileId(), false, FitnessFactor.STRENGTH);
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getProposals().getFirst().sessions().stream()
+                        .map(MissionSession::title)
+                        .toList())
+                .containsExactly("손목 돌리기", "의자 잡고 일어서기", "앉았다 일어서기", "벽 밀기", "목 늘리기");
+    }
+
+    @Test
     @DisplayName("withParent 가 아니면 참여자는 대상 아이뿐이다 — 응원 부모도 다른 구성원도 들어가지 않는다")
     void withParent_가_아니면_참여자는_대상_아이뿐이다() {
         CoachRun run = runningRun(family.child.profileId(), false, null);

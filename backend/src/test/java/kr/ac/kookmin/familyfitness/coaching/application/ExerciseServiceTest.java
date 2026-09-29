@@ -261,11 +261,19 @@ class ExerciseServiceTest {
     }
 
     @Test
-    @DisplayName("어르신 프로필에는 같은 연령대 구간이 없어 빈 목록이다")
-    void 어르신_프로필에는_같은_연령대_구간이_없어_빈_목록이다() {
-        add(clip("aaa", 10, 70, "팔 굽혀 펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT));
+    @DisplayName("어르신은 어르신 구간과 성인 구간을 함께 받고, 같은 제목이면 어르신 구간을 남긴다")
+    void 어르신은_어르신_구간과_성인_구간을_함께_받고_같은_제목이면_어르신_구간을_남긴다() {
+        add(
+                clip("aaa", 10, 70, "팔 굽혀 펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                clip("aaa", 80, 120, "앉았다 일어서기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                clip("zzz", 0, 40, "앉았다 일어서기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.SENIOR),
+                youth("bbb", 10, "버피"));
         UUID grandma = family.addChild("할머니", LocalDate.of(1950, 1, 1)).profileId();
 
-        assertThat(list(family.parentUser, grandma).total()).isZero();
+        ExerciseListView view = list(family.parentUser, grandma);
+        assertThat(ids(view)).containsExactly("aaa-10", "zzz-0");
+        assertThat(view.total()).isEqualTo(2);
+        // 성인은 어르신 구간을 받지 않는다
+        assertThat(ids(list(family.parentUser, parentId))).containsExactly("aaa-10", "aaa-80");
     }
 }

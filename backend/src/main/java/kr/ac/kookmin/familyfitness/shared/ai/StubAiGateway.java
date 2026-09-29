@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import kr.ac.kookmin.familyfitness.shared.domain.Copy;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +27,7 @@ public class StubAiGateway implements AiGateway {
 
     /**
      * 코치 편성 스텁의 영상 — AI 명세 4장 예시와 같은 영상이다. 준비 · 본 · 정리 클립이 다 있다.
-     * 라벨 연령 7~12세(V132). 이 밖의 나이에는 영상을 붙이지 않는다.
+     * 라벨 연령 7~12세(V132). 만 19세 위는 {@link #ADULT_COACH_VIDEO}, 그 밖의 나이에는 영상을 붙이지 않는다.
      */
     public static final String COACH_VIDEO = "Eg3GpTv7z8s";
 
@@ -58,6 +59,42 @@ public class StubAiGateway implements AiGateway {
             new SampleClip("손목잡고 팔 늘리기", 1376, 1422),
             new SampleClip("다리 뒤 늘리기", 1426, 1466),
             new SampleClip("어깨 늘리기", 1822, 1860));
+    /**
+     * 성인 · 어르신 주행자에게 붙이는 영상(라벨 연령 19~64세). 어르신 라벨 클립이 따로 없어 어르신도 성인 클립을 받는다
+     * (운동 찾기 · 대체 편성과 같다, {@code ExerciseClip#suits}). 클립은 V132 의 실제 구간이고 조용함 · 집 · 도구 없음이다.
+     */
+    public static final String ADULT_COACH_VIDEO = "IhShIA-WJNE";
+
+    public static final int ADULT_VIDEO_AGE_FROM = 19;
+    public static final List<SampleClip> ADULT_WARMUP_CLIPS = List.of(
+            new SampleClip("손목, 발목 돌리기", 20, 50),
+            new SampleClip("엉덩관절 돌리기", 68, 104),
+            new SampleClip("허리 돌리기", 104, 126));
+    public static final List<SampleClip> ADULT_MAIN_CLIPS = List.of(
+            new SampleClip("제자리 걷기 +무릎 올리기", 524, 564),
+            new SampleClip("앉았다 일어서기", 564, 610),
+            new SampleClip("엎드려 버티기", 648, 686),
+            new SampleClip("한발 앞으로 내밀고 앉았다 일어서기", 718, 754),
+            new SampleClip("엎드려 누워서 허리 펴기", 776, 816),
+            new SampleClip("엎드려 무릎 올리기", 816, 856));
+    public static final List<SampleClip> ADULT_COOLDOWN_CLIPS = List.of(
+            new SampleClip("목 스트레칭", 980, 1038),
+            new SampleClip("등/어깨 뒤쪽 스트레칭", 1038, 1078),
+            new SampleClip("허리 스트레칭", 1078, 1102));
+
+    /** 주행자 나이에 맞춰 붙이는 영상 한 편과 그 클립들. */
+    private record SampleVideo(
+            String videoId, String title, List<SampleClip> warmup, List<SampleClip> main, List<SampleClip> cooldown) {}
+
+    private static final SampleVideo YOUTH_SAMPLE = new SampleVideo(
+            COACH_VIDEO, "국민체력100 · [유소년] 성장기 학생들을 위한 근력 운동 프로그램", WARMUP_CLIPS, MAIN_CLIPS, COOLDOWN_CLIPS);
+    private static final SampleVideo ADULT_SAMPLE = new SampleVideo(
+            ADULT_COACH_VIDEO,
+            "국민체력100 · [성인/1주차] 딱 4주만 같이 해봐요💪｜1주일만 해도 체지방 쫙! 빼고 근력 확! 높일 수 있는 전신 순환운동",
+            ADULT_WARMUP_CLIPS,
+            ADULT_MAIN_CLIPS,
+            ADULT_COOLDOWN_CLIPS);
+
     public static final List<String> MEDICAL_WORDS = List.of("통증", "부상", "약물", "질환", "아파", "다쳤");
 
     private static final Map<String, String> ITEM_NAME =
@@ -124,7 +161,8 @@ public class StubAiGateway implements AiGateway {
      * 실제 AI 처럼 주행자마다 일간 미션 하나(start = end = period.start_date)를 낸다. 참여자는 그 주행자뿐이다.
      * 칸은 AI 가짓수 규칙({@link SessionClipCounts}, 20분이면 준비 2 · 본 4 · 정리 1)대로 준비 → 본 → 정리 차례의 클립이고,
      * duration_sec 는 클립 길이, duration_min 은 minutes_per_session 이다(칸마다 분은 AI 처럼 싣지 않는다).
-     * 요인은 focus_factor, 없으면 유연성. 영상 구간은 주행자 나이가 영상 연령(7~12세) 안일 때만 붙인다.
+     * 요인은 focus_factor, 없으면 유연성. 영상 구간은 주행자 나이에 맞는 영상이 있을 때만 붙인다 — 7~12세는 유소년 영상,
+     * 만 19세 위(성인 · 어르신)는 성인 영상. 성인 영상을 쓴 주행자가 있으면 그 영상 인용을 뒤에 더한다.
      */
     @Override
     public CoachRunResult getCoachRun(String runId) {
@@ -153,10 +191,13 @@ public class StubAiGateway implements AiGateway {
             return new CoachRunResult(runId, "refused", steps, null, true, "no_relevant_source");
         }
         String day = LocalDate.parse(request.startDate()).toString();
+        List<Citation> citations = new ArrayList<>(List.of(
+                new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null), coachVideoCitation(2)));
         List<CoachRunResult.Mission> missions = drivers.stream()
                 .map(driver -> {
-                    List<CoachRunResult.Session> sessions =
-                            sessions(minutes, factor, sampleVideoFits(driver.profile()));
+                    SampleVideo video = sampleVideoFor(driver.profile());
+                    int evidence = video == ADULT_SAMPLE ? adultCitation(citations) : 2;
+                    List<CoachRunResult.Session> sessions = sessions(minutes, factor, video, evidence);
                     return new CoachRunResult.Mission(
                             DAILY,
                             factor + " 키우기 " + minutes + "분",
@@ -178,23 +219,23 @@ public class StubAiGateway implements AiGateway {
                 runId,
                 "succeeded",
                 steps,
-                new CoachRunResult.Proposal(
-                        missions,
-                        List.of(
-                                new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null),
-                                coachVideoCitation(2)),
-                        List.of()),
+                new CoachRunResult.Proposal(missions, List.copyOf(citations), List.of()),
                 false,
                 null);
     }
 
-    /** 준비 · 본 · 정리 차례로 가짓수만큼 클립을 앞에서부터 담는다. order 는 1부터 그날 전체 차례다. */
-    private static List<CoachRunResult.Session> sessions(int minutes, String factor, boolean withVideo) {
+    /**
+     * 준비 · 본 · 정리 차례로 가짓수만큼 클립을 앞에서부터 담는다. order 는 1부터 그날 전체 차례다.
+     * 맞는 영상이 없으면 이름과 길이는 유소년 클립에서 빌리고 영상 구간은 싣지 않는다.
+     */
+    private static List<CoachRunResult.Session> sessions(
+            int minutes, String factor, @Nullable SampleVideo video, int videoCitation) {
+        SampleVideo names = video == null ? YOUTH_SAMPLE : video;
         SessionClipCounts counts = SessionClipCounts.of(minutes);
         List<CoachRunResult.Session> sessions = new ArrayList<>();
-        addSessions(sessions, "준비운동", WARMUP_CLIPS, counts.warmup(), factor, withVideo);
-        addSessions(sessions, "본운동", MAIN_CLIPS, counts.main(), factor, withVideo);
-        addSessions(sessions, "정리운동", COOLDOWN_CLIPS, counts.cooldown(), factor, withVideo);
+        addSessions(sessions, "준비운동", names.warmup(), counts.warmup(), factor, video, videoCitation);
+        addSessions(sessions, "본운동", names.main(), counts.main(), factor, video, videoCitation);
+        addSessions(sessions, "정리운동", names.cooldown(), counts.cooldown(), factor, video, videoCitation);
         return List.copyOf(sessions);
     }
 
@@ -204,7 +245,8 @@ public class StubAiGateway implements AiGateway {
             List<SampleClip> clips,
             int count,
             String factor,
-            boolean withVideo) {
+            @Nullable SampleVideo video,
+            int videoCitation) {
         for (int i = 0; i < count; i++) {
             SampleClip clip = clips.get(i % clips.size());
             sessions.add(new CoachRunResult.Session(
@@ -214,14 +256,33 @@ public class StubAiGateway implements AiGateway {
                     clip.title(),
                     factor,
                     clip.durationSec(),
-                    withVideo ? new CoachRunResult.Video(COACH_VIDEO, clip.startSec(), clip.endSec()) : null,
-                    List.of(1, 2)));
+                    video == null ? null : new CoachRunResult.Video(video.videoId(), clip.startSec(), clip.endSec()),
+                    List.of(1, videoCitation)));
         }
     }
 
-    private static boolean sampleVideoFits(AiProfile profile) {
+    /** 7~12세는 유소년 영상, 만 19세 위(성인 · 어르신)는 성인 영상, 그 밖은 없음. */
+    private static @Nullable SampleVideo sampleVideoFor(AiProfile profile) {
         int years = profile.ageUnit().equals("개월") ? profile.age() / 12 : profile.age();
-        return years >= SAMPLE_VIDEO_AGE_FROM && years <= SAMPLE_VIDEO_AGE_TO;
+        if (years >= SAMPLE_VIDEO_AGE_FROM && years <= SAMPLE_VIDEO_AGE_TO) return YOUTH_SAMPLE;
+        if (years >= ADULT_VIDEO_AGE_FROM) return ADULT_SAMPLE;
+        return null;
+    }
+
+    /** 성인 영상 인용 번호. 아직 없으면 뒤에 더한다. */
+    private static int adultCitation(List<Citation> citations) {
+        String chunkId = "video:" + ADULT_COACH_VIDEO;
+        for (Citation it : citations) {
+            if (it.chunkId().equals(chunkId)) return it.index();
+        }
+        SampleClip first = ADULT_WARMUP_CLIPS.getFirst();
+        int index = citations.size() + 1;
+        citations.add(new Citation(
+                index,
+                ADULT_SAMPLE.title(),
+                chunkId,
+                "https://www.youtube.com/watch?v=" + ADULT_COACH_VIDEO + "&t=" + first.startSec() + "s"));
+        return index;
     }
 
     @Override
@@ -249,7 +310,7 @@ public class StubAiGateway implements AiGateway {
         SampleClip first = WARMUP_CLIPS.getFirst();
         return new Citation(
                 index,
-                "국민체력100 · [유소년] 성장기 학생들을 위한 근력 운동 프로그램",
+                YOUTH_SAMPLE.title(),
                 "video:" + COACH_VIDEO,
                 "https://www.youtube.com/watch?v=" + COACH_VIDEO + "&t=" + first.startSec() + "s");
     }

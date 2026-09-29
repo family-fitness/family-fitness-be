@@ -126,6 +126,28 @@ class StubAiGatewayTest {
     }
 
     @Test
+    @DisplayName("성인 · 어르신 주행자에게는 성인 영상 구간을 붙이고, 그 영상 인용을 뒤에 더한다")
+    void 성인_어르신_주행자에게는_성인_영상_구간을_붙인다() {
+        AiProfile grandma = new AiProfile("p_grandma", 70, "세", "F", null, null, Map.of());
+
+        CoachRunResult result = gateway.getCoachRun(
+                gateway.startCoachRun(request(new Participant(child, "주행자"), new Participant(grandma, "주행자")))
+                        .runId());
+
+        CoachRunResult.Mission senior = result.proposal().missions().get(1);
+        assertThat(senior.participants()).containsExactly(new CoachRunResult.ParticipantRef("p_grandma", "주행자"));
+        assertThat(senior.sessions().getFirst().exerciseName()).isEqualTo("손목, 발목 돌리기");
+        assertThat(senior.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IhShIA-WJNE", 20, 50));
+        assertThat(senior.sessions().stream().map(CoachRunResult.Session::video))
+                .allMatch(it -> it != null && it.videoId().equals("IhShIA-WJNE"));
+        assertThat(senior.sessions().getFirst().evidence()).containsExactly(1, 3);
+        assertThat(result.proposal().missions().getFirst().sessions().getFirst().evidence())
+                .containsExactly(1, 2);
+        assertThat(result.proposal().citations().stream().map(Citation::chunkId).toList())
+                .containsExactly("prescription:유소년-11-F-0142", "video:Eg3GpTv7z8s", "video:IhShIA-WJNE");
+    }
+
+    @Test
     @DisplayName("주행자가 없으면 refused")
     void 주행자가_없으면_refused() {
         CoachRunAccepted accepted =

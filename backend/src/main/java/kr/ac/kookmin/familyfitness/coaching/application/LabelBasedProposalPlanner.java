@@ -132,18 +132,20 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 한 회분 클립(ai:video/catalog.py {@code routine} 을 옮김, 처방 동작 가산점은 뺐다 — 대체 편성은 처방 검색을 하지 않는다).
-     * 후보: 지금 판의 운동 클립 중 연령대가 대상과 같고 조건에 맞는 것(조용히 → quiet, 집 → home_ok, 늘 도구 없음 — AI 요청과 같다).
-     * 단계마다 요인이 같은 것 → 처방 어휘 이름이 있는 것 → 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼. 같은 이름은 두 번 넣지 않는다
+     * 후보: 지금 판의 운동 클립 중 대상 연령대에 맞고({@link ExerciseClip#suits}, 어르신은 성인 클립도) 조건에 맞는 것(조용히 → quiet,
+     * 집 → home_ok, 늘 도구 없음 — AI 요청과 같다). 단계마다 대상과 연령대가 같은 것 → 요인이 같은 것 → 처방 어휘 이름이 있는 것 →
+     * 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼. 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
      */
     List<ExerciseClip> routine(AgeGroup ageGroup, FitnessFactor factor, CoachRunConditions conditions) {
         List<ExerciseClip> pool = clips.findAllActive().stream()
                 .filter(ExerciseClip::isExercise)
-                .filter(it -> it.ageGroup() == ageGroup)
+                .filter(it -> it.suits(ageGroup))
                 .filter(it -> fits(it, conditions))
                 .toList();
         SessionClipCounts want = SessionClipCounts.of(conditions.minutes());
-        Comparator<ExerciseClip> rank = Comparator.comparingInt((ExerciseClip it) -> score(it, factor))
+        Comparator<ExerciseClip> rank = Comparator.comparing((ExerciseClip it) -> it.ageGroup() != ageGroup)
+                .thenComparingInt(it -> score(it, factor))
                 .thenComparingInt(it -> Math.abs(it.endSec() - it.startSec() - SET_SECONDS));
         Set<String> used = new HashSet<>();
         List<ExerciseClip> picked = new ArrayList<>();
@@ -206,7 +208,7 @@ public class LabelBasedProposalPlanner {
     }
 
     /**
-     * 맞는 클립이 없을 때(대상 연령대 클립이 없는 어르신 등)의 예전 편성: 대상 연령대에 맞고 그 요인 라벨이 있는 영상 중
+     * 맞는 클립이 없을 때(클립 표가 비었거나 조건에 걸려 본운동이 없을 때)의 예전 편성: 대상 연령대에 맞고 그 요인 라벨이 있는 영상 중
      * 연령 범위가 좁은 것, 같으면 짧은 것을 통째로 본운동 한 칸에 넣는다. 그런 영상도 없으면 영상 없는 본운동 한 칸.
      */
     private Plan wholeVideoPlan(List<Citation> base, AgeGroup ageGroup, FitnessFactor factor) {

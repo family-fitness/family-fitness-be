@@ -55,8 +55,9 @@ public class ExerciseService {
     }
 
     /**
-     * 거르는 차례: 켜진 운동 구간 → 보는 프로필과 같은 연령대 → 요인 · 단계 · 조용함 · 검색어 → (FAVORITES 면) 찜 → 목록 차례로 줄 세워 같은
-     * 제목은 처음 것 하나만 → 앞 {@link #PAGE} 개. 연령대를 먼저 걸어야 같은 제목의 다른 연령대 구간이 대표로 남지 않는다.
+     * 거르는 차례: 켜진 운동 구간 → 보는 프로필의 연령대에 맞는 것({@link ExerciseClip#suits}, 어르신은 성인 구간도) → 요인 · 단계 ·
+     * 조용함 · 검색어 → (FAVORITES 면) 찜 → 같은 제목은 하나만(보는 연령대와 같은 구간을 먼저, 그다음 목록 차례로 처음 것) → 목록 차례로
+     * 줄 세워 앞 {@link #PAGE} 개. 연령대를 먼저 걸어야 같은 제목의 다른 연령대 구간이 대표로 남지 않는다.
      */
     @Transactional(readOnly = true)
     public ExerciseListView list(UUID userId, ExerciseListQuery query) {
@@ -67,12 +68,16 @@ public class ExerciseService {
         Set<String> favorited = profileId == null ? Set.of() : favorites.clipIdsOf(profileId);
 
         List<ExerciseClip> hits = distinctByTitle(clips.findAllActive().stream()
-                .filter(ExerciseClip::isExercise)
-                .filter(it -> it.ageGroup() == ageGroup)
-                .filter(query::matches)
-                .filter(it -> query.list() != ExerciseListType.FAVORITES || favorited.contains(it.clipId()))
+                        .filter(ExerciseClip::isExercise)
+                        .filter(it -> it.suits(ageGroup))
+                        .filter(query::matches)
+                        .filter(it -> query.list() != ExerciseListType.FAVORITES || favorited.contains(it.clipId()))
+                        .sorted(Comparator.comparing((ExerciseClip it) -> it.ageGroup() != ageGroup)
+                                .thenComparing(CATALOG_ORDER))
+                        .toList())
+                .stream()
                 .sorted(CATALOG_ORDER)
-                .toList());
+                .toList();
         List<ExerciseView> page = hits.stream()
                 .limit(PAGE)
                 .map(it -> ExerciseView.of(it, favorited.contains(it.clipId())))
@@ -110,7 +115,7 @@ public class ExerciseService {
                 .orElse(null);
     }
 
-    /** 같은 제목이 여러 영상에 되풀이된다. 목록 차례에서 처음 나온 구간 하나만 남긴다(FE 목과 같다). */
+    /** 같은 제목이 여러 영상에 되풀이된다. 들어온 차례에서 처음 나온 구간 하나만 남긴다(FE 목과 같다). */
     private static List<ExerciseClip> distinctByTitle(List<ExerciseClip> ordered) {
         Map<String, ExerciseClip> firstByTitle = new LinkedHashMap<>();
         for (ExerciseClip clip : ordered) firstByTitle.putIfAbsent(clip.title(), clip);
