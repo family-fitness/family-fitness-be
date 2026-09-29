@@ -119,7 +119,7 @@
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
 | 422 | `SELF_CHEER` · `CHEER_KIND_NOT_ALLOWED` · `NOT_A_REPLY_TARGET` | 응원 — 자기에게 · 종류와 방향이 안 맞음 · 고마워요가 답할 칭찬이 아님 |
 | 422 | `ALREADY_MOVED` | 쉬는 날 카드 — 그날 아이가 이미 운동함 |
-| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP(IPv6 는 /56)에서 한 시간에 30번을 넘김(새 계정이 모두 합쳐 한 시간에 300개를 넘으면 429 가 아니라 그 한 시간에 만든 심사용 계정 하나로 들인다. 나눠 줄 계정이 없을 때만 429). 편성 시작: 심사용 계정이 하루 20번을 넘김(심사용 계정을 모두 합쳐 하루(KST) 400번 AI 로 짠 뒤로는 429 가 아니라 AI 를 부르지 않는 라벨 대체 편성으로 짠다 — 아래 「결과 처리」) |
+| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP(IPv6 는 /56)에서 한 시간에 30번을 넘김(새 계정이 모두 합쳐 한 시간에 300개를 넘으면 429 가 아니라 그 한 시간에 만든 심사용 계정 하나로 들인다. 나눠 줄 계정이 없을 때만 429). 편성 시작: 심사용 계정이 하루 20번을 넘김(심사용 계정을 모두 합쳐 하루(KST) 400번 AI 로 짠 뒤로는 429 가 아니라 AI 를 부르지 않는 라벨 대체 편성으로 짠다 — 아래 「결과 처리」). 코치 대화: 심사용 계정이 하루(KST) 30번을 넘김, 또는 심사용 계정을 모두 합쳐 하루(KST) 300번을 넘김 |
 | 500 | `INTERNAL_ERROR` | 처리하지 못한 예외 |
 | 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx · 200 인데 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락)(대화), 비동기 요청 시간 초과 |
 | 503 | `AI_BAD_REQUEST` | AI 가 400 을 냄(서버가 잘못 보낸 것) — 대화 |
@@ -749,7 +749,9 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 ### POST /api/v1/coach/chat — 대신 · FE 가 부르지 않음 · 걷을 후보
 요청 `{profileId●, conversationId?, question●(1~500)}`. `AiGateway.ask`.
 응답 200 `{conversationId, messageId, answer, citations:[{index, sourceLabel, excerpt, url}], refused, refusalReason|null}`.
-판정 차례: 400 → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 물을 수 없음) → 404 `CONVERSATION_NOT_FOUND` → 403 `FORBIDDEN`(다른 프로필의 대화) → 503.
+판정 차례: 400 → 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN`(그 프로필 이름으로 물을 수 없음) → 404 `CONVERSATION_NOT_FOUND` → 403 `FORBIDDEN`(다른 프로필의 대화) → 429 `TOO_MANY`(심사용 계정만) → 503.
+- 심사용 계정(`POST /auth/review-login` 이 만든 계정)은 하루(KST)에 30번까지 묻는다. 심사용 계정을 모두 합쳐서는 하루 300번까지다. 넘기면 AI 를 부르기 전에 429 `TOO_MANY` 이고 아무것도 저장하지 않는다. 대화마다 AI 가 LLM 을 부를 수 있는데 계정은 누구나 만들 수 있어서다. AI 를 부르기 전에 세므로 503 으로 끝난 대화도 센다. 셈은 서버 메모리에 둔다(`ReviewChatQuota`). 구글 계정은 세지 않는다.
+  편성과 달리 모두 합친 한도도 429 로 막는다 — AI 에 LLM 없이 답하라고 부탁할 칸이 없고, FE 에 대화 화면이 없어 누가 한도를 채워도 심사위원이 화면에서 막히지 않는다.
 USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프로필의 것. AI 장애 · AI 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락) → 503 `TEMPORARILY_UNAVAILABLE`(저장 안 함). refused=false 인데 인용 0 → 서버가 `no_citation_generated` 거부로 바꿔 저장. excerpt 는 AI 응답에 없으면 label 로 채움.
 
 ### GET /api/v1/families/{familyId}/report/weekly?weekStart= — 같은 가족 · FE 가 부르지 않음 · 걷을 후보

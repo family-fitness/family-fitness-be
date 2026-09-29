@@ -4,13 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachMessage;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachingForbiddenException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ConversationNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.MessageRole;
+import kr.ac.kookmin.familyfitness.coaching.domain.ReviewChatLimitException;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeAiGateway;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
@@ -32,8 +36,14 @@ class CoachChatServiceTest {
     private final FakeIdentity identity = new FakeIdentity(family, other);
     private final InMemoryCoachMessageRepository messages = new InMemoryCoachMessageRepository();
     private final FakeAiGateway gateway = new FakeAiGateway();
+    private final Set<UUID> reviewAccounts = new HashSet<>();
     private final CoachChatService service = new CoachChatService(
-            messages, identity, gateway, NoopTransactionManager.noopTransactionTemplate(), Fixed.time());
+            messages,
+            identity,
+            gateway,
+            NoopTransactionManager.noopTransactionTemplate(),
+            Fixed.time(),
+            new ReviewChatQuota(reviewAccounts::contains, Fixed.time()));
     private final UUID childId = family.child.profileId();
 
     @Test
@@ -152,5 +162,31 @@ class CoachChatServiceTest {
         ChatView forAccountless = service.chat(family.parentUser, new ChatCommand(accountless, null, "질문"));
         assertThat(forAccountless.refused()).isFalse();
         assertThat(messages.messages).allMatch(it -> it.getProfileId().equals(accountless));
+    }
+
+    @Test
+    @DisplayName("심사용 계정이 오늘 한도만큼 물었으면 429 TOO_MANY 이고 AI 를 부르지 않으며 아무것도 저장하지 않는다")
+    void 심사용_계정은_하루_한도를_넘으면_429() {
+        reviewAccounts.add(family.childUser);
+        AtomicInteger asked = new AtomicInteger();
+        gateway.onAsk = request -> {
+            asked.incrementAndGet();
+            return new CoachMessageResponse("답 [1]", List.of(), true, "no_relevant_source");
+        };
+        for (int i = 0; i < ReviewChatQuota.MAX_CHATS_PER_DAY; i++) {
+            service.chat(family.childUser, new ChatCommand(childId, null, "질문"));
+        }
+        int saved = messages.messages.size();
+
+        ReviewChatLimitException e = assertThrows(
+                ReviewChatLimitException.class,
+                () -> service.chat(family.childUser, new ChatCommand(childId, null, "질문")));
+
+        assertThat(e.getCode()).isEqualTo("TOO_MANY");
+        assertThat(asked.get()).isEqualTo(ReviewChatQuota.MAX_CHATS_PER_DAY);
+        assertThat(messages.messages).hasSize(saved);
+        // 구글 계정(보호자)은 세지 않는다
+        service.chat(family.parentUser, new ChatCommand(family.parent.profileId(), null, "질문"));
+        assertThat(asked.get()).isEqualTo(ReviewChatQuota.MAX_CHATS_PER_DAY + 1);
     }
 }

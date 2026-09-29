@@ -21,6 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * AI 호출은 트랜잭션 밖에서 하고, 성공했을 때만 두 메시지를 한 트랜잭션으로 저장한다 — AI 장애(503)면 아무것도 남지 않는다.
  * 누구 이름으로 묻는지는 칸 끝과 같다: 이 계정이 그 프로필 이름으로 할 수 있어야 한다(자기 프로필이거나, 보호자가 계정 없는 아이를
  * 대신할 때). 같은 가족이기만 하면 되던 때는 자녀 계정이 부모 이름으로 대화를 남겼다(KP-09).
+ * 심사용 계정은 AI 를 부르기 전에 {@link ReviewChatQuota} 로 하루 횟수를 센다 — 대화마다 LLM 이 불릴 수 있다.
  */
 @Service
 public class CoachChatService {
@@ -29,18 +30,21 @@ public class CoachChatService {
     private final AiGateway gateway;
     private final TransactionTemplate tx;
     private final AppTime time;
+    private final ReviewChatQuota reviewQuota;
 
     public CoachChatService(
             CoachMessageRepository messages,
             FamilyAccess familyAccess,
             AiGateway gateway,
             TransactionTemplate tx,
-            AppTime time) {
+            AppTime time,
+            ReviewChatQuota reviewQuota) {
         this.messages = messages;
         this.familyAccess = familyAccess;
         this.gateway = gateway;
         this.tx = tx;
         this.time = time;
+        this.reviewQuota = reviewQuota;
     }
 
     public ChatView chat(UUID userId, ChatCommand command) {
@@ -54,6 +58,7 @@ public class CoachChatService {
             if (!owner.equals(command.profileId())) throw new CoachingForbiddenException("다른 프로필의 대화입니다");
         }
 
+        reviewQuota.acquire(userId);
         CoachMessageResponse response = gateway.ask(new CoachMessageRequest(
                 ProfileRef.of(command.profileId()), profile.ageGroup().getLabel(), command.question()));
 
