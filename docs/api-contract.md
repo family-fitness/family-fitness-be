@@ -119,7 +119,7 @@
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
 | 422 | `SELF_CHEER` · `CHEER_KIND_NOT_ALLOWED` · `NOT_A_REPLY_TARGET` | 응원 — 자기에게 · 종류와 방향이 안 맞음 · 고마워요가 답할 칭찬이 아님 |
 | 422 | `ALREADY_MOVED` | 쉬는 날 카드 — 그날 아이가 이미 운동함 |
-| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP(IPv6 는 /64)에서 한 시간에 30번, 또는 모두 합쳐 한 시간에 300번을 넘김 |
+| 429 | `TOO_MANY` | 응원: (보낸 프로필, 받는 프로필) 분당 5회 초과. 초대코드: 없는 코드를 10분에 10번 넘게 넣음. 심사용 계정 로그인: 같은 IP(IPv6 는 /64)에서 한 시간에 30번, 또는 모두 합쳐 한 시간에 300번을 넘김. 편성 시작: 심사용 계정이 하루 20번을 넘김 |
 | 500 | `INTERNAL_ERROR` | 처리하지 못한 예외 |
 | 503 | `TEMPORARILY_UNAVAILABLE` | AI 연결 실패 · 시간 초과 · 5xx · 200 인데 응답을 읽지 못함(깨진 JSON · text/html · 칸 누락)(대화), 비동기 요청 시간 초과 |
 | 503 | `AI_BAD_REQUEST` | AI 가 400 을 냄(서버가 잘못 보낸 것) — 대화 |
@@ -563,9 +563,10 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - `quiet` · `withParent` 가 없으면 false. `place` 는 `HOME` · `OUTDOOR` · 없음(장소를 가리지 않음). `focusFactor` 는 요인 이름(한글 또는 영문) 또는 null — null 이면 코치가 가장 낮은 요인을 고른다.
 - 옛 칸 `weekStart` · `daysPerWeek` 는 받지 않는다(모르는 칸은 무시).
 응답 202 `{coachRunId, status:"RUNNING", pollAfterMs:1500}`.
-판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 422 `NO_MEASURED_MEMBER`(대상이 측정 대상(만 4세 이상)인데 측정 기록이 없음. 만 4세 미만은 측정 없이 진행) → 409 `RUN_IN_PROGRESS`.
+판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 422 `NO_MEASURED_MEMBER`(대상이 측정 대상(만 4세 이상)인데 측정 기록이 없음. 만 4세 미만은 측정 없이 진행) → 409 `RUN_IN_PROGRESS` → 429 `TOO_MANY`(심사용 계정만, 하루(KST) 20번을 넘김).
 잠금
 - (대상, 날짜)에 RUNNING 이 있을 때만 409 `RUN_IN_PROGRESS`. `coach_runs.lock_key`(RUNNING 동안만 `profileId|date`) 유니크 인덱스라 동시에 들어온 두 요청도 하나만 통과한다.
+- 심사용 계정(`POST /auth/review-login` 이 만든 계정)은 편성을 하루(KST)에 20번까지 시작한다. 21번째는 실행을 만들기 전에 429 `TOO_MANY` 다. 누구나 만들 수 있는 계정이 AI(LLM) 편성을 끝없이 돌리지 못하게 하려는 것이다. 통과한 요청만 세고 셈은 서버 메모리에 둔다. 구글 계정은 세지 않는다.
 - 새 실행이 들어가면 같은 (대상, 날짜)의 `AWAITING_APPROVAL` 은 `REJECTED`(사유 「새 제안으로 바뀌었어요」)가 된다. `APPROVED` 뒤의 추가 편성(「AI 코치에게 더 받기」)은 막지 않는다.
 - 만든 지 223초가 넘은 RUNNING 은 끝내지 못한 실행으로 보고 FAILED(`STALE`)로 바꿔 잠금을 푼다. 223초 = AI 시작 호출(연결 1s + 읽기 2s) + 40회 × (1.5s + 연결 1s + 읽기 3s). 기동 때 한 번, 그 뒤 223초마다 돈다(`StaleCoachRunSweeper`). 정리된 실행은 AI 결과가 늦게 와도 되살아나지 않는다.
 비동기: 커밋 뒤 편성 전용 스레드 풀(`app.coach.executor.pool-size` 기본 8)에 넘긴다. 풀과 대기열이 다 차면 곧바로 FAILED(`BUSY`)다. 풀에서 `AiGateway.startCoachRun` → `getCoachRun` 1.5s 간격 최대 40회 폴링 → 결과 처리는 8장.

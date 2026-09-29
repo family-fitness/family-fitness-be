@@ -42,6 +42,9 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   - Next 는 받은 `X-Forwarded-For` 를 그대로 넘길 뿐 스스로 붙이지 않는다(next 16 rewrites 의 proxy-request). Next 앞의 HTTPS 프록시(nginx 등)가 `X-Forwarded-For` 에 브라우저 IP 를 붙여야 한다.
   - Next 서버가 BE 에 공인 IP 로 들어오면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` 에 그 주소(정규식)를 준다. 안 주면 헤더를 믿지 않고 모두 Next 서버 IP 하나로 센다.
   - 둘 중 하나가 빠져도 전체 한도(한 시간 300번)가 있어 계정이 끝없이 쌓이지는 않는다. 다만 누구든 31번만 부르면 한 시간 동안 모든 심사위원이 429 를 받는다.
+  심사용 계정은 편성(AI · LLM)을 하루(KST) 20번까지 시작한다(`ReviewRunQuota`, 21번째는 429 `TOO_MANY`). 구글 계정은 세지 않는다.
+  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 전체 한도로 한 시간 300가족까지다.
+  심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고, 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
   test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest`)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.

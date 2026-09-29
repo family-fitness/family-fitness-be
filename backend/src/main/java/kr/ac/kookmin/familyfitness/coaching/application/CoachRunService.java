@@ -63,6 +63,7 @@ public class CoachRunService {
     private final ApplicationEventPublisher events;
     private final AppTime time;
     private final CoachRunTimeLimit timeLimit;
+    private final ReviewRunQuota reviewQuota;
     private final JsonMapper jsonMapper;
 
     public CoachRunService(
@@ -75,6 +76,7 @@ public class CoachRunService {
             ApplicationEventPublisher events,
             AppTime time,
             CoachRunTimeLimit timeLimit,
+            ReviewRunQuota reviewQuota,
             JsonMapper jsonMapper) {
         this.runs = runs;
         this.missions = missions;
@@ -85,6 +87,7 @@ public class CoachRunService {
         this.events = events;
         this.time = time;
         this.timeLimit = timeLimit;
+        this.reviewQuota = reviewQuota;
         this.jsonMapper = jsonMapper;
     }
 
@@ -96,7 +99,7 @@ public class CoachRunService {
      * RUNNING 으로 저장하고 이벤트만 발행한다. AI 호출은 커밋 후 비동기. 판단 차례:
      * 1) 보호자만(403 NOT_A_PARENT) 2) 지난 날짜면 422 INVALID_DATE 3) 대상이 이 가족 구성원이 아니면 422 NOT_FAMILY_MEMBER
      * 4) 대상의 보호자 동의가 없으면 422 CONSENT_REQUIRED 5) 대상이 측정 대상(만 4세 이상)인데 측정 기록이 없으면 422 NO_MEASURED_MEMBER
-     * 6) 같은 (대상, 날짜)의 RUNNING 이 있으면 409 RUN_IN_PROGRESS(결정 1).
+     * 6) 같은 (대상, 날짜)의 RUNNING 이 있으면 409 RUN_IN_PROGRESS(결정 1) 7) 심사용 계정이 오늘 {@link ReviewRunQuota} 한도를 넘기면 429 TOO_MANY.
      * 잠금은 coach_runs.lock_key 유니크 인덱스라 동시에 들어온 두 요청도 하나만 통과한다. {@link CoachRunTimeLimit} 보다 오래된
      * RUNNING 은 서버가 끝내지 못한 실행이라 FAILED 로 바꾸고 잠금을 푼다.
      * 새 실행이 들어가면 같은 (대상, 날짜)의 AWAITING_APPROVAL 은 고정 사유로 REJECTED 가 된다. APPROVED 는 막지 않는다.
@@ -120,6 +123,7 @@ public class CoachRunService {
         String lockKey = CoachRun.lockKeyOf(subjectId, date);
         runs.failStaleLock(lockKey, timeLimit.staleBefore(now), timeLimit.staleReason(), now);
         if (runs.isLocked(lockKey)) throw new CoachRunInProgressException(subjectId, date);
+        reviewQuota.acquire(userId);
 
         CoachRun run = CoachRun.start(
                 UUID.randomUUID(), familyId, subjectId, date, command.conditions(), caller.profileId(), now);

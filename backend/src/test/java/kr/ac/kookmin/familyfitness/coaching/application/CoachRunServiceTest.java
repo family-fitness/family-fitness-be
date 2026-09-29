@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.api.MissionCreated;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
@@ -30,6 +32,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredExc
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.ReviewRunLimitException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
@@ -65,11 +68,22 @@ class CoachRunServiceTest {
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
     private final List<Object> events = new ArrayList<>();
     private final CoachRunTimeLimit timeLimit = new CoachRunTimeLimit(1500, 40);
+    private final Set<UUID> reviewAccounts = new HashSet<>();
     private final CoachRunService service = serviceAt(Fixed.time());
 
     private CoachRunService serviceAt(AppTime time) {
         return new CoachRunService(
-                runs, missions, videos, identity, identity, fitness, events::add, time, timeLimit, JSON);
+                runs,
+                missions,
+                videos,
+                identity,
+                identity,
+                fitness,
+                events::add,
+                time,
+                timeLimit,
+                new ReviewRunQuota(reviewAccounts::contains, time),
+                JSON);
     }
 
     private StartCoachRunCommand today(UUID profileId) {
@@ -196,6 +210,29 @@ class CoachRunServiceTest {
     }
 
     @Test
+    @DisplayName("심사용 계정은 하루에 편성을 20번까지 — 21번째는 429 TOO_MANY 이고 실행이 생기지 않는다. 구글 계정은 세지 않는다")
+    void 심사용_계정은_하루에_편성_20번까지() {
+        UUID child = family.child.profileId();
+        for (int i = 0; i <= ReviewRunQuota.MAX_RUNS_PER_DAY; i++) {
+            assertThat(start(on(child, Fixed.TODAY.plusDays(i))).status()).isEqualTo(CoachRunStatus.RUNNING);
+        }
+        reviewAccounts.add(family.parentUser);
+        runs.runs.clear();
+        CoachRunService reviewing = serviceAt(Fixed.time());
+        for (int i = 0; i < ReviewRunQuota.MAX_RUNS_PER_DAY; i++) {
+            reviewing.start(family.parentUser, family.familyId, on(child, Fixed.TODAY.plusDays(i)));
+        }
+
+        ReviewRunLimitException e = assertThrows(
+                ReviewRunLimitException.class,
+                () -> reviewing.start(family.parentUser, family.familyId, on(child, Fixed.TODAY.plusDays(30))));
+
+        assertThat(e.getCode()).isEqualTo("TOO_MANY");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.TOO_MANY);
+        assertThat(runs.runs).hasSize(ReviewRunQuota.MAX_RUNS_PER_DAY);
+    }
+
+    @Test
     @DisplayName("동시에 들어온 요청이 잠금을 먼저 잡았으면(유니크 인덱스 위반) 409 RUN_IN_PROGRESS 이고 이벤트도 없다")
     void 동시_요청이_잠금을_먼저_잡았으면_RUN_IN_PROGRESS() {
         InMemoryCoachRunRepository racing = new InMemoryCoachRunRepository() {
@@ -210,7 +247,17 @@ class CoachRunServiceTest {
             }
         };
         CoachRunService racingService = new CoachRunService(
-                racing, missions, videos, identity, identity, fitness, events::add, Fixed.time(), timeLimit, JSON);
+                racing,
+                missions,
+                videos,
+                identity,
+                identity,
+                fitness,
+                events::add,
+                Fixed.time(),
+                timeLimit,
+                new ReviewRunQuota(reviewAccounts::contains, Fixed.time()),
+                JSON);
 
         assertThrows(
                 CoachRunInProgressException.class,
