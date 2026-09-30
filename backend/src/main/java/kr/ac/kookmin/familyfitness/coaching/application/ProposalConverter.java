@@ -30,7 +30,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * AI proposal → 제안 항목 변환(AI 인터페이스-명세 4장).
  * missions[i] → position=i, title, targetMetric=TIMER_MINUTES, rationale=reason(비었으면 copy.parent),
- * video=(day_offset, order) 순으로 첫 영상 있는 세션, participants=편성 대상 한 명(+ withParent 면 요청한 보호자),
+ * video=(day_offset, order) 순으로 첫 영상 있는 본운동 세션(없으면 첫 영상 있는 세션), participants=편성 대상 한 명(+ withParent 면 요청한 보호자),
  * citations=evidence 가 가리키는 것(없으면 전체), sessions=세션마다 칸 하나({@link #sessions}).
  * targetValue 는 칸이 있으면 칸 분의 합(보통 duration_min 과 같다), 칸이 없으면 duration_min(최소 1).
  * 유튜브 영상은 BE 카탈로그(exercise_videos)에 없어도 버리지 않는다 — 화면은 videoId 로 유튜브 구간을 튼다. 공단 영상(video.source = kspo)의
@@ -222,8 +222,18 @@ public class ProposalConverter {
         return !(video.isKspo() && unplayableKspo.contains(video.videoId()));
     }
 
+    /**
+     * 미션 대표 영상: 첫 본운동 칸의 영상, 본운동 칸에 영상이 없으면 첫 영상 있는 칸. 준비운동 첫 칸을 대표로 삼으면 「심폐지구력 키우기」
+     * 미션의 대표 영상이 근력 준비 동작이 되는 것처럼 제목과 어긋났다 — 본운동이 키울 요인의 동작이다.
+     */
     private @Nullable ProposalVideo firstVideo(List<CoachRunResult.Session> sessions) {
+        ProposalVideo main = firstVideo(sessions, true);
+        return main != null ? main : firstVideo(sessions, false);
+    }
+
+    private @Nullable ProposalVideo firstVideo(List<CoachRunResult.Session> sessions, boolean mainOnly) {
         for (CoachRunResult.Session session : sessions) {
+            if (mainOnly && !LabelBasedProposalPlanner.MAIN_PHASE.equals(session.phase())) continue;
             CoachRunResult.Video video = session.video();
             if (video != null && !(video.isKspo() && unplayableKspo.contains(video.videoId()))) {
                 return new ProposalVideo(video.videoId(), video.startSec());

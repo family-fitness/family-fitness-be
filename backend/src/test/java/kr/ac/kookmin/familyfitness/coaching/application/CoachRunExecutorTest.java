@@ -167,7 +167,8 @@ class CoachRunExecutorTest {
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.startsOn()).isEqualTo(Fixed.TODAY);
         assertThat(item.endsOn()).isEqualTo(Fixed.TODAY);
-        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
+        // 대표 영상은 첫 본운동 칸(준비운동 첫 칸이 아니다)
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 500));
         assertThat(item.participants())
                 .containsExactly(
                         new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"),
@@ -224,7 +225,8 @@ class CoachRunExecutorTest {
                 .containsExactly(1, 1, 5, 4, 4, 4, 1);
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.sessions().get(2).clip()).isEqualTo(new SessionClip(eg, 536, 588, "가슴펴기"));
-        assertThat(item.video()).isEqualTo(new ProposalVideo("IdpXx2gm90o", 56));
+        // 대표 영상은 첫 본운동 칸 = 키울 요인(유연성)의 클립
+        assertThat(item.video()).isEqualTo(new ProposalVideo(eg, 536));
         // 인용: 규준 1건 + 클립이 나온 영상마다 1건
         assertThat(item.citations().stream().map(ProposalCitation::chunkId).toList())
                 .containsExactly("norm:유소년-012", "video:IdpXx2gm90o", "video:" + eg);

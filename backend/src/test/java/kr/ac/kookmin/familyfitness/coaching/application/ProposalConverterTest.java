@@ -126,7 +126,8 @@ class ProposalConverterTest {
         assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세) · 준비운동 척추 들어올리기 (고양이자세)");
         assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
-        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
+        // 대표 영상은 첫 본운동 칸이다(준비운동 첫 칸이 아니다)
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 500));
         assertThat(item.participants())
                 .containsExactly(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"));
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
@@ -292,6 +293,32 @@ class ProposalConverterTest {
                 .containsExactly(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"));
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
                 .containsExactly(1, 2);
+    }
+
+    @Test
+    @DisplayName("대표 영상은 첫 본운동 칸의 영상이다 — 준비운동 첫 칸(근력 동작)이 「심폐지구력 키우기」 미션의 대표 영상이 됐다")
+    void 대표_영상은_첫_본운동_칸이다() {
+        CoachRunResult.Mission warmupFirst = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                List.of(
+                        clipSession("준비운동", 1, "팔굽혀 펴기", "근력", "warmupVid01", 0, 30),
+                        clipSession("본운동", 2, "제자리 뛰기", "심폐지구력", "mainVideo01", 10, 70),
+                        clipSession("정리운동", 3, "숨 고르기", "유연성", "coolVideo01", 0, 30)),
+                "부모 문구",
+                "골랐습니다 [1].");
+        CoachRunResult.Mission noMainVideo = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                List.of(clipSession("준비운동", 1, "팔굽혀 펴기", "근력", "warmupVid01", 0, 30), session(2, null, List.of(1))),
+                "부모 문구",
+                "골랐습니다 [1].");
+
+        List<CoachProposalItem> items = converter.convert(proposal(List.of(warmupFirst, noMainVideo)));
+
+        assertThat(items.get(0).video()).isEqualTo(new ProposalVideo("mainVideo01", 10));
+        // 본운동 칸에 영상이 없으면 예전처럼 첫 영상 있는 칸
+        assertThat(items.get(1).video()).isEqualTo(new ProposalVideo("warmupVid01", 0));
     }
 
     @Test
