@@ -16,7 +16,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 심사용 계정 로그인 횟수를 센다. 부를 때마다 계정 하나 · 가족 하나 · 프로필 넷 · 측정 둘이 생기니, 누가 반복해서 부르면 DB 가 끝없이 찬다.
+ * 심사용 계정 로그인 횟수를 센다. 부를 때마다 계정이 생기고, FAMILY · INVITED 는 가족 하나 · 프로필 넷 · 측정 둘도 생긴다(INVITED 는
+ * 가짜 보호자 계정까지 계정 둘). 누가 반복해서 부르면 DB 가 끝없이 찬다. kind({@link ReviewLoginKind}) 세 가지를 한도 하나로 합쳐 센다.
  * 한도는 둘이다. 최근 {@link #WINDOW} 안에
  * <ul>
  *   <li>같은 IP 에서 {@link #MAX_LOGINS} 번 — 심사위원 한 사람이 넉넉히 쓰는 양. 넘기면 429 TOO_MANY.
@@ -24,9 +25,10 @@ import org.springframework.stereotype.Component;
  *       꾸며 넣는 것 포함) 한 시간에 쌓이는 계정 수를 여기서 누른다. 이 한도에 닿아도 429 를 주지 않는다 — 누구 한 사람이 한도를 채워
  *       모든 심사위원을 한 시간 동안 막지 못하게. 대신
  *       <ul>
- *         <li>그 IP 가 이 한 시간 안에 만든 계정이 있으면 그 가운데 가장 최근 것으로 들인다({@link Admission#reuse()}).
- *         <li>없으면 새 계정을 하나 만든다. 그 뒤로 그 IP 는 그 계정으로 들어온다. 그래서 한도가 찬 뒤로는 한 시간에 IP 하나마다 계정
- *             하나씩만 는다.
+ *         <li>그 IP 가 이 한 시간 안에 같은 kind 로 만든 계정이 있으면 그 가운데 가장 최근 것으로 들인다({@link Admission#reuse()}).
+ *             kind 가 다른 계정은 주지 않는다 — 가족 만들기부터 해 보려는 심사위원에게 체험 가족이 든 계정을 주면 그 흐름을 볼 수 없다.
+ *         <li>없으면 새 계정을 하나 만든다. 그 뒤로 그 IP 는 그 kind 로 부르면 그 계정으로 들어온다. 그래서 한도가 찬 뒤로는 한 시간에
+ *             IP 하나마다 kind 하나에 계정 하나씩만 는다.
  *       </ul>
  *       다른 IP 가 만든 계정은 나눠 주지 않는다. 한도를 채운 사람은 자기가 만든 계정의 토큰을 다 쥐고 있어, 그 계정을 남에게 주면 그
  *       사람이 가족 이름 · 식구 · 기록을 바꿔 뒤에 들어온 심사위원에게 보이고, 심사위원이 하는 일도 들여다본다. 같은 IP(같은 와이파이 ·
@@ -51,12 +53,21 @@ public class ReviewLoginLimiter {
     static final int MAX_TOTAL = 300;
     static final Duration WINDOW = Duration.ofHours(1);
 
-    /** 이번 로그인을 받는 방법. {@code reuse} 가 null 이면 새 계정을 만들고, 아니면 같은 IP 가 만든 그 심사용 계정으로 들인다. */
-    public record Admission(@Nullable UUID reuse) {
-        static final Admission NEW = new Admission(null);
+    /**
+     * 이번 로그인을 받는 방법. {@code reuse} 가 null 이면 새 계정을 만들고, 아니면 같은 IP 가 같은 kind 로 만든 그 심사용 계정으로 들인다.
+     *
+     * @param inviteCode 다시 주는 계정을 INVITED 로 만들었으면 그때 준 초대코드. 아니면 null
+     */
+    public record Admission(@Nullable UUID reuse, @Nullable String inviteCode) {
+        static final Admission NEW = new Admission(null, null);
     }
 
-    private record Made(Instant at, String key, UUID userId) {}
+    private record Made(
+            Instant at,
+            String key,
+            ReviewLoginKind kind,
+            UUID userId,
+            @Nullable String inviteCode) {}
 
     private final IdentityClock clock;
     private final int maxTotal;
@@ -71,10 +82,11 @@ public class ReviewLoginLimiter {
     }
 
     /**
-     * IP 한도 안이면 이번 요청을 센다. 새 계정 한도가 남았으면 {@link Admission#NEW}. 찼으면 이 IP 가 이 한 시간에 만든 가장 최근 계정을
-     * 주고, 그런 계정이 없으면 {@link Admission#NEW}. IP 한도에 닿았으면 세지 않고 {@link TooManyReviewLoginsException}.
+     * IP 한도 안이면 이번 요청을 센다(kind 와 상관없이 합쳐 센다). 새 계정 한도가 남았으면 {@link Admission#NEW}. 찼으면 이 IP 가 이 한
+     * 시간에 같은 kind 로 만든 가장 최근 계정을 주고, 그런 계정이 없으면 {@link Admission#NEW}. IP 한도에 닿았으면 세지 않고
+     * {@link TooManyReviewLoginsException}.
      */
-    public synchronized Admission acquire(String clientIp) {
+    public synchronized Admission acquire(String clientIp, ReviewLoginKind kind) {
         Instant now = clock.now();
         Instant since = now.minus(WINDOW);
         dropOld(all, since);
@@ -87,8 +99,8 @@ public class ReviewLoginLimiter {
         if (mine.size() >= MAX_LOGINS) throw new TooManyReviewLoginsException();
         Admission admission = Admission.NEW;
         if (all.size() >= maxTotal) {
-            UUID own = latestMadeBy(key);
-            if (own != null) admission = new Admission(own);
+            Made own = latestMadeBy(key, kind);
+            if (own != null) admission = new Admission(own.userId(), own.inviteCode());
         }
         if (admission.reuse() == null) all.addLast(now);
         mine.addLast(now);
@@ -96,16 +108,21 @@ public class ReviewLoginLimiter {
         return admission;
     }
 
-    /** 새로 만든 심사용 계정을 만든 IP 와 함께 적어 둔다 — 새 계정 한도가 찼을 때 그 IP 에 다시 줄 후보다. 계정이 커밋된 뒤에 부른다. */
-    public synchronized void remember(String clientIp, UUID userId) {
-        made.addLast(new Made(clock.now(), keyOf(clientIp), userId));
+    /**
+     * 새로 만든 심사용 계정을 만든 IP · kind 와 함께 적어 둔다 — 새 계정 한도가 찼을 때 그 IP 가 같은 kind 로 부르면 다시 줄 후보다. 계정이
+     * 커밋된 뒤에 부른다.
+     *
+     * @param inviteCode INVITED 로 만든 계정이면 그때 준 초대코드. 다시 줄 때 같은 코드를 싣는다
+     */
+    public synchronized void remember(String clientIp, ReviewLoginKind kind, UUID userId, @Nullable String inviteCode) {
+        made.addLast(new Made(clock.now(), keyOf(clientIp), kind, userId, inviteCode));
     }
 
-    private @Nullable UUID latestMadeBy(String key) {
+    private @Nullable Made latestMadeBy(String key, ReviewLoginKind kind) {
         var it = made.descendingIterator();
         while (it.hasNext()) {
             Made one = it.next();
-            if (one.key().equals(key)) return one.userId();
+            if (one.key().equals(key) && one.kind() == kind) return one;
         }
         return null;
     }

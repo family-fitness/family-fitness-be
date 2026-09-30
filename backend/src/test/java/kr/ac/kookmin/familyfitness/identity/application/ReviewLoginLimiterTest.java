@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import static kr.ac.kookmin.familyfitness.identity.application.ReviewLoginKind.FAMILY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,10 +20,10 @@ class ReviewLoginLimiterTest {
 
     /** 새 계정을 만들라는 답이면 만든 셈 치고 그 계정을 적어 둔다(ReviewLoginService 가 커밋 뒤에 하는 일). */
     private ReviewLoginLimiter.Admission loginAndRemember(String ip, List<UUID> made) {
-        ReviewLoginLimiter.Admission admission = limiter.acquire(ip);
+        ReviewLoginLimiter.Admission admission = limiter.acquire(ip, FAMILY);
         if (admission.reuse() == null) {
             UUID userId = UUID.randomUUID();
-            limiter.remember(ip, userId);
+            limiter.remember(ip, FAMILY, userId, null);
             made.add(userId);
         }
         return admission;
@@ -31,10 +32,10 @@ class ReviewLoginLimiterTest {
     @Test
     @DisplayName("한 IP 가 한 시간에 30번까지 되고 31번째는 막힌다. 다른 IP 는 따로 센다")
     void 한_IP_는_한_시간에_30번까지() {
-        for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1");
+        for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1", FAMILY);
 
-        assertThatThrownBy(() -> limiter.acquire("1.1.1.1")).isInstanceOf(TooManyReviewLoginsException.class);
-        assertThatCode(() -> limiter.acquire("2.2.2.2")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> limiter.acquire("1.1.1.1", FAMILY)).isInstanceOf(TooManyReviewLoginsException.class);
+        assertThatCode(() -> limiter.acquire("2.2.2.2", FAMILY)).doesNotThrowAnyException();
     }
 
     @Test
@@ -49,17 +50,17 @@ class ReviewLoginLimiterTest {
         }
         // 10.0.0.5 가 한 번 더 만들어 두었다고 친다(한도 전에 만든 계정 둘 가운데 뒤의 것을 받는다)
         UUID later = UUID.randomUUID();
-        limiter.remember("10.0.0.5", later);
+        limiter.remember("10.0.0.5", FAMILY, later, null);
 
-        assertThat(limiter.acquire("10.0.0.5").reuse()).isEqualTo(later);
-        assertThat(limiter.acquire("10.0.1.7").reuse()).isEqualTo(made.get(207));
+        assertThat(limiter.acquire("10.0.0.5", FAMILY).reuse()).isEqualTo(later);
+        assertThat(limiter.acquire("10.0.1.7", FAMILY).reuse()).isEqualTo(made.get(207));
 
         // 나눠 줄 때도 IP 마다 30번은 그대로 센다
-        for (int i = 2; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("10.0.0.5");
-        assertThatThrownBy(() -> limiter.acquire("10.0.0.5")).isInstanceOf(TooManyReviewLoginsException.class);
+        for (int i = 2; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("10.0.0.5", FAMILY);
+        assertThatThrownBy(() -> limiter.acquire("10.0.0.5", FAMILY)).isInstanceOf(TooManyReviewLoginsException.class);
 
         clock.setInstant(start.plus(ReviewLoginLimiter.WINDOW));
-        assertThat(limiter.acquire("10.0.1.7").reuse()).isNull();
+        assertThat(limiter.acquire("10.0.1.7", FAMILY).reuse()).isNull();
     }
 
     @Test
@@ -79,8 +80,35 @@ class ReviewLoginLimiterTest {
         assertThat(reviewer).hasSize(1).doesNotContainAnyElementsOf(attacker);
 
         // 계정을 적기 전에 실패했으면(만들다 되돌림) 나눠 줄 것이 없어 다시 새 계정이다 — 429 가 아니다
-        assertThat(limiter.acquire("8.8.8.8").reuse()).isNull();
-        assertThat(limiter.acquire("8.8.8.8").reuse()).isNull();
+        assertThat(limiter.acquire("8.8.8.8", FAMILY).reuse()).isNull();
+        assertThat(limiter.acquire("8.8.8.8", FAMILY).reuse()).isNull();
+    }
+
+    @Test
+    @DisplayName("모두 합친 한도가 차면 그 IP 가 만든 같은 kind 의 최근 계정만 다시 준다 — 초대받은 계정은 초대코드도 함께, 같은 kind 가 없으면 새 계정")
+    void 한도가_차면_같은_kind_의_계정만_다시_준다() {
+        UUID family = UUID.randomUUID();
+        UUID fresh = UUID.randomUUID();
+        UUID invited = UUID.randomUUID();
+        limiter.acquire("5.5.5.5", FAMILY);
+        limiter.remember("5.5.5.5", FAMILY, family, null);
+        limiter.acquire("5.5.5.5", ReviewLoginKind.FRESH);
+        limiter.remember("5.5.5.5", ReviewLoginKind.FRESH, fresh, null);
+        limiter.acquire("5.5.5.5", ReviewLoginKind.INVITED);
+        limiter.remember("5.5.5.5", ReviewLoginKind.INVITED, invited, "AB12CD");
+        List<UUID> others = new ArrayList<>();
+        for (int i = 3; i < ReviewLoginLimiter.MAX_TOTAL; i++) {
+            loginAndRemember("10.0." + (i / 200) + "." + (i % 200), others);
+        }
+
+        assertThat(limiter.acquire("5.5.5.5", FAMILY)).isEqualTo(new ReviewLoginLimiter.Admission(family, null));
+        assertThat(limiter.acquire("5.5.5.5", ReviewLoginKind.FRESH))
+                .isEqualTo(new ReviewLoginLimiter.Admission(fresh, null));
+        assertThat(limiter.acquire("5.5.5.5", ReviewLoginKind.INVITED))
+                .isEqualTo(new ReviewLoginLimiter.Admission(invited, "AB12CD"));
+        assertThat(limiter.acquire("6.6.6.6", ReviewLoginKind.INVITED).reuse())
+                .as("같은 kind 를 만든 적 없는 IP 는 새 계정")
+                .isNull();
     }
 
     @Test
@@ -88,8 +116,8 @@ class ReviewLoginLimiterTest {
     void 한_시간이_지난_계정은_다시_주지_않는다() {
         Instant start = clock.instant();
         UUID old = UUID.randomUUID();
-        limiter.acquire("7.7.7.7");
-        limiter.remember("7.7.7.7", old);
+        limiter.acquire("7.7.7.7", FAMILY);
+        limiter.remember("7.7.7.7", FAMILY, old, null);
 
         clock.setInstant(start.plus(ReviewLoginLimiter.WINDOW).plusSeconds(1));
         List<UUID> made = new ArrayList<>();
@@ -97,7 +125,7 @@ class ReviewLoginLimiterTest {
             loginAndRemember("10.0." + (i / 200) + "." + (i % 200), made);
         }
 
-        assertThat(limiter.acquire("7.7.7.7").reuse()).isNull();
+        assertThat(limiter.acquire("7.7.7.7", FAMILY).reuse()).isNull();
     }
 
     @Test
@@ -105,12 +133,13 @@ class ReviewLoginLimiterTest {
     void IPv6_는_56비트_대역으로_센다() {
         for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) {
             // 2001:db8:1:200::/56 안의 서로 다른 /64 대역
-            limiter.acquire("2001:db8:1:2" + String.format("%02x", i) + ":" + Integer.toHexString(i + 1) + "::1");
+            limiter.acquire(
+                    "2001:db8:1:2" + String.format("%02x", i) + ":" + Integer.toHexString(i + 1) + "::1", FAMILY);
         }
 
-        assertThatThrownBy(() -> limiter.acquire("2001:db8:1:2ff:ffff:ffff:ffff:ffff"))
+        assertThatThrownBy(() -> limiter.acquire("2001:db8:1:2ff:ffff:ffff:ffff:ffff", FAMILY))
                 .isInstanceOf(TooManyReviewLoginsException.class);
-        assertThatCode(() -> limiter.acquire("2001:db8:1:300::1")).doesNotThrowAnyException();
+        assertThatCode(() -> limiter.acquire("2001:db8:1:300::1", FAMILY)).doesNotThrowAnyException();
     }
 
     @Test
@@ -151,12 +180,12 @@ class ReviewLoginLimiterTest {
     @DisplayName("막힌 요청은 세지 않는다 — 처음 통과하고 한 시간이 지나면 다시 된다")
     void 한_시간이_지나면_풀린다() {
         Instant start = clock.instant();
-        for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1");
+        for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1", FAMILY);
         clock.setInstant(start.plusSeconds(3599));
-        assertThatThrownBy(() -> limiter.acquire("1.1.1.1")).isInstanceOf(TooManyReviewLoginsException.class);
+        assertThatThrownBy(() -> limiter.acquire("1.1.1.1", FAMILY)).isInstanceOf(TooManyReviewLoginsException.class);
 
         clock.setInstant(start.plus(ReviewLoginLimiter.WINDOW));
 
-        assertThatCode(() -> limiter.acquire("1.1.1.1")).doesNotThrowAnyException();
+        assertThatCode(() -> limiter.acquire("1.1.1.1", FAMILY)).doesNotThrowAnyException();
     }
 }
