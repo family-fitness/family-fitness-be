@@ -434,11 +434,11 @@ class ProgressServiceTest {
                             XpLineView::occurredOn,
                             XpLineView::reason)
                     .containsExactly(
-                            tuple(XpKind.STICKER, dad, 10, today, "아빠가 붙여 준 스티커"),
-                            tuple(XpKind.STICKER, dad, 10, today, "아빠가 붙여 준 스티커"),
+                            tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
+                            tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
                             tuple(XpKind.SESSION_DONE, null, 10, today, "운동을 했어요"),
                             tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키 · 몸무게를 새로 쟀어요"),
-                            tuple(XpKind.STICKER, mom, 10, today, "엄마가 붙여 준 스티커"));
+                            tuple(XpKind.STICKER, mom, 10, today, "은영이 붙여 준 스티커"));
             // 여섯째 줄(그제 운동 5 + 5 + 20)은 다섯 줄 밖이다
             assertThat(query.view(userId, kid).xp()).isEqualTo(90);
         }
@@ -478,7 +478,7 @@ class ProgressServiceTest {
         }
 
         @Test
-        @DisplayName("스티커 줄은 붙인 사람을 읽는 사람의 말로 부른다 — 아이에게 보호자는 엄마 · 아빠, 형제는 이름, 가족에 없으면 「가족」, 보호자가 읽으면 이름")
+        @DisplayName("스티커 줄은 붙인 사람을 읽는 사람의 말로 부른다 — 누가 읽든 보호자 · 형제는 프로필 이름, 가족에 없으면 「가족」")
         void 스티커_줄의_보낸_사람() {
             listener.on(cheer(CheerKind.PRAISE, UUID.randomUUID(), kid, "star", null));
             listener.on(cheer(CheerKind.PRAISE, sibling, kid, "star", null));
@@ -488,7 +488,7 @@ class ProgressServiceTest {
 
             assertThat(query.view(userId, kid).recentXp())
                     .extracting(XpLineView::reason)
-                    .containsExactly("엄마가 붙여 준 스티커", "아빠가 붙여 준 스티커", "하린이 붙여 준 스티커", "가족이 붙여 준 스티커");
+                    .containsExactly("은영이 붙여 준 스티커", "철수가 붙여 준 스티커", "하린이 붙여 준 스티커", "가족이 붙여 준 스티커");
             assertThat(query.view(userId, mom).recentXp())
                     .extracting(XpLineView::reason)
                     .containsExactly("철수가 붙여 준 스티커");

@@ -18,7 +18,7 @@ public record ProfileSummary(
         String name,
         ProfileRole role,
         AgeGroup ageGroup,
-        /* 와이어 값 `M` · `F`. 화면이 「엄마」「아빠」 로 부를 때 쓴다 */
+        /* 와이어 값 `M` · `F` */
         Sex sex,
         boolean hasAccount,
         InviteStatus inviteStatus,

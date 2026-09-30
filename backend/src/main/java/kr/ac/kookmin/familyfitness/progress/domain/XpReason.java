@@ -1,8 +1,6 @@
 package kr.ac.kookmin.familyfitness.progress.domain;
 
 import java.util.regex.Pattern;
-import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
-import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -12,7 +10,7 @@ import org.jspecify.annotations.Nullable;
  * <pre>
  * SESSION_DONE  「운동을 했어요」
  * MISSION_DONE  「운동을 다 했어요」
- * STICKER       「엄마가 붙여 준 스티커」 · 붙인 사람을 모르면 「가족이 붙여 준 스티커」
+ * STICKER       「은영이 붙여 준 스티커」(붙인 사람의 프로필 이름) · 붙인 사람을 모르면 「가족이 붙여 준 스티커」
  * REMEASURE     「키 · 몸무게를 새로 쟀어요」
  * </pre>
  */
@@ -29,7 +27,7 @@ public final class XpReason {
     private XpReason() {}
 
     /**
-     * @param senderCall 스티커를 붙인 사람을 읽는 사람이 부르는 말({@link #callName}). STICKER 가 아니면 쓰지 않는다
+     * @param senderCall 스티커를 붙인 사람의 프로필 이름. 보호자도 「엄마」 · 「아빠」 가 아니라 이름이다. STICKER 가 아니면 쓰지 않는다
      */
     public static String of(XpKind kind, @Nullable String senderCall) {
         return switch (kind) {
@@ -41,17 +39,6 @@ public final class XpReason {
                 yield who + iGa(who) + " 붙여 준 스티커";
             }
         };
-    }
-
-    /**
-     * 붙인 사람을 읽는 사람의 말로 부른다(fe:src/lib/family.ts callName). 아이가 읽으면 보호자는 이름 대신 「엄마」(여) ·
-     * 「아빠」(남)이고, 그 밖에는 이름 그대로다 — notification 의 PRAISE 제목과 같은 규칙.
-     *
-     * @param forKid 읽는 사람(경험치 줄의 주인)이 아이인가
-     */
-    public static String callName(String name, ProfileRole senderRole, Sex senderSex, boolean forKid) {
-        if (!forKid || senderRole != ProfileRole.PARENT) return name;
-        return senderSex == Sex.F ? "엄마" : "아빠";
     }
 
     /**

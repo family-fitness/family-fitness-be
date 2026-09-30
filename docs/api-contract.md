@@ -251,7 +251,7 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 ```
 {profileId, familyId, name, role, ageGroup, sex, hasAccount, inviteStatus, supportMode|null, measurable, consentRequired, consentGiven}
 ```
-- `sex` 는 `M` · `F`. 화면이 「엄마」「아빠」 로 부를 때 쓴다.
+- `sex` 는 `M` · `F`.
 - `consentRequired` = 만 14세 미만이거나, 동의를 거둔 채다. 거둔 동의는 만 14세가 지나도 풀리지 않고 보호자가 다시 동의해야 풀린다.
 - `consentGiven` = 동의가 필요 없거나(위가 false), personal · health 둘 다 동의했고 거두지 않았다.
 - `measurable` = 만 4세 이상 AND `consentGiven`.
@@ -785,7 +785,7 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 - `achievements` = 열두 개 전부. 받은 것은 `earnedAt`(실제로 판정한 시각), 아직이면 null. `FIRST_STEP` · `STREAK_3` · `FULL_SET` · `MIN_30` · `MIN_100` · `WEEKEND` · `TOGETHER` · `STREAK_7` · `REMEASURE` · `FIRST_STICKER` · `MIN_300` · `SIX_POWERS`. `SIX_POWERS` 는 조건이 정해지지 않아 늘 null 이다.
 - `recentXp` = 최근 경험치 다섯 줄, 최근 것부터. 운동(칸 · 미션)은 하루를 한 줄로 묶고(그날 끝까지 한 미션이 있으면 `MISSION_DONE`, 없으면 `SESSION_DONE`, `amount` 는 그날 합), 스티커 · 다시 재기는 한 건마다 한 줄이다. 계약은 값(`kind` · `fromProfileId` · `amount` · `occurredOn`)이다.
 - **`reason` · `at` 은 전환기 칸이다.** 지금 FE(`XpEvent {reason, amount, at}`)는 문장과 시각을 그대로 그려서, 없으면 `/kid/badges` 가 깨진다. FE 가 `kind` 로 문장을 짓게 되면 걷는다.
-  - `reason` = FE 목과 같은 문장. `SESSION_DONE` 「운동을 했어요」 · `MISSION_DONE` 「운동을 다 했어요」 · `REMEASURE` 「키 · 몸무게를 새로 쟀어요」 · `STICKER` 「○○가 붙여 준 스티커」. 붙인 사람은 줄의 주인(그 프로필)이 부르는 말이다 — 주인이 아이면 보호자는 이름 대신 「엄마」(여) · 「아빠」(남)(알림 `PRAISE` 제목과 같은 규칙), 그 밖에는 이름. 지금 가족에 없는 사람이면 「가족」. 조사 이/가 는 받침에 맞춘다.
+  - `reason` = FE 목과 같은 문장. `SESSION_DONE` 「운동을 했어요」 · `MISSION_DONE` 「운동을 다 했어요」 · `REMEASURE` 「키 · 몸무게를 새로 쟀어요」 · `STICKER` 「○○가 붙여 준 스티커」. 붙인 사람은 누가 읽든 그 사람의 프로필 이름이다 — 보호자도 「엄마」 · 「아빠」 로 박아 부르지 않는다(알림 `PRAISE` 제목과 같은 규칙). 지금 가족에 없는 사람이면 「가족」. 조사 이/가 는 받침에 맞춘다.
   - `at` = 원장에 적은 시각(`created_at`, ISO-8601 UTC). 하루로 묶은 운동 줄은 그날 가장 늦게 적은 시각.
 - 「잡힌 날」 은 `progress.api.PlannedDays` 로 읽는다. coaching 이 구현한다(하루짜리 미션은 그날, 여러 날짜리는 캘린더와 같은 규칙).
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
@@ -822,7 +822,7 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 |---|---|---|
 | `KID_DONE` | 아이가 「알리기」(DONE 응원)를 보냄. 마지막 칸을 끝냈다고 자동으로 만들지는 않는다 | 그 응원을 받은 부모 |
 | `KID_THANKS` | 아이가 고마워요(THANKS)를 보냄 | 받은 부모 |
-| `PRAISE` | 부모가 칭찬 · 스티커를 보냄 | 그 아이(보낸 이는 「엄마」 · 「아빠」) |
+| `PRAISE` | 부모가 칭찬 · 스티커를 보냄 | 그 아이(제목의 보낸 이는 보호자의 프로필 이름 — 「은영이 스티커를 붙여 줬어요」) |
 | `MISSION_READY` | 매일 07:30 그날 서는 운동. 07:30 뒤에 생긴 운동은 생길 때 | 아이 프로필만. 쉬는 날 · 걸음수 · 다 끝낸 운동은 만들지 않고, 다 끝내면 목록에서 빠진다. 07:30 뒤에 오늘을 쉬는 날로 바꿔도 목록에서 빠진다 |
 | `ACHIEVEMENT` | 업적을 처음 받음 | 아이 프로필만, 14일 동안 보인다 |
 | `REMEASURE` | 매일 09:00, 아이의 마지막 측정이 30일 이상 지남 | 부모 전원, 측정 회차당 한 번. 그 아이를 다시 재면 지난 회차로 만든 알림이 지워진다 |
@@ -833,6 +833,7 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 - 측정을 등록하면(`FitnessTestRegistered`) 그 아이 가족의 부모 알림함에서 그 아이의 `REMEASURE` 를 지운다. 마지막 측정 회차로 만든 알림은 남긴다 — 지난 날짜를 나중에 적어 마지막 측정일이 그대로면 알림도 그대로다.
 - 07:30 · 09:00 알림의 `createdAt` 은 0장 「시각 · 날짜」 대로다(늦게 돈 실행은 실제로 만든 시각).
 - 오래된 알림 행을 지우는 보관 기간은 없다.
+- 보호자를 부르는 말: 특정 보호자 한 사람을 가리키면 그 사람의 프로필 이름, 여럿이거나 누구인지 모르면 「보호자」(업적 `TOGETHER` 「보호자와 같은 날 운동해요」). 「엄마」 · 「아빠」 로 박아 부르지 않는다.
 
 ### GET /api/v1/notifications?profileId= — 대신
 자기 프로필, 또는 보호자가 계정 없는 아이 프로필(아이 모드)의 알림함.

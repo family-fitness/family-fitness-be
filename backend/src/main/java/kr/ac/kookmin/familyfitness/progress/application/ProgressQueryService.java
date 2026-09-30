@@ -18,8 +18,6 @@ import kr.ac.kookmin.familyfitness.progress.application.port.AchievementStore;
 import kr.ac.kookmin.familyfitness.progress.application.port.XpLedger;
 import kr.ac.kookmin.familyfitness.progress.domain.Achievement;
 import kr.ac.kookmin.familyfitness.progress.domain.LevelCurve;
-import kr.ac.kookmin.familyfitness.progress.domain.XpReason;
-import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -91,15 +89,14 @@ public class ProgressQueryService {
     }
 
     /**
-     * 스티커를 붙인 사람들을 줄의 주인(target)이 부르는 말로. 아이에게 보호자는 엄마 · 아빠, 그 밖에는 이름이다({@link
-     * XpReason#callName}). 지금 가족에 없는 사람은 빠진다 — 문장은 「가족」 으로 부른다.
+     * 스티커를 붙인 사람들의 프로필 이름. 보호자도 「엄마」 · 「아빠」 가 아니라 이름으로 부른다(누가 읽든 같다).
+     * 지금 가족에 없는 사람은 빠진다 — 문장은 「가족」 으로 부른다.
      */
     private Map<UUID, String> callNames(ProfileSummary target, Set<UUID> senders) {
-        boolean forKid = target.role() == ProfileRole.CHILD;
         Map<UUID, String> calls = new HashMap<>();
         for (ProfileSummary member : profiles.summariesOfFamily(target.familyId())) {
             if (senders.contains(member.profileId())) {
-                calls.put(member.profileId(), XpReason.callName(member.name(), member.role(), member.sex(), forKid));
+                calls.put(member.profileId(), member.name());
             }
         }
         return calls;

@@ -215,7 +215,7 @@ class NotificationWebTest {
     }
 
     @Test
-    @DisplayName("응원이 커밋되면 받는 사람 알림함에 곧바로 뜬다 — KID_DONE · KID_THANKS 는 부모, PRAISE 는 아이(엄마가), cheerId 를 싣는다")
+    @DisplayName("응원이 커밋되면 받는 사람 알림함에 곧바로 뜬다 — KID_DONE · KID_THANKS 는 부모, PRAISE 는 아이(보호자 프로필 이름으로), cheerId 를 싣는다")
     void 응원_알림() throws Exception {
         Instant at = Instant.now().truncatedTo(ChronoUnit.SECONDS).minusSeconds(10);
         CheerSent[] sent = new CheerSent[3];
@@ -250,7 +250,7 @@ class NotificationWebTest {
         list(kid)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items", hasSize(2)))
-                .andExpect(jsonPath("$.items[?(@.kind == 'PRAISE')].title", contains("엄마가 스티커를 붙여 줬어요")))
+                .andExpect(jsonPath("$.items[?(@.kind == 'PRAISE')].title", contains("은영이 스티커를 붙여 줬어요")))
                 .andExpect(jsonPath("$.items[?(@.kind == 'PRAISE')].fromProfileId", contains(mom.toString())))
                 .andExpect(jsonPath(
                         "$.items[?(@.kind == 'PRAISE')].cheerId",

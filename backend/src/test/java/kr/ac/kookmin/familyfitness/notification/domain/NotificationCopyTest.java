@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.stream.Stream;
-import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
-import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,17 +32,6 @@ class NotificationCopyTest {
         assertThat(NotificationCopy.iGa(word)).isEqualTo(expected);
     }
 
-    @Test
-    @DisplayName("아이에게는 보호자를 성별로 엄마 · 아빠라 부르고, 보호자가 아니면 이름 그대로(fe callName forKid)")
-    void 아이가_부르는_이름() {
-        assertThat(NotificationCopy.callNameForKid("은영", ProfileRole.PARENT, Sex.F))
-                .isEqualTo("엄마");
-        assertThat(NotificationCopy.callNameForKid("철수", ProfileRole.PARENT, Sex.M))
-                .isEqualTo("아빠");
-        assertThat(NotificationCopy.callNameForKid("서윤", ProfileRole.CHILD, Sex.F))
-                .isEqualTo("서윤");
-    }
-
     @ParameterizedTest(name = "{0} → {1}")
     @CsvSource({
         "운동 한 칸을 처음 끝내요, 운동 한 칸을 처음 끝냈어요",
@@ -52,7 +39,7 @@ class NotificationCopyTest {
         "준비 · 본 · 정리를 한 번에 다 해요, 준비 · 본 · 정리를 한 번에 다 했어요",
         "모두 합쳐 30분 움직여요, 모두 합쳐 30분 움직였어요",
         "토요일이나 일요일에 운동해요, 토요일이나 일요일에 운동했어요",
-        "엄마 · 아빠와 같은 날 운동해요, 엄마 · 아빠와 같은 날 운동했어요",
+        "보호자와 같은 날 운동해요, 보호자와 같은 날 운동했어요",
         "키 · 몸무게를 새로 재요, 키 · 몸무게를 새로 쟀어요",
         "칭찬 스티커를 처음 받아요, 칭찬 스티커를 처음 받았어요",
         "여섯 가지 힘을 기르는 운동을 다 해 봐요, 여섯 가지 힘을 기르는 운동을 다 해 봤어요",

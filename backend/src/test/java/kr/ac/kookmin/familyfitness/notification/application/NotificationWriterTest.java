@@ -180,8 +180,8 @@ class NotificationWriterTest {
                     .extracting(
                             Notification::kind, Notification::title, Notification::body, Notification::fromProfileId)
                     .containsExactly(
-                            tuple(NotificationKind.PRAISE, "엄마가 스티커를 붙여 줬어요", null, mom),
-                            tuple(NotificationKind.PRAISE, "아빠가 칭찬을 보냈어요", "멋지다", dad));
+                            tuple(NotificationKind.PRAISE, "은영이 스티커를 붙여 줬어요", null, mom),
+                            tuple(NotificationKind.PRAISE, "철수가 칭찬을 보냈어요", "멋지다", dad));
             assertThat(repository.of(mom)).isEmpty();
         }
 

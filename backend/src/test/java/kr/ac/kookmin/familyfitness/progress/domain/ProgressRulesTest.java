@@ -149,4 +149,12 @@ class ProgressRulesTest {
                 .contains(Achievement.STREAK_3, Achievement.MIN_300)
                 .doesNotContain(Achievement.STREAK_7, Achievement.SIX_POWERS);
     }
+
+    @Test
+    @DisplayName("업적 설명은 보호자를 「엄마」 · 「아빠」 로 박아 부르지 않는다 — 여럿이거나 누구인지 모르면 「보호자」")
+    void 업적_설명의_보호자_부르는_말() {
+        assertThat(Achievement.TOGETHER.description()).isEqualTo("보호자와 같은 날 운동해요");
+        assertThat(Arrays.stream(Achievement.values()).map(Achievement::description))
+                .noneMatch(it -> it.contains("엄마") || it.contains("아빠"));
+    }
 }

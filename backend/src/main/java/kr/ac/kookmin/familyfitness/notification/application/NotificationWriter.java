@@ -17,7 +17,6 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.notification.application.port.NotificationRepository;
 import kr.ac.kookmin.familyfitness.notification.domain.Notification;
-import kr.ac.kookmin.familyfitness.notification.domain.NotificationCopy;
 import kr.ac.kookmin.familyfitness.notification.domain.NotificationRules;
 import kr.ac.kookmin.familyfitness.progress.api.AchievementEarned;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -62,7 +61,7 @@ public class NotificationWriter {
      * <pre>
      * DONE   아이 → 부모  KID_DONE    「서준이 운동을 마쳤어요」 — 칸 끝 자동 알림은 따로 만들지 않는다(두 번 가지 않게)
      * THANKS 아이 → 부모  KID_THANKS  「서준이 고맙대요」
-     * PRAISE 부모 → 아이  PRAISE      「엄마가 스티커를 붙여 줬어요」 — 아이에게는 이름 대신 엄마 · 아빠
+     * PRAISE 부모 → 아이  PRAISE      「은영이 스티커를 붙여 줬어요」 — 보낸 보호자의 프로필 이름
      * </pre>
      *
      * 보낸 프로필을 못 찾으면 만들지 않는다(목도 보낸 사람을 모르면 건너뛴다).
@@ -97,7 +96,7 @@ public class NotificationWriter {
                         Notification.praise(
                                 cheer.toProfileId(),
                                 sender.profileId(),
-                                NotificationCopy.callNameForKid(sender.name(), sender.role(), sender.sex()),
+                                sender.name(),
                                 cheer.cheerId(),
                                 cheer.stickerId(),
                                 cheer.message(),
