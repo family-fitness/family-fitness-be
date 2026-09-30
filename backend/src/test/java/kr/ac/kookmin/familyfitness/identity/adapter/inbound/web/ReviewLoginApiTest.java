@@ -133,7 +133,7 @@ class ReviewLoginApiTest {
     }
 
     @Test
-    @DisplayName("체험 가족은 엄마 · 아빠 · 하윤(만 11세) · 서준(만 6세)이고, 아이 둘은 동의가 있고 운동할 수 있는 시간이 적혀 있고 미션은 없다")
+    @DisplayName("체험 가족은 엄마, 아빠, 하윤(만 11세), 서준(만 6세)이고, 아이 둘은 동의가 있고 운동할 수 있는 시간이 적혀 있다")
     void 체험_가족의_식구() throws Exception {
         Login login = login();
         Map<String, JsonNode> members = members(login);
@@ -172,7 +172,7 @@ class ReviewLoginApiTest {
         }
         assertThat(jdbc.queryForObject(
                         "select count(*) from missions where family_id = ?", Integer.class, login.familyId()))
-                .isZero();
+                .isPositive(); // 지난 2주 기록은 ReviewFamilyHistoryApiTest
     }
 
     @Test
