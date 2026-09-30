@@ -88,9 +88,14 @@ class AJourneyTest {
 
         // 서준: 유소년 일곱 종목 + 키 · 몸무게 · 허리둘레 → 종합 등급이 하나 나온다
         String measured = body(created(as(mom, post("/api/v1/profiles/" + seojun + "/fitness-tests"))
-                .content(fitnessBody(D1, "145", "38", "60", Map.of(
-                        "020", "55", "028", "45.0", "009", "40", "012", "12.0", "043", "33", "022", "170", "044",
-                        "20")))));
+                .content(fitnessBody(
+                        D1,
+                        "145",
+                        "38",
+                        "60",
+                        Map.of(
+                                "020", "55", "028", "45.0", "009", "40", "012", "12.0", "043", "33", "022", "170",
+                                "044", "20")))));
         assertThat((String) read(measured, "$.certification.status")).isEqualTo("GRADED");
         assertThat((String) read(measured, "$.certification.grade")).isNotNull();
         // 엄마 본인은 일부 종목만 잰다
@@ -112,8 +117,8 @@ class AJourneyTest {
                 String code = read(
                         body(created(as(mom, post("/api/v1/profiles/" + dadProfileId + "/invite")))), "$.claimCode");
                 dad = devLogin("qa-A-dad");
-                String claim = body(ok(as(dad, post("/api/v1/profiles/claim"))
-                        .content("{\"claimCode\":\"" + code + "\"}")));
+                String claim =
+                        body(ok(as(dad, post("/api/v1/profiles/claim")).content("{\"claimCode\":\"" + code + "\"}")));
                 assertThat((String) read(claim, "$.nextStep")).isEqualTo("SUPPORT_MODE");
                 ok(as(dad, patch("/api/v1/profiles/" + dadProfileId + "/support-mode"))
                         .content("{\"supportMode\":\"WEEKEND\"}"));
@@ -136,7 +141,9 @@ class AJourneyTest {
             completeAll(mom, missionId, seojun);
 
             String progress = progress(mom, seojun);
-            assertThat((Integer) read(progress, "$.streakDays")).as("D%d 이어서 한 날", day).isEqualTo(day);
+            assertThat((Integer) read(progress, "$.streakDays"))
+                    .as("D%d 이어서 한 날", day)
+                    .isEqualTo(day);
             if (weekend) {
                 // 아이가 끝낸 칸은 같이 하기로 한 아빠에게도 적힌다
                 List<Boolean> dadDone = read(
@@ -228,9 +235,13 @@ class AJourneyTest {
 
     private String addChild(String userId, String familyId, String name, String birth, String sex) throws Exception {
         return read(
-                body(created(as(userId, post("/api/v1/families/" + familyId + "/profiles"))
-                        .content("{\"name\":\"" + name + "\",\"birthDate\":\"" + birth + "\",\"sex\":\"" + sex
-                                + "\",\"role\":\"CHILD\",\"guardianConsent\":{\"personalData\":true,\"healthData\":true}}"))),
+                body(
+                        created(
+                                as(userId, post("/api/v1/families/" + familyId + "/profiles"))
+                                        .content(
+                                                "{\"name\":\"" + name + "\",\"birthDate\":\"" + birth + "\",\"sex\":\""
+                                                        + sex
+                                                        + "\",\"role\":\"CHILD\",\"guardianConsent\":{\"personalData\":true,\"healthData\":true}}"))),
                 "$.profileId");
     }
 
@@ -252,7 +263,11 @@ class AJourneyTest {
         boolean first = true;
         for (Map.Entry<String, String> it : items.entrySet()) {
             if (!first) sb.append(',');
-            sb.append("{\"itemCode\":\"").append(it.getKey()).append("\",\"value\":").append(it.getValue()).append('}');
+            sb.append("{\"itemCode\":\"")
+                    .append(it.getKey())
+                    .append("\",\"value\":")
+                    .append(it.getValue())
+                    .append('}');
             first = false;
         }
         return sb.append("]}").toString();
