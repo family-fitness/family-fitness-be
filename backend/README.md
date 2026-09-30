@@ -175,7 +175,12 @@ FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 �
 
 - `app.ai.mode=stub` 이면 AI 없이 결정적 가짜 응답으로 승인 게이트·대화 흐름을 끝까지 돌릴 수 있다. prod 밖에서는 기본값이다(`APP_AI_MODE` 로 바꾼다).
 - 실제 AI 에 붙이기
-  1. AI 저장소 README 순서대로 가상환경 · `.env`(LLM 키) · 임베딩 모델(`make embed-model`, 처음 한 번)을 준비하고 `make serve` 로 띄운다(`http://127.0.0.1:8000`). 임베딩은 AI 서비스 안에서 돌아 서버를 따로 띄우지 않는다.
+  1. AI 저장소 README 순서대로 가상환경 · `.env`(LLM 키) · 임베딩 모델(`make embed-model`, 처음 한 번)을 준비하고 띄운다. 임베딩은 AI 서비스 안에서 돌아 서버를 따로 띄우지 않는다.
+     - 로컬 개발: `make serve`(`--reload`, `http://127.0.0.1:8000`).
+     - 운영: AI README 「운영에서 띄우기」 대로 `make serve-prod AI_HOST=127.0.0.1 AI_PORT=8000`(`--reload` 없음, 모델을 미리 올림). AI 에는 인증이 없어 포트를 밖에 열지 않는다 — BE 와 같은 기계면 `127.0.0.1`, 다른 기계면 사설망 주소로 띄우고 방화벽에서 BE 만 닿게 한다.
+
+  **배포 점검 — AI 포트**
+  1. [ ] 바깥망(휴대폰 LTE 등)에서 BE 의 `APP_AI_BASE_URL` 주소로 `/health` 를 불러 닿지 않는지 확인한다(`curl -m 5 <APP_AI_BASE_URL>/health` 가 시간 초과 · 연결 거부여야 한다).
   2. `./gradlew bootRun --args='--app.ai.mode=http'` — `app.ai.base-url` 기본값이 `http://localhost:8000` 이다.
 - 편성은 아이 한 명의 하루다. 서버는 AI 에 편성 대상 한 명만 보내고, AI 의 클립 단위 응답(`phase · order · duration_sec · video`)을 제안 칸으로 옮긴다.
   칸마다 분은 서버가 나눈다(준비 · 정리 1분씩, 남은 분은 본운동 칸에). `focus_factor`(보호자가 키워 주고 싶은 역량)와 `with_companion` 은 AI develop 이 아직 몰라 받아서 버린다. 대체 편성 · 스텁은 지금도 쓴다. AI 로컬 브랜치 `feature/AI-kspo-video-api`(`b070698`, 아직 병합 전)가 두 칸을 받아 `focus_factor` 를 대상 요인으로 쓰고 `with_companion` 은 LLM 문구에만 쓴다 — 이 브랜치가 병합 · 배포된 뒤부터 AI 편성에 반영된다.

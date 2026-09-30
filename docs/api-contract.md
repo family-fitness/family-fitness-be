@@ -845,7 +845,7 @@ USER·ASSISTANT 메시지 모두 저장(거부도 저장). 한 대화는 한 프
 
 ## 8. AI ↔ API 서버 (`shared.ai.AiGateway`)
 AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래는 서버가 실제로 보내고 읽는 것이다.
-- `{app.ai.base-url}/v1`, JSON, 인증 없음(내부망), HTTP/1.1(JDK HttpClient 를 1.1 로 고정한다 — 기본 HTTP/2 는 평문 주소에 `Upgrade: h2c` 를 붙이고 uvicorn 이 받지 않아 경고를 남긴다). AI 서비스는 `/v1` 아래 다섯 주소(assessment · trajectory · videos/search · coach/runs · coach/messages)와 `/health` 를 연다. 서버는 trajectory 를 부르지 않는다(10년 예측을 걷었다). 로컬에서는 AI 저장소의 `make serve`(uvicorn, 8000번)로 띄운다.
+- `{app.ai.base-url}/v1`, JSON, 인증 없음(내부망), HTTP/1.1(JDK HttpClient 를 1.1 로 고정한다 — 기본 HTTP/2 는 평문 주소에 `Upgrade: h2c` 를 붙이고 uvicorn 이 받지 않아 경고를 남긴다). AI 서비스는 `/v1` 아래 다섯 주소(assessment · trajectory · videos/search · coach/runs · coach/messages)와 `/health` 를 연다. 서버는 trajectory 를 부르지 않는다(10년 예측을 걷었다). 로컬에서는 AI 저장소의 `make serve`(uvicorn, 8000번)로, 운영에서는 AI README 「운영에서 띄우기」 의 `make serve-prod`(`--reload` 없음, 기본 `127.0.0.1`)로 띄운다. AI 포트는 BE 만 닿게 한다.
 - 모드: `app.ai.mode=stub`(local · compose 기본, AI 없이 결정적 가짜 응답) · `http`(prod 기본, `APP_AI_MODE` 로 바꾼다).
 - AI 오류 봉투 `{"error":{"code","message"}}` → 서버 예외: 409 → `AiRunInProgressException`(`RUN_IN_PROGRESS`) · 404 → `AiRunNotFoundException`(`RUN_NOT_FOUND`) · 400 → `AiBadRequestException`(503 `AI_BAD_REQUEST`) · 그 밖 상태 · 연결 실패 · 시간 초과 · 빈 응답 → `AiUnavailableException`(503 `TEMPORARILY_UNAVAILABLE`).
 - 200 이어도 본문을 읽지 못하거나(깨진 JSON · text/html 오류 페이지) 서버 모양으로 바꾸지 못하면(칸 누락) `AiUnavailableException` 이다. 연결 실패와 같게 다룬다(재시도 · 대체 편성 · 503).
