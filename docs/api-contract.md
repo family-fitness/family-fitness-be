@@ -476,7 +476,11 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ## 2. 측정 (fitness)
 
-부모만 볼 값: 호출 계정의 그 가족 프로필이 CHILD 면 측정 응답에서 인증 등급(`certification`) · 요인별 백분위 · 가장 낮은/높은 항목 · 코치 방향 · 체중 · 체지방률 · 허리둘레 · 「상위 n%」 문구를 비운다(null). `overallPercentile` 과 키 · 잰 값은 남긴다. 부모 계정은 아이 모드여도 다 받는다(서버가 화면을 모른다).
+부모만 볼 값: 호출 계정의 그 가족 프로필이 CHILD 면 측정 응답에서 부모만 볼 값을 비운다(null). 나이로 가르지 않는다 — 만 14세가 넘어 보호자 동의가 필요 없는 아이(예: 15세)가 자기 계정으로 봐도 같다. 부모 계정은 아이 모드여도 다 받는다(서버가 화면을 모른다).
+
+- 숨기는 것(아이 계정이면 null): 체중(`weightKg`) · 체지방률 · 허리둘레, 항목 백분위(`items[].percentile · band · topPercentText`), 요인별 백분위(`radar[].percentile`), 인증 등급(`certification`), 가장 낮은/높은 항목, 코치 방향, 「상위 n%」 문구(`headline`).
+- 보여 주는 것: 신체 점수(`overallPercentile` — 측정 이력 · `fitness-map` 의 `latest`), 키, 항목의 잰 값, 측정 날짜. 또래 평균은 늘 백분위 50 이라 서버가 따로 싣지 않는다. FE 는 신체 점수가 있으면 옆에 「또래 평균 50」 눈금을 그린다.
+- 시험: `FitnessWebTest` 「만 15세 아이가 자기 계정으로 보면 …」.
 
 ### GET /api/v1/fitness/items?ageGroup=&profileId=&testedOn=&sex= — 로그인(`profileId` 를 주면 보호자)
 응답 200 `{ageGroup, items: [{itemCode, itemName, itemLabel, unit, factor, higherIsBetter, inputGroup, optional, equipment|null, range:{min,max}}]}`.

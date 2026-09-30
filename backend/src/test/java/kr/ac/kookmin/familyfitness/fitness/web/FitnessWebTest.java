@@ -9,6 +9,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
+import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
@@ -834,6 +836,90 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.members[0].latest.overallPercentile").value(39))
                 .andExpect(jsonPath("$.members[0].latest.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.members[0].latest.strongest").value(nullValue()))
+                .andExpect(jsonPath("$.members[0].latest.coachDirection").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("만 15세 아이가 자기 계정으로 보면 몸무게 · 항목 백분위 · 인증 등급은 숨기고 신체 점수(overallPercentile)는 보여 준다")
+    void 만_15세_본인_계정은_신체_점수를_보고_몸무게_백분위_등급은_못_본다() throws Exception {
+        // 사용자 결정: 만 14세가 넘어 보호자 동의가 필요 없는 아이도 본인 계정에서는 부모만 볼 값을 숨긴다.
+        // 신체 점수 하나는 본인도 본다. 또래 평균은 늘 백분위 50 이라 서버가 따로 싣지 않고, FE 가 신체 점수 옆에 50 눈금을 그린다.
+        UUID teenUserId = UUID.randomUUID();
+        LocalDate teenBirth = today.minusYears(15).minusMonths(3);
+        UUID teenId = rows.profile(familyId, teenBirth, Sex.M);
+        ProfileSummary teen = new ProfileSummary(
+                teenId,
+                familyId,
+                "첫째",
+                ProfileRole.CHILD,
+                AgeGroup.ADOLESCENT,
+                Sex.M,
+                true,
+                InviteStatus.CLAIMED,
+                null,
+                true,
+                false,
+                true);
+        when(familyAccess.requireSameFamilyAsProfile(userId, teenId)).thenReturn(teen);
+        when(familyAccess.requireParentOfProfile(userId, teenId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
+        when(profileQuery.findDetails(teenId))
+                .thenReturn(detailsOf(teenId, familyId, teenBirth, Sex.M, null, null, true));
+        when(familyAccess.requireSameFamilyAsProfile(teenUserId, teenId)).thenReturn(teen);
+        when(familyAccess.requireMember(teenUserId, familyId)).thenReturn(teen);
+        when(profileQuery.summariesOfFamily(familyId)).thenReturn(List.of(teen));
+
+        mvc.perform(post("/api/v1/profiles/" + teenId + "/fitness-tests")
+                        .header(HttpHeaders.AUTHORIZATION, bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerBody(
+                                testedOn,
+                                "168",
+                                "58.4",
+                                new Item("009", "40"),
+                                new Item("012", "10"),
+                                new Item("020", "50"),
+                                new Item("028", "45"))))
+                .andExpect(status().isCreated());
+
+        // 보호자는 같은 회차의 몸무게 · 항목 백분위 · 등급을 다 본다
+        mvc.perform(get("/api/v1/profiles/" + teenId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.weightKg").value(58.4))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='012')].percentile", contains(notNullValue())))
+                .andExpect(jsonPath("$.certification.status").isNotEmpty());
+
+        // 본인 계정의 latest: 몸무게 · 항목 백분위 · 레이더 백분위 · 등급이 null 이고 잰 값과 키는 준다
+        mvc.perform(get("/api/v1/profiles/" + teenId + "/fitness-tests/latest")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(teenUserId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.heightCm").value(168))
+                .andExpect(jsonPath("$.weightKg").value(nullValue()))
+                .andExpect(jsonPath("$.bodyFatPct").value(nullValue()))
+                .andExpect(jsonPath("$.waistCm").value(nullValue()))
+                .andExpect(jsonPath("$.items", hasSize(4)))
+                .andExpect(jsonPath("$.items[0].value").isNumber())
+                .andExpect(jsonPath("$.items[*].percentile", everyItem(nullValue())))
+                .andExpect(jsonPath("$.items[*].band", everyItem(nullValue())))
+                .andExpect(jsonPath("$.items[*].topPercentText", everyItem(nullValue())))
+                .andExpect(jsonPath("$.radar[*].percentile", everyItem(nullValue())))
+                .andExpect(jsonPath("$.certification").value(nullValue()));
+
+        // 본인 계정의 측정 이력과 체력 지도는 신체 점수를 준다
+        mvc.perform(get("/api/v1/profiles/" + teenId + "/fitness-tests")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(teenUserId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(1)))
+                .andExpect(jsonPath("$.tests[0].overallPercentile").isNumber())
+                .andExpect(jsonPath("$.tests[0].weightKg").value(nullValue()));
+        mvc.perform(get("/api/v1/families/" + familyId + "/fitness-map")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(teenUserId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members[0].profileId").value(teenId.toString()))
+                .andExpect(jsonPath("$.members[0].consentRequired").value(false))
+                .andExpect(jsonPath("$.members[0].headline").value(nullValue()))
+                .andExpect(jsonPath("$.members[0].latest.overallPercentile").isNumber())
+                .andExpect(jsonPath("$.members[0].latest.weakest").value(nullValue()))
                 .andExpect(jsonPath("$.members[0].latest.coachDirection").value(nullValue()));
     }
 
