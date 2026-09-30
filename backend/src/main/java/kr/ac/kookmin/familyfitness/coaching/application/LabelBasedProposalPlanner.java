@@ -217,6 +217,9 @@ public class LabelBasedProposalPlanner {
      * 날마다 같은 묶음이 나오지 않게(AI 요청 recent_video_ids 와 같은 규칙): 같은 점수 · 연령대 안에서 최근 받은 영상의 클립은 뒤로
      * 미루고(최근일수록 더 뒤), 순위가 모두 같으면 편성 날짜를 시드로 삼아 섞는다. 본운동은 요인이 같은 클립이 앞이라 첫 본운동 칸
      * (= 미션 대표 영상, {@link ProposalConverter})이 키울 요인의 클립이다.
+     * 보호자가 키워 주고 싶은 역량(focusFactor)을 골랐으면 본운동 칸의 4분의 3 이상(올림, {@link #focusShare})을 그 역량 클립으로
+     * 먼저 채운다. 최근 받은 영상의 클립이라도 그 역량이면 다른 요인보다 앞이고, 그래도 모자라면 남은 칸을 다른 요인이 채운다.
+     * 준비 · 정리운동과 고르지 않았을 때는 그대로다.
      */
     List<ExerciseClip> routine(
             AgeGroup ageGroup, @Nullable FitnessFactor factor, CoachRunConditions conditions, Recent recent) {
@@ -235,19 +238,50 @@ public class LabelBasedProposalPlanner {
                 .thenComparingLong(it -> recent.shuffleKey(it.clipId()));
         Set<String> used = new HashSet<>();
         List<ExerciseClip> picked = new ArrayList<>();
+        FitnessFactor focus = conditions.focusFactor();
         for (SessionPhase phase : PHASE_NAME.keySet()) {
             List<ExerciseClip> candidates =
                     pool.stream().filter(it -> it.phase() == phase).sorted(rank).toList();
-            picked.addAll(pick(candidates, countOf(want, phase), used));
+            int wanted = countOf(want, phase);
+            if (phase == SessionPhase.MAIN && focus != null) {
+                // 보호자가 키워 주고 싶은 역량: 본운동 칸의 4분의 3(올림) 이상을 그 역량 클립으로 먼저 채운다.
+                // 최근 받은 영상이라도 그 역량이면 다른 요인보다 먼저다. 모자라면 남은 칸은 아래 순위대로 다른 요인이 채운다.
+                // 이미 쓴 이름을 다시 허용할지는 그 단계 후보 전체로 한 번만 정한다(역량 · 나머지를 따로 정하면 같은 동작이 두 번 들 수 있다)
+                allowAgainIfAllUsed(candidates, used);
+                List<ExerciseClip> focusFirst = take(
+                        candidates.stream().filter(it -> it.factor() == focus).toList(), focusShare(wanted), used);
+                picked.addAll(focusFirst);
+                List<ExerciseClip> rest = candidates.stream()
+                        .filter(it -> !focusFirst.contains(it))
+                        .toList();
+                picked.addAll(take(rest, wanted - focusFirst.size(), used));
+                continue;
+            }
+            picked.addAll(pick(candidates, wanted, used));
         }
         return picked.stream().anyMatch(it -> it.phase() == SessionPhase.MAIN) ? List.copyOf(picked) : List.of();
     }
 
+    /** 본운동 칸 가운데 보호자가 키워 주고 싶은 역량으로 채울 최소 칸 수: 4분의 3 올림(네 칸이면 세 칸, 여섯 칸이면 다섯 칸). */
+    static int focusShare(int mainCount) {
+        return (3 * mainCount + 3) / 4;
+    }
+
     /** 순위대로 앞에서 wanted 개, 이미 쓴 이름은 건너뛴다. 후보가 모두 쓴 이름이면 그 단계만 다시 허용한다(AI 와 같다). */
     private static List<ExerciseClip> pick(List<ExerciseClip> ranked, int wanted, Set<String> used) {
+        allowAgainIfAllUsed(ranked, used);
+        return take(ranked, wanted, used);
+    }
+
+    /** 후보가 모두 앞 단계에서 쓴 이름이면 그 이름들을 다시 쓸 수 있게 한다. */
+    private static void allowAgainIfAllUsed(List<ExerciseClip> ranked, Set<String> used) {
         if (!ranked.isEmpty() && ranked.stream().allMatch(it -> used.contains(it.title()))) {
             ranked.forEach(it -> used.remove(it.title()));
         }
+    }
+
+    /** 순위대로 앞에서 wanted 개, 이미 쓴 이름은 건너뛰고 고른 이름은 used 에 더한다. */
+    private static List<ExerciseClip> take(List<ExerciseClip> ranked, int wanted, Set<String> used) {
         List<ExerciseClip> picked = new ArrayList<>();
         for (ExerciseClip clip : ranked) {
             if (picked.size() >= wanted) break;

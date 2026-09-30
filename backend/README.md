@@ -194,7 +194,7 @@ FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 �
   1. [ ] 바깥망(휴대폰 LTE 등)에서 BE 의 `APP_AI_BASE_URL` 주소로 `/health` 를 불러 닿지 않는지 확인한다(`curl -m 5 <APP_AI_BASE_URL>/health` 가 시간 초과 · 연결 거부여야 한다).
   2. `./gradlew bootRun --args='--app.ai.mode=http'` — `app.ai.base-url` 기본값이 `http://localhost:8000` 이다.
 - 편성은 아이 한 명의 하루다. 서버는 AI 에 편성 대상 한 명만 보내고, AI 의 클립 단위 응답(`phase · order · duration_sec · video`)을 제안 칸으로 옮긴다.
-  칸마다 분은 서버가 나눈다(준비 · 정리 1분씩, 남은 분은 본운동 칸에). `recent_video_ids` 에는 대상이 편성 날 앞 14일 동안 미션으로 받은 영상 id 를 최근 것부터 최대 60개 싣는다 — AI 와 대체 편성 모두 이 영상들을 뒤로 미뤄 날마다 같은 영상이 나오지 않게 한다. 이 칸을 모르는 AI 는 버린다. `focus_factor`(보호자가 키워 주고 싶은 역량)와 `with_companion` 은 AI develop 이 아직 몰라 받아서 버린다. 대체 편성 · 스텁은 지금도 쓴다. AI 로컬 브랜치 `feature/AI-kspo-video-api`(`b070698`, 아직 병합 전)가 두 칸을 받아 `focus_factor` 를 대상 요인으로 쓰고 `with_companion` 은 LLM 문구에만 쓴다 — 이 브랜치가 병합 · 배포된 뒤부터 AI 편성에 반영된다.
+  칸마다 분은 서버가 나눈다(준비 · 정리 1분씩, 남은 분은 본운동 칸에). `recent_video_ids` 에는 대상이 편성 날 앞 14일 동안 미션으로 받은 영상 id 를 최근 것부터 최대 60개 싣는다 — AI 와 대체 편성 모두 이 영상들을 뒤로 미뤄 날마다 같은 영상이 나오지 않게 한다. 이 칸을 모르는 AI 는 버린다. `focus_factor`(보호자가 키워 주고 싶은 역량)와 `with_companion` 은 AI develop 이 아직 몰라 받아서 버린다. 대체 편성 · 스텁은 지금도 쓴다 — 대체 편성은 보호자가 고른 역량을 본운동 칸의 4분의 3 이상(올림)에 넣는다(최근 받은 영상이라도 그 역량이 먼저, 모자라면 다른 요인). AI 로컬 브랜치 `feature/AI-kspo-video-api`(`b070698`, 아직 병합 전)가 두 칸을 받아 `focus_factor` 를 대상 요인으로 쓰고 `with_companion` 은 LLM 문구에만 쓴다 — 이 브랜치가 병합 · 배포된 뒤부터 AI 편성에 반영된다.
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나 실행 단위로 실패하면(failed · 폴링 만료 · 404) 대체 편성으로 넘어간다. 시작 호출이 409(그 프로필에 AI 실행이 아직 돎)면 3초씩 쉬며 두 번 더 부르고, 그래도 409 면 대체 편성이다. 실패 까닭은 응답의 `failureCode` 다.
   요청 · 응답 모양과 결과 처리 표는 [docs/api-contract.md](../docs/api-contract.md) 8장.
 

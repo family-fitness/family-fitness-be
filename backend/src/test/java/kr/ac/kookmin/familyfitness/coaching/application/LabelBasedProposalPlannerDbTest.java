@@ -12,6 +12,7 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
@@ -235,6 +236,54 @@ class LabelBasedProposalPlannerDbTest {
         List<List<String>> days = twoWeeks(subject(LocalDate.of(2016, 5, 1)), FitnessFactor.CARDIO, false);
 
         assertThat(new HashSet<>(days)).hasSizeGreaterThan(1);
+    }
+
+    @Test
+    @DisplayName("실제 클립 표로 모든 연령대 · 역량을 짜도 보호자가 고른 역량이 본운동 칸의 4분의 3 이상이다(그 역량 클립이 모자라면 있는 만큼) — 최근 영상을 넘겨도 같다")
+    void 실제_클립_표에서도_고른_역량이_본운동_4분의_3_이상이다() {
+        List<LocalDate> births = List.of(
+                LocalDate.of(2016, 5, 1), LocalDate.of(2011, 3, 1), LocalDate.of(1985, 3, 1), LocalDate.of(1950, 3, 1));
+        List<ExerciseClip> active = clips.findAllActive();
+        for (LocalDate birth : births) {
+            AgeGroup ageGroup = AgeGroup.of(birth, TODAY);
+            for (FitnessFactor factor : FitnessFactor.values()) {
+                // 이 연령대에서 고를 수 있는 그 역량 본운동 클립의 서로 다른 이름 수(도구 없는 운동 클립만, 조건은 기본)
+                long available = active.stream()
+                        .filter(ExerciseClip::isExercise)
+                        .filter(it -> it.suits(ageGroup) && !it.needsProps())
+                        .filter(it -> it.phase() == SessionPhase.MAIN && it.factor() == factor)
+                        .map(ExerciseClip::title)
+                        .distinct()
+                        .count();
+                List<String> focusVideos = active.stream()
+                        .filter(it -> it.factor() == factor)
+                        .map(ExerciseClip::videoId)
+                        .distinct()
+                        .toList();
+                for (List<String> recent : List.of(List.<String>of(), focusVideos)) {
+                    CoachRunResult result = planner.plan(
+                            subject(birth),
+                            TODAY,
+                            new CoachRunConditions(20, false, null, factor, false),
+                            TODAY,
+                            "시험",
+                            recent);
+                    if (result == null) continue;
+                    List<CoachRunResult.Session> main = sessionsOf(result).stream()
+                            .filter(it -> it.phase().equals("본운동"))
+                            .toList();
+                    long focus = main.stream()
+                            .filter(it -> it.fitnessFactor().equals(factor.getLabel()))
+                            .count();
+                    long quota = Math.min((3L * main.size() + 3) / 4, available);
+                    assertThat(focus)
+                            .as(
+                                    "%s %s 최근 영상 %d편 · 본운동 %d칸 · 후보 %d",
+                                    ageGroup, factor, recent.size(), main.size(), available)
+                            .isGreaterThanOrEqualTo(quota);
+                }
+            }
+        }
     }
 
     @Test
