@@ -1,1 +1,11 @@
 .claude/
+
+# 비밀값 — 환경변수 파일과 키 파일은 커밋하지 않는다(예제 .env.example 만 커밋한다)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.pfx
