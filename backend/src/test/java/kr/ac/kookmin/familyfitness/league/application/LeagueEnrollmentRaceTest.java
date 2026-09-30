@@ -301,9 +301,10 @@ class LeagueEnrollmentRaceTest {
                 UUID roundId,
                 UUID familyId,
                 @Nullable Integer finalRate,
+                @Nullable Double finalScore,
                 @Nullable Integer finalRank,
                 LeagueMove moved) {
-            repository.saveResult(roundId, familyId, finalRate, finalRank, moved);
+            repository.saveResult(roundId, familyId, finalRate, finalScore, finalRank, moved);
         }
     }
 }

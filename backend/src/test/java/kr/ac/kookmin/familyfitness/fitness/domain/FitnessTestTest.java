@@ -39,8 +39,7 @@ class FitnessTestTest {
                 LocalDate.of(2026, 9, 1),
                 FitnessTestSource.SELF_INPUT,
                 ageAtTest,
-                null,
-                null,
+                BodyMeasures.NONE,
                 measurements,
                 scorer,
                 now);
@@ -105,15 +104,15 @@ class FitnessTestTest {
     }
 
     @Test
-    @DisplayName("백분위는 scorer 결과로 굳고 등급·구간이 파생된다")
-    void 백분위는_scorer_결과로_굳고_등급_구간이_파생된다() {
+    @DisplayName("백분위는 scorer 결과로 굳고 구간 · 상위 문구가 파생된다")
+    void 백분위는_scorer_결과로_굳고_구간_상위_문구가_파생된다() {
         FitnessTest test = register(
                 List.of(m("028", 40), m("012", 5)), (item, value) -> item == FitnessItem.RELATIVE_GRIP ? 80 : null);
         FitnessTestItem grip = test.getItems().stream()
                 .filter(it -> it.item() == FitnessItem.RELATIVE_GRIP)
                 .findFirst()
                 .orElseThrow();
-        assertThat(grip.score()).isEqualTo(new ItemScore(80, Grade.SECOND, Band.STRENGTH, "상위 20%"));
+        assertThat(grip.score()).isEqualTo(new ItemScore(80, Band.STRENGTH, "상위 20%"));
         FitnessTestItem reach = test.getItems().stream()
                 .filter(it -> it.item() == FitnessItem.SIT_AND_REACH)
                 .findFirst()
@@ -122,6 +121,35 @@ class FitnessTestTest {
         assertThat(test.getMeasurements())
                 .containsEntry("028", BigDecimal.valueOf(40))
                 .containsEntry("012", BigDecimal.valueOf(5));
+    }
+
+    @Test
+    @DisplayName("복원한 회차는 저장된 백분위에서 구간 · 문구를 다시 파생한다 — 항목마다 등급은 없다")
+    void 복원한_회차는_저장된_백분위에서_다시_파생한다() {
+        FitnessTest test = FitnessTest.reconstitute(
+                UUID.randomUUID(),
+                profileId,
+                LocalDate.of(2026, 9, 1),
+                FitnessTestSource.SELF_INPUT,
+                11,
+                BodyMeasures.NONE,
+                List.of(
+                        new FitnessTest.StoredItem("028", BigDecimal.valueOf(30), 90),
+                        new FitnessTest.StoredItem("012", BigDecimal.valueOf(12), null),
+                        new FitnessTest.StoredItem("020", BigDecimal.valueOf(42), 100)),
+                now);
+        assertThat(itemOf(test, FitnessItem.RELATIVE_GRIP).score())
+                .isEqualTo(new ItemScore(90, Band.STRENGTH, "상위 10%"));
+        assertThat(itemOf(test, FitnessItem.SIT_AND_REACH).score()).isEqualTo(ItemScore.NONE);
+        assertThat(itemOf(test, FitnessItem.SHUTTLE_RUN).score().topPercentText())
+                .isEqualTo("상위 1%");
+    }
+
+    private static FitnessTestItem itemOf(FitnessTest test, FitnessItem item) {
+        return test.getItems().stream()
+                .filter(it -> it.item() == item)
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test

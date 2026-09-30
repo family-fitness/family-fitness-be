@@ -86,7 +86,8 @@ public enum FitnessItem {
             InputGroup.EASY,
             null,
             new ValueRange(0, 120),
-            EnumSet.of(AgeGroup.ADULT, AgeGroup.SENIOR)),
+            // 어르신은 받지 않는다 — AI 어르신 기준항목은 012 · 028 둘이라 019 는 점수가 나오지 않는다
+            EnumSet.of(AgeGroup.ADULT)),
     SHUTTLE_RUN(
             "020",
             "왕복오래달리기",
@@ -177,6 +178,21 @@ public enum FitnessItem {
             null,
             new ValueRange(0, 120),
             EnumSet.of(AgeGroup.YOUTH)),
+    /**
+     * 유소년의 협응력 시험 — 벽에 공을 던지고 받은 횟수(AI `common/items.py` 044, 017 과는 다른 시험). 벽과 공이 있어야 해서 선택 항목이다.
+     * 범위 0~60: 공식 1등급 기준이 18~19회, 공공데이터 11~12세 99번째 백분위가 12~17회, 최댓값이 33~50회(여 12세 90회 한 건은
+     * 튀는 값)라 기준의 세 배쯤 넉넉히 둔다.
+     */
+    WALL_PASS(
+            "044",
+            "눈-손협응력(벽패스)",
+            "회",
+            FitnessFactor.COORDINATION,
+            true,
+            InputGroup.EQUIPMENT,
+            Equipment.WALL_AND_BALL,
+            new ValueRange(0, 60),
+            EnumSet.of(AgeGroup.YOUTH)),
     SHUTTLE_RUN_5M_X4(
             "050",
             "5m4회왕복달리기",
@@ -201,6 +217,7 @@ public enum FitnessItem {
     private static final class Equipment {
         private static final String SPACE = "공간";
         private static final String DEVICE = "장비";
+        private static final String WALL_AND_BALL = "벽과 공";
     }
 
     /** 혈압. 입력으로 받지 않는다 (400 ITEM_NOT_ALLOWED). */
@@ -277,6 +294,19 @@ public enum FitnessItem {
         return inputGroup == InputGroup.EQUIPMENT;
     }
 
+    /**
+     * 그 연령대에서 보이는 입력 그룹. 어르신의 028 상대악력만 EASY(필수)다 — AI 어르신 기준항목이 012 · 028 둘뿐이라
+     * 028 을 선택으로 두면 근력 점수 없이 끝난다. 악력계가 있어야 하는 것은 같다({@link #getEquipment()}).
+     */
+    public InputGroup inputGroup(AgeGroup ageGroup) {
+        return this == RELATIVE_GRIP && ageGroup == AgeGroup.SENIOR ? InputGroup.EASY : inputGroup;
+    }
+
+    /** 그 연령대에서 선택 입력인지. {@link #inputGroup(AgeGroup)} 이 EQUIPMENT 면 선택이다. */
+    public boolean isOptional(AgeGroup ageGroup) {
+        return inputGroup(ageGroup) == InputGroup.EQUIPMENT;
+    }
+
     public boolean isFor(AgeGroup ageGroup) {
         return ageGroups.contains(ageGroup);
     }
@@ -307,7 +337,8 @@ public enum FitnessItem {
     public static List<FitnessItem> forAgeGroup(AgeGroup ageGroup) {
         return Arrays.stream(values())
                 .filter(it -> it.isFor(ageGroup))
-                .sorted(Comparator.comparing(FitnessItem::getInputGroup).thenComparing(FitnessItem::getCode))
+                .sorted(Comparator.comparing((FitnessItem it) -> it.inputGroup(ageGroup))
+                        .thenComparing(FitnessItem::getCode))
                 .toList();
     }
 

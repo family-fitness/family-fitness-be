@@ -18,13 +18,14 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import kr.ac.kookmin.familyfitness.league.domain.AchievementRate;
 import kr.ac.kookmin.familyfitness.league.domain.AchievementRate.ChildDays;
+import kr.ac.kookmin.familyfitness.league.domain.AchievementRate.Result;
 import kr.ac.kookmin.familyfitness.progress.api.PlannedDaysSinceCreated;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
- * 가족마다 그달 달성률(%)을 센다. 재료는 다른 모듈의 공개 API 로 읽고, 셈은 {@link AchievementRate} 가 한다.
+ * 가족마다 그달 달성률(%)과 순위 점수를 센다. 재료는 다른 모듈의 공개 API 로 읽고, 셈은 {@link AchievementRate} 가 한다.
  *
  * <pre>
  * 셀 아이    identity.api.ProfileQuery#summariesOfFamilies — role CHILD. 보호자 동의가 필요한데 없는(거둔) 아이는 뺀다
@@ -51,13 +52,13 @@ public class FamilyRates {
     }
 
     /**
-     * 가족마다 {@code month} 의 달성률. 셀 날이 없으면 그 가족의 값은 null 이다(0 이 아니다).
+     * 가족마다 {@code month} 의 달성률 · 순위 점수. 셀 날이 없으면 그 가족의 값은 null 이다(0 이 아니다).
      * 이번 달이면 1일부터 오늘까지, 지난달이면 말일까지 센다.
      */
-    public Map<UUID, @Nullable Integer> of(Collection<UUID> familyIds, YearMonth month, LocalDate today) {
+    public Map<UUID, @Nullable Result> of(Collection<UUID> familyIds, YearMonth month, LocalDate today) {
         LocalDate from = month.atDay(1);
         LocalDate until = month.atEndOfMonth().isBefore(today) ? month.atEndOfMonth() : today;
-        Map<UUID, @Nullable Integer> rates = new LinkedHashMap<>();
+        Map<UUID, @Nullable Result> rates = new LinkedHashMap<>();
         if (until.isBefore(from)) {
             familyIds.forEach(it -> rates.put(it, null));
             return rates;
@@ -82,7 +83,7 @@ public class FamilyRates {
                 days.add(new ChildDays(childPlanned, dates(moved.getOrDefault(child, List.of()))));
             }
             Set<LocalDate> familyRest = new HashSet<>(rest.getOrDefault(familyId, List.of()));
-            rates.put(familyId, days.isEmpty() ? null : AchievementRate.of(days, familyRest, from, until, today));
+            rates.put(familyId, days.isEmpty() ? null : AchievementRate.measure(days, familyRest, from, until, today));
         }
         return rates;
     }

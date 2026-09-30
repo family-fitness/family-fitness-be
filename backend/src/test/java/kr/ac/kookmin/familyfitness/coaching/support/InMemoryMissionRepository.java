@@ -71,6 +71,24 @@ public class InMemoryMissionRepository implements MissionRepository {
     }
 
     @Override
+    public List<String> recentVideoIds(UUID profileId, LocalDate from, LocalDate to, int limit) {
+        return missions.values().stream()
+                .filter(it -> it.getParticipants().stream()
+                        .anyMatch(p -> p.getProfileId().equals(profileId)))
+                .filter(it ->
+                        !it.getStartsOn().isBefore(from) && !it.getStartsOn().isAfter(to))
+                .sorted(java.util.Comparator.comparing(Mission::getStartsOn)
+                        .thenComparing(Mission::getCreatedAt)
+                        .reversed())
+                .flatMap(it -> it.getSessions().stream())
+                .map(it -> it.clip() == null ? null : it.clip().videoId())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
     public List<UUID> familiesWithMissionsOn(LocalDate day) {
         return missions.values().stream()
                 .filter(it -> it.overlaps(day, day))

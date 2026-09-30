@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -114,6 +115,51 @@ class OpenApiDocsTest {
     }
 
     @Test
+    @DisplayName("측정 요청 · 응답의 체지방률 · 허리둘레는 null 을 싣는 number 다")
+    void 체지방률_허리둘레는_null_을_싣는_number_다() {
+        for (String schema : List.of("RegisterFitnessTestRequest", "FitnessTestResponse", "LatestFitnessResponse")) {
+            for (String name : List.of("bodyFatPct", "waistCm")) {
+                assertThat(typesOf(property(schema, name)))
+                        .as(schema + "." + name)
+                        .containsExactlyInAnyOrder("number", "null");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("인증 등급은 회차에 하나다 — 항목 줄에 grade 가 없고, latest 의 certification 은 null 을 싣는 참조다")
+    void 인증_등급은_회차에_하나다() {
+        JsonNode itemProperties =
+                docs.path("components").path("schemas").path("ItemResult").path("properties");
+        assertThat(itemProperties.has("percentile")).isTrue();
+        assertThat(itemProperties.has("grade")).isFalse();
+
+        JsonNode latest = property("LatestFitnessResponse", "certification");
+        List<JsonNode> choices = new ArrayList<>();
+        latest.path("oneOf").forEach(choices::add);
+        assertThat(choices).hasSize(2);
+        assertThat(choices.get(0).path("$ref").asString()).isEqualTo("#/components/schemas/Certification");
+        assertThat(typesOf(choices.get(1))).containsExactly("null");
+        // 등록 응답은 보호자만 받아 늘 있다
+        assertThat(property("FitnessTestResponse", "certification").path("$ref").asString())
+                .isEqualTo("#/components/schemas/Certification");
+        assertThat(typesOf(property("Certification", "grade"))).containsExactlyInAnyOrder("string", "null");
+        assertThat(typesOf(property("Certification", "status"))).containsExactly("string");
+        // FE schema.ts 가 쓰는 이름 그대로 — Certification · MissingItem · PeerGrade
+        assertThat(property("Certification", "missingItems")
+                        .path("items")
+                        .path("$ref")
+                        .asString())
+                .isEqualTo("#/components/schemas/MissingItem");
+        assertThat(property("Certification", "peers").path("items").path("$ref").asString())
+                .isEqualTo("#/components/schemas/PeerGrade");
+        assertThat(typesOf(property("MissingItem", "itemCodes"))).containsExactly("array");
+        assertThat(typesOf(property("MissingItem", "label"))).containsExactly("string");
+        assertThat(typesOf(property("PeerGrade", "grade"))).containsExactly("string");
+        assertThat(typesOf(property("PeerGrade", "ratio"))).containsExactly("number");
+    }
+
+    @Test
     @DisplayName("요청 검증용 getter(isContentPresent)는 CheerRequest 칸으로 나가지 않는다")
     void CheerRequest_에_contentPresent_가_없다() {
         JsonNode properties =
@@ -121,6 +167,61 @@ class OpenApiDocsTest {
 
         assertThat(properties.has("fromProfileId")).isTrue();
         assertThat(properties.has("contentPresent")).isFalse();
+    }
+
+    private boolean deprecated(String path, String method) {
+        JsonNode operation = docs.path("paths").path(path).path(method);
+        assertThat(operation.isMissingNode())
+                .as(method + " " + path + " 가 문서에 있다")
+                .isFalse();
+        JsonNode flag = operation.path("deprecated");
+        return flag.isBoolean() && flag.booleanValue();
+    }
+
+    @Test
+    @DisplayName("전환기 별칭(FE 가 부르는 옛 이름)은 문서에 deprecated 로 실리고, 같은 핸들러의 계약 이름은 그대로다")
+    void 전환기_별칭은_deprecated_다() {
+        Map<String, List<String>> aliases = Map.of(
+                "/api/v1/missions/{missionId}/sessions/{seq}/done", List.of("post"),
+                "/api/v1/families/{familyId}/rest-days", List.of("get", "post"),
+                "/api/v1/families/{familyId}/rest-days/{restDate}", List.of("delete"),
+                "/api/v1/clips", List.of("get"),
+                "/api/v1/clips/{exerciseId}/favorite", List.of("post"));
+        Map<String, List<String>> contract = Map.of(
+                "/api/v1/missions/{missionId}/sessions/{seq}/complete", List.of("post"),
+                "/api/v1/families/{familyId}/rest-cards", List.of("get", "post"),
+                "/api/v1/families/{familyId}/rest-cards/{restDate}", List.of("delete"),
+                "/api/v1/exercises", List.of("get"),
+                "/api/v1/exercises/{exerciseId}/favorite", List.of("post"));
+
+        aliases.forEach((path, methods) -> methods.forEach(method ->
+                assertThat(deprecated(path, method)).as(method + " " + path).isTrue()));
+        contract.forEach((path, methods) -> methods.forEach(method ->
+                assertThat(deprecated(path, method)).as(method + " " + path).isFalse()));
+        // 걷은 별칭이 목록에만 남아 있지 않게 — 목록의 경로는 모두 문서에 있다
+        assertThat(OpenApiConfig.TRANSITIONAL_ALIASES).containsExactlyInAnyOrderElementsOf(aliases.keySet());
+    }
+
+    private String operationId(String path, String method) {
+        return docs.path("paths").path(path).path(method).path("operationId").asString();
+    }
+
+    @Test
+    @DisplayName("별칭의 operationId 는 「계약 이름_transitional」 이다 — 계약 경로의 operationId 가 별칭 때문에 뒤붙임을 받지 않게")
+    void 계약_경로가_operationId_를_지킨다() {
+        assertThat(operationId("/api/v1/missions/{missionId}/sessions/{seq}/complete", "post"))
+                .isEqualTo("completeSession");
+        assertThat(operationId("/api/v1/missions/{missionId}/sessions/{seq}/done", "post"))
+                .isEqualTo("completeSession_transitional");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards", "get")).isEqualTo("month");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-days", "get")).isEqualTo("month_transitional");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards", "post"))
+                .isEqualTo("use");
+        assertThat(operationId("/api/v1/families/{familyId}/rest-cards/{restDate}", "delete"))
+                .isEqualTo("cancel");
+        // 다른 컨트롤러와 겹치는 메서드 이름(list · favorite)은 계약 경로 쪽만 springdoc 이 뒤붙임으로 가른다
+        assertThat(operationId("/api/v1/clips", "get")).isEqualTo("list_transitional");
+        assertThat(operationId("/api/v1/clips/{exerciseId}/favorite", "post")).isEqualTo("favorite_transitional");
     }
 
     @Test

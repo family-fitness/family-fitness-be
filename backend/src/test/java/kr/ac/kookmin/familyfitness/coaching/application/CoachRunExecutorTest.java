@@ -6,6 +6,7 @@ import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.WARMUP;
 import static kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository.clip;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,11 +18,13 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeAiGateway;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
@@ -30,10 +33,12 @@ import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.AiBadRequestException;
+import kr.ac.kookmin.familyfitness.shared.ai.AiRunInProgressException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
@@ -61,6 +66,8 @@ class CoachRunExecutorTest {
     /** 기본은 비어 있다 — 대체 편성은 영상 한 편 통째로 짠다. 클립으로 짜는 시험만 채운다. */
     private final InMemoryExerciseClipRepository clips = new InMemoryExerciseClipRepository();
 
+    private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+
     private final CoachRunPipeline pipeline = new CoachRunPipeline(
             runs,
             identity,
@@ -69,7 +76,8 @@ class CoachRunExecutorTest {
             Fixed.time(),
             new LabelBasedProposalPlanner(fitness, videos, clips),
             clips,
-            videos);
+            videos,
+            missions);
     private final CoachRunExecutor executor = new CoachRunExecutor(pipeline, gateway, new SyncTaskExecutor(), 0, 3);
 
     /** 측정은 있지만 요인 백분위(약점 · 강점)가 없다 — 대체 편성할 근거가 없는 기본 상태. */
@@ -110,11 +118,16 @@ class CoachRunExecutorTest {
 
     /** 대체 편성으로 낸 제안이다 — 두 번째 단계가 「AI 서비스 장애(까닭) → 영상 라벨 기반 편성」 partial 이다. */
     private static void assertFallback(CoachRun saved, String summary) {
+        assertFallbackWithStep(saved, "AI 서비스 장애(" + summary + ")");
+    }
+
+    /** 대체 편성으로 낸 제안이고, 두 번째 단계 요약이 {@code retrieveStep} 으로 시작한다. */
+    private static void assertFallbackWithStep(CoachRun saved, String retrieveStep) {
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
         assertThat(saved.getFailureCode()).isNull();
         assertThat(saved.getSteps().stream().map(CoachStep::status).toList())
                 .containsExactly("ok", "partial", "ok", "ok");
-        assertThat(saved.getSteps().get(1).summary()).startsWith("AI 서비스 장애(" + summary + ")");
+        assertThat(saved.getSteps().get(1).summary()).startsWith(retrieveStep);
         assertThat(saved.getProposals())
                 .singleElement()
                 .extracting(CoachProposalItem::title)
@@ -140,8 +153,66 @@ class CoachRunExecutorTest {
             assertThat(it.profile().inputLevel()).isEqualTo("L2");
         });
         assertThat(request.constraints())
-                .isEqualTo(new CoachRunRequest.Constraints(1, 20, null, true, true, true, null, true));
+                .isEqualTo(new CoachRunRequest.Constraints(1, 20, null, true, true, true, null, true, List.of()));
         assertThat(request.toString()).doesNotContain("민준");
+    }
+
+    /** day 에 시작하는 하루짜리 직접 짜기 미션. 칸마다 영상 하나(videoIds 차례). */
+    private void missionOn(LocalDate day, UUID participant, String... videoIds) {
+        List<MissionSession> sessions = new java.util.ArrayList<>();
+        for (int i = 0; i < videoIds.length; i++) {
+            sessions.add(new MissionSession(
+                    i + 1, MAIN, "칸 " + (i + 1), null, 1, new SessionClip(videoIds[i], 0, 30, null)));
+        }
+        missions.save(Mission.manual(
+                UUID.randomUUID(),
+                family.familyId,
+                "미션",
+                TargetMetric.TIMER_MINUTES,
+                videoIds.length,
+                null,
+                day,
+                day,
+                List.of(participant),
+                sessions,
+                family.parent.profileId(),
+                Fixed.NOW));
+    }
+
+    @Test
+    @DisplayName("AI 에 대상이 앞 14일 동안 미션으로 받은 영상 id 를 최근 것부터 한 번씩 보낸다 — 날마다 같은 영상이 나왔다")
+    void AI_에_최근_14일_동안_받은_영상을_보낸다() {
+        UUID child = family.child.profileId();
+        missionOn(Fixed.TODAY.minusDays(3), child, "older", "shared");
+        missionOn(Fixed.TODAY.minusDays(1), child, "shared", "latest");
+        missionOn(Fixed.TODAY.minusDays(15), child, "tooOld");
+        missionOn(Fixed.TODAY, child, "today");
+        missionOn(Fixed.TODAY.minusDays(1), family.parent.profileId(), "parentOnly");
+
+        executor.execute(runningRun().getId());
+
+        assertThat(gateway.startRequests.getFirst().constraints().recentVideoIds())
+                .containsExactly("shared", "latest", "older");
+    }
+
+    @Test
+    @DisplayName("14일 동안 날마다 칸 7개(20분 편성)를 모두 다른 영상으로 받았어도 98개를 잘리지 않고 다 보낸다 — 60개에서 잘려 9일 전 영상이 새 영상으로 보였다")
+    void 최근_14일_하루_7칸이면_목록이_잘리지_않는다() {
+        UUID child = family.child.profileId();
+        int perDay =
+                kr.ac.kookmin.familyfitness.shared.ai.SessionClipCounts.of(20).total();
+        for (int day = 1; day <= 14; day++) {
+            String[] ids = new String[perDay];
+            for (int i = 0; i < perDay; i++) ids[i] = "d" + day + "-" + i;
+            missionOn(Fixed.TODAY.minusDays(day), child, ids);
+        }
+
+        executor.execute(runningRun().getId());
+
+        List<String> sent = gateway.startRequests.getFirst().constraints().recentVideoIds();
+        assertThat(perDay).isEqualTo(7);
+        assertThat(sent).hasSize(14 * 7).startsWith("d1-0").endsWith("d14-6");
+        assertThat(CoachRunPipeline.RECENT_LIMIT).isEqualTo(150);
     }
 
     @Test
@@ -166,7 +237,8 @@ class CoachRunExecutorTest {
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.startsOn()).isEqualTo(Fixed.TODAY);
         assertThat(item.endsOn()).isEqualTo(Fixed.TODAY);
-        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
+        // 대표 영상은 첫 본운동 칸(준비운동 첫 칸이 아니다)
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 500));
         assertThat(item.participants())
                 .containsExactly(
                         new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"),
@@ -193,7 +265,7 @@ class CoachRunExecutorTest {
         List.of(
                         clip("IdpXx2gm90o", 56, 116, "스트레칭", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
-                        clip(eg, 188, 226, "고양이자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 188, 220, "고양이자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 500, 534, "양팔 펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 536, 588, "가슴펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 614, 674, "팔꿈치 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
@@ -214,8 +286,8 @@ class CoachRunExecutorTest {
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
-        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨 기반 편성 · 클립 7개");
-        assertThat(saved.getSteps().get(2).summary()).isEqualTo("하루 20분 · 준비 2 · 본 4 · 정리 1");
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨로 편성, 클립 7개");
+        assertThat(saved.getSteps().get(2).summary()).isEqualTo("하루 20분, 준비 2, 본 4, 정리 1");
         CoachProposalItem item = saved.getProposals().getFirst();
         assertThat(item.sessions().stream().map(MissionSession::title).toList())
                 .containsExactly("스트레칭", "나비자세", "가슴펴기", "팔 스트레칭", "다리 늘리기", "양팔 펴기", "다리 뒤 늘리기");
@@ -223,10 +295,86 @@ class CoachRunExecutorTest {
                 .containsExactly(1, 1, 5, 4, 4, 4, 1);
         assertThat(item.targetValue()).isEqualTo(20);
         assertThat(item.sessions().get(2).clip()).isEqualTo(new SessionClip(eg, 536, 588, "가슴펴기"));
-        assertThat(item.video()).isEqualTo(new ProposalVideo("IdpXx2gm90o", 56));
+        // 대표 영상은 첫 본운동 칸 = 키울 요인(유연성)의 클립
+        assertThat(item.video()).isEqualTo(new ProposalVideo(eg, 536));
         // 인용: 규준 1건 + 클립이 나온 영상마다 1건
         assertThat(item.citations().stream().map(ProposalCitation::chunkId).toList())
                 .containsExactly("norm:유소년-012", "video:IdpXx2gm90o", "video:" + eg);
+    }
+
+    @Test
+    @DisplayName("AI 장애 때 어르신은 어르신 클립과 성인 클립에서 고른다 — 어르신 라벨 클립이 먼저")
+    void AI_장애_때_어르신은_어르신_클립과_성인_클립에서_고른다() {
+        ProfileDetails grandma = family.addChild("할머니", Fixed.TODAY.minusYears(70));
+        List.of(
+                        clip("adult", 10, 70, "손목 돌리기", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.ADULT),
+                        clip("adult", 80, 140, "앉았다 일어서기", MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                        clip("adult", 150, 220, "벽 밀기", MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                        clip("senior", 0, 60, "의자 잡고 일어서기", MAIN, FitnessFactor.STRENGTH, AgeGroup.SENIOR),
+                        clip("adult", 220, 280, "목 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.ADULT),
+                        // 다른 연령대는 고르지 않는다
+                        clip("youth", 0, 60, "버피", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRun(grandma.profileId(), false, FitnessFactor.STRENGTH);
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getProposals().getFirst().sessions().stream()
+                        .map(MissionSession::title)
+                        .toList())
+                .containsExactly("손목 돌리기", "의자 잡고 일어서기", "앉았다 일어서기", "벽 밀기", "목 늘리기");
+    }
+
+    @Test
+    @DisplayName("AI 장애 때 요인도 백분위도 없으면(측정 전 · 만 7~10세) 그 연령대 클립으로 전신 미션을 짠다 — AI 규칙 편성과 같다")
+    void AI_장애_때_요인도_백분위도_없으면_그_연령대_클립으로_전신_미션을_짠다() {
+        // 기본 측정은 백분위가 없다(만 7~10세처럼). 키워 주고 싶은 역량도 없다
+        String eg = "Eg3GpTv7z8s";
+        List.of(
+                        clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 500, 560, "팔 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                        clip(eg, 600, 640, "제자리 걷기", MAIN, null, AgeGroup.YOUTH),
+                        clip(eg, 1426, 1466, "다리 뒤 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip("toddler", 0, 60, "유아 늘이기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.TODDLER))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+        assertThat(saved.getSteps().get(0).summary()).isEqualTo("측정 있음, 짚을 요인 없음 → 전신");
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨로 편성, 클립 4개");
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.title()).isEqualTo("전신 기르기 20분");
+        assertThat(item.sessions().stream().map(MissionSession::title).toList())
+                .containsExactly("나비자세", "팔 펴기", "제자리 걷기", "다리 뒤 늘리기");
+        assertThat(item.sessions().get(2).factor()).isNull();
+        assertThat(item.citations().stream().map(ProposalCitation::chunkId).toList())
+                .containsExactly("video:" + eg);
+        assertThat(participantIds(item)).containsExactly(family.child.profileId(), family.parent.profileId());
+
+        // 측정 전인 만 3세도 그 연령대(유아기) 클립으로 짠다
+        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3));
+        CoachRun toddlerRun = runningRun(toddler.profileId(), false, null);
+        executor.execute(toddlerRun.getId());
+
+        CoachRun toddlerSaved = runs.findById(toddlerRun.getId());
+        assertThat(toddlerSaved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(toddlerSaved.getSteps().get(0).summary()).isEqualTo("측정 없음, 짚을 요인 없음 → 전신");
+        assertThat(toddlerSaved.getProposals().getFirst().sessions().stream()
+                        .map(MissionSession::title)
+                        .toList())
+                .containsExactly("유아 늘이기");
     }
 
     @Test
@@ -242,7 +390,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("부모가 고른 힘은 focus_factor 로 AI 에 실리고 스텁 제안의 요인이 된다")
+    @DisplayName("보호자가 키워 주고 싶은 역량은 focus_factor 로 AI 에 실리고 스텁 제안의 요인이 된다")
     void 부모가_고른_힘은_focus_factor_로_실린다() {
         CoachRun run = runningRun(family.child.profileId(), false, FitnessFactor.AGILITY);
 
@@ -324,7 +472,7 @@ class CoachRunExecutorTest {
         assertFallback(fallback, "편성 실패");
         assertThat(fallback.getAiRunId()).isEqualTo("cr_x");
 
-        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3)); // 측정도 고른 힘도 없다
+        ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3)); // 측정도 키워 주고 싶은 역량도 없다
         CoachRun noBasis = runningRun(toddler.profileId(), false, null);
         executor.execute(noBasis.getId());
 
@@ -400,7 +548,7 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("AI 에 닿지 못했는데 고른 힘도 측정 약점도 없으면 FAILED(AI_FAILED)로 끝나고 상태 전이는 한 번만 일어난다")
+    @DisplayName("AI 에 닿지 못했는데 키워 주고 싶은 역량도 측정 약점도 없으면 FAILED(AI_FAILED)로 끝나고 상태 전이는 한 번만 일어난다")
     void AI_장애인데_근거가_없으면_FAILED_로_끝난다() {
         CoachRun run = runningRun();
         gateway.onStart = request -> {
@@ -446,7 +594,29 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("AI 장애 때 부모가 고른 힘이 있으면 측정 없는 만 3세도 그 요인의 연령대 영상으로 대체 편성한다")
+    @DisplayName(
+            "AI 장애 때 보호자가 고른 역량이 없으면 가장 낮은 요인으로 짠다 — 모든 요인이 백분위 75 를 넘어도 강한 요인을 고르지 않는다(ai:coach/compose.py target_factor)")
+    void AI_장애_때_고른_역량이_없으면_가장_낮은_요인으로_짠다() {
+        fitness.measured(
+                family.child.profileId(),
+                new FactorPoint(FitnessFactor.FLEXIBILITY, "012", 80),
+                new FactorPoint(FitnessFactor.CARDIO, "020", 95),
+                new FakeFitness.Item("012", 15.0));
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiUnavailableException("연결 실패");
+        };
+
+        executor.execute(run.getId());
+
+        CoachProposalItem item = runs.findById(run.getId()).getProposals().getFirst();
+        assertThat(item.title()).isEqualTo("유연성 키우기 20분");
+        assertThat(item.citations().stream().map(ProposalCitation::label).toList())
+                .anyMatch(it -> it.startsWith("국민체력100 규준") && it.endsWith("유연성 백분위 80"));
+    }
+
+    @Test
+    @DisplayName("AI 장애 때 보호자가 키워 주고 싶은 역량이 있으면 측정 없는 만 3세도 그 요인의 연령대 영상으로 대체 편성한다")
     void AI_장애_때_고른_힘이_있으면_측정_없이도_대체_편성한다() {
         ProfileDetails toddler = family.addChild("막내", Fixed.TODAY.minusYears(3));
         CoachRun run = runningRun(toddler.profileId(), false, FitnessFactor.BALANCE);
@@ -547,6 +717,67 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName("AI 가 409(그 프로필에 실행 중인 것이 있음)로 거절해도 다시 불러 받아 주면 AI 편성으로 끝낸다")
+    void AI_가_409_로_거절해도_다시_불러_받아_주면_AI_편성() {
+        CoachRun run = runningRun();
+        AtomicInteger starts = new AtomicInteger();
+        gateway.onStart = request -> {
+            if (starts.incrementAndGet() == 1) throw new AiRunInProgressException("run_in_progress");
+            return null; // 두 번째부터는 스텁이 받는다
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(2);
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+    }
+
+    @Test
+    @DisplayName("같은 아이의 편성 셋을 한꺼번에 요청해 앞의 둘(한 번에 5~13초)이 끝날 때까지 409 가 이어져도, 기다렸다가 AI 편성으로 끝낸다")
+    void 앞의_편성_둘을_기다리는_동안_409_가_이어져도_AI_편성() {
+        CoachRun run = runningRun();
+        AtomicInteger starts = new AtomicInteger();
+        gateway.onStart = request -> {
+            if (starts.incrementAndGet() <= 8) throw new AiRunInProgressException("run_in_progress");
+            return null; // 아홉 번째에 받는다
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(9);
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().get(1).status()).isEqualTo("ok");
+    }
+
+    @Test
+    @DisplayName("409 를 받았을 때 쉬는 시간을 다 합치면(운영 간격 1.5초 기준) AI 편성 두 번(13초 × 2)보다 길다")
+    void 거절_409_를_기다리는_시간은_AI_편성_두_번보다_길다() {
+        long waitMs = CoachRunExecutor.IN_PROGRESS_RETRIES * CoachRunExecutor.DEFAULT_POLL_INTERVAL_MS * 2;
+
+        assertThat(waitMs).isGreaterThanOrEqualTo(26_000L);
+    }
+
+    @Test
+    @DisplayName("다시 불러도 409 이면 FAILED(ERROR) 가 아니라 라벨 기반 대체 편성으로 끝내고, 요약에는 장애가 아니라 AI 가 다른 편성을 짜는 중이었다고 적는다")
+    void 계속_409_이면_라벨_기반_대체_편성() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiRunInProgressException("run_in_progress");
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(1 + CoachRunExecutor.IN_PROGRESS_RETRIES);
+        CoachRun saved = runs.findById(run.getId());
+        assertFallbackWithStep(saved, "AI 가 다른 편성을 짜는 중(" + LabelBasedProposalPlanner.AI_BUSY + ")");
+        assertThat(saved.getSteps().get(1).summary()).doesNotContain("장애");
+    }
+
+    @Test
     @DisplayName("편성 스레드와 대기열이 가득 차 받지 못하면 곧바로 FAILED(BUSY)이고 잠금을 푼다")
     void 스레드와_대기열이_가득_차면_FAILED_BUSY() {
         CoachRunExecutor full = new CoachRunExecutor(
@@ -576,6 +807,78 @@ class CoachRunExecutorTest {
         executor.on(new CoachRunRequested(run.getId()));
 
         assertThat(runs.findById(run.getId()).getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+    }
+
+    @Test
+    @DisplayName("라벨로만 짜라는 이벤트(심사용 계정의 오늘 AI 한도가 참)면 AI 를 부르지 않고 라벨 대체 편성으로 짜고, 까닭을 장애가 아니라 한도로 적는다")
+    void 라벨로만_짜라는_이벤트면_AI_를_부르지_않는다() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+
+        executor.on(new CoachRunRequested(run.getId(), true));
+
+        assertThat(gateway.startRequests).isEmpty();
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().get(1).status()).isEqualTo("partial");
+        assertThat(saved.getSteps().get(1).summary())
+                .startsWith("AI 를 부르지 않음(" + LabelBasedProposalPlanner.AI_LIMIT_REACHED + ")");
+        assertThat(saved.getProposals())
+                .singleElement()
+                .extracting(CoachProposalItem::title)
+                .isEqualTo("유연성 키우기 20분");
+    }
+
+    @Test
+    @DisplayName("AI 가 영상 표에 없는 공단 영상을 고르면 그 칸은 영상 없이 저장한다 — 유튜브로 틀려다 실패하지 않게. 표에 있는 공단 영상 · 유튜브 칸은 그대로")
+    void 영상_표에_없는_공단_영상_칸은_영상_없이_저장한다() {
+        videos.videos.put("0AUDLJ08S_00351", Videos.kspo("0AUDLJ08S_00351", "팔굽혀펴기", 91, 7, 12));
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> resultWithVideos(
+                id,
+                new CoachRunResult.Video("0AUDLJ08S_99999", 0, 80, "kspo", Videos.kspoMp4("0AUDLJ08S_99999")),
+                new CoachRunResult.Video("0AUDLJ08S_00351", 0, 91, "kspo", Videos.kspoMp4("0AUDLJ08S_00351")),
+                new CoachRunResult.Video("IdpXx2gm90o", 96, 156));
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.sessions()).hasSize(3);
+        assertThat(item.sessions().get(0).clip()).isNull();
+        assertThat(item.sessions().get(0).title()).isEqualTo("운동1");
+        assertThat(item.sessions().get(1).clip()).isEqualTo(new SessionClip("0AUDLJ08S_00351", 0, 91, "팔굽혀펴기"));
+        assertThat(item.sessions().get(2).clip()).isEqualTo(new SessionClip("IdpXx2gm90o", 96, 156, "영상 IdpXx2gm90o"));
+        // 제안 대표 영상도 틀 수 없는 공단 영상을 건너뛴다
+        assertThat(item.video()).isEqualTo(new ProposalVideo("0AUDLJ08S_00351", 0));
+    }
+
+    /** 본운동 칸마다 영상 하나. 칸 이름은 운동1, 운동2 … */
+    private CoachRunResult resultWithVideos(String id, CoachRunResult.Video... videos) {
+        List<CoachRunResult.Session> sessions = new java.util.ArrayList<>();
+        for (int i = 0; i < videos.length; i++) {
+            sessions.add(new CoachRunResult.Session(0, "본운동", i + 1, "운동" + (i + 1), "근력", 60, videos[i], List.of(1)));
+        }
+        CoachRunResult.Mission mission = new CoachRunResult.Mission(
+                "일간",
+                "오늘",
+                Fixed.TODAY.toString(),
+                Fixed.TODAY.toString(),
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                180,
+                List.copyOf(sessions),
+                "아이",
+                "부모",
+                "이유 [1].");
+        return new CoachRunResult(
+                id,
+                "succeeded",
+                List.of(new CoachRunResult.Step(1, "assess", "ok", "측정 있음")),
+                new CoachRunResult.Proposal(List.of(mission), List.of(new Citation(1, "처방", "p:1", null)), List.of()),
+                false,
+                null);
     }
 
     /** 첫 폴링은 일시 오류, 두 번째는 대상 아이 하루짜리 succeeded. */

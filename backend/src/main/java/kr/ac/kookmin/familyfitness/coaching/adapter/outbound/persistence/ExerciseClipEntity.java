@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import org.hibernate.annotations.Immutable;
@@ -13,7 +14,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
 
-/** `video_exercises` 행. V132 적재 마이그레이션(scripts/ai_clips_to_sql.py 가 만든다)이 채우고 이 모듈은 읽기만 한다. */
+/**
+ * `video_exercises` 행. 유튜브 클립은 V132(scripts/ai_clips_to_sql.py), 공단 영상 클립은 V161 ~ V165(scripts/kspo_videos_to_sql.py)
+ * 적재 마이그레이션이 채우고 이 모듈은 읽기만 한다. 트는 주소는 영상 표(exercise_videos)에 있어 부르는 쪽이 붙인다.
+ * 공단 클립의 연령대 · 요인 · 단계 칸은 AI 표 첫 줄 값이고, 줄 전체는 video_exercise_labels 에 있다(V165).
+ */
 @Entity
 @Immutable
 @Table(name = "video_exercises")
@@ -73,7 +78,11 @@ public class ExerciseClipEntity {
 
     protected ExerciseClipEntity() {}
 
-    public ExerciseClip toDomain() {
+    public String getVideoId() {
+        return videoId;
+    }
+
+    public ExerciseClip toDomain(VideoMedia media) {
         return new ExerciseClip(
                 clipId,
                 videoId,
@@ -91,6 +100,7 @@ public class ExerciseClipEntity {
                 isExercise,
                 ageGroup == null ? null : AgeGroup.valueOf(ageGroup),
                 source,
-                active);
+                active,
+                media);
     }
 }

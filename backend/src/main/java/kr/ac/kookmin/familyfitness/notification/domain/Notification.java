@@ -94,7 +94,7 @@ public record Notification(
                 "thanks-" + cheerId);
     }
 
-    /** 부모가 칭찬 · 스티커를 보냈다(PRAISE 응원) → 받은 아이. {@code senderCall} 은 아이가 부르는 이름(엄마 · 아빠). */
+    /** 부모가 칭찬 · 스티커를 보냈다(PRAISE 응원) → 받은 아이. {@code senderCall} 은 보낸 보호자의 프로필 이름. */
     public static Notification praise(
             UUID kidId,
             UUID senderId,

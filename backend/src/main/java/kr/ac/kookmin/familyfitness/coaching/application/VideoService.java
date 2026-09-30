@@ -130,7 +130,8 @@ public class VideoService {
                             v.getLabel(),
                             v.getBadges(),
                             i != null && i.isFavorited(),
-                            i == null ? null : i.getMaxProgress());
+                            i == null ? null : i.getMaxProgress(),
+                            v.getMedia().mediaUrl());
                 })
                 .toList();
         return new VideoListView(views, page.nextCursor());

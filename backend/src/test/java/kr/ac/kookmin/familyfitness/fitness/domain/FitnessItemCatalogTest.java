@@ -21,12 +21,14 @@ class FitnessItemCatalogTest {
     @DisplayName("연령대별 항목은 계약 표와 같다")
     void 연령대별_항목은_계약_표와_같다() {
         assertThat(codes(AgeGroup.TODDLER)).containsExactlyInAnyOrder("020", "028", "009", "012", "050", "022", "051");
-        assertThat(codes(AgeGroup.YOUTH)).containsExactlyInAnyOrder("020", "028", "009", "012", "043", "022");
+        // 유소년은 AI 카탈로그(common/items.py AGE_GROUP_ITEMS)와 같다 — 044 벽패스까지 일곱
+        assertThat(codes(AgeGroup.YOUTH)).containsExactlyInAnyOrder("020", "028", "009", "012", "043", "022", "044");
         assertThat(codes(AgeGroup.ADOLESCENT))
                 .containsExactlyInAnyOrder("020", "035", "037", "028", "009", "010", "012", "013", "014", "017");
         assertThat(codes(AgeGroup.ADULT))
                 .containsExactlyInAnyOrder("020", "035", "037", "028", "019", "012", "021", "040", "022", "041");
-        assertThat(codes(AgeGroup.SENIOR)).containsExactlyInAnyOrder("012", "028", "019");
+        // 어르신은 AI 기준항목(common/items.py AGE_GROUP_ITEMS["어르신"])과 같은 둘 — 019 는 AI 가 점수를 내지 않는다
+        assertThat(codes(AgeGroup.SENIOR)).containsExactlyInAnyOrder("012", "028");
     }
 
     @Test
@@ -34,7 +36,7 @@ class FitnessItemCatalogTest {
     void EASY_항목이_먼저_오고_EQUIPMENT_항목은_선택이다() {
         List<FitnessItem> youth = FitnessItem.forAgeGroup(AgeGroup.YOUTH);
         assertThat(youth.stream().map(FitnessItem::getCode).toList())
-                .containsExactly("009", "012", "043", "020", "022", "028");
+                .containsExactly("009", "012", "043", "020", "022", "028", "044");
         assertThat(youth.stream()
                         .filter(it -> it.getInputGroup() == InputGroup.EASY)
                         .toList())
@@ -43,6 +45,19 @@ class FitnessItemCatalogTest {
                         .filter(it -> it.getInputGroup() == InputGroup.EQUIPMENT)
                         .toList())
                 .allMatch(it -> it.isOptional() && it.getEquipment() != null);
+    }
+
+    @Test
+    @DisplayName("어르신은 012 · 028 둘 다 필수다 — 028 상대악력은 악력계가 있어야 하지만 어르신 점수를 내는 두 항목 가운데 하나다")
+    void 어르신은_012_028_둘_다_필수다() {
+        assertThat(FitnessItem.forAgeGroup(AgeGroup.SENIOR)).allSatisfy(it -> {
+            assertThat(it.inputGroup(AgeGroup.SENIOR)).isEqualTo(InputGroup.EASY);
+            assertThat(it.isOptional(AgeGroup.SENIOR)).isFalse();
+        });
+        assertThat(FitnessItem.RELATIVE_GRIP.getEquipment()).isEqualTo("악력계");
+        // 다른 연령대의 028 은 그대로 도구 항목 · 선택이다
+        assertThat(FitnessItem.RELATIVE_GRIP.inputGroup(AgeGroup.ADULT)).isEqualTo(InputGroup.EQUIPMENT);
+        assertThat(FitnessItem.RELATIVE_GRIP.isOptional(AgeGroup.ADULT)).isTrue();
     }
 
     @Test
@@ -58,8 +73,29 @@ class FitnessItemCatalogTest {
                 .map(FitnessItem::getCode)
                 .toList();
         assertThat(equipment)
-                .containsExactlyInAnyOrder("028", "020", "022", "050", "021", "013", "035", "037", "040", "017", "051");
+                .containsExactlyInAnyOrder(
+                        "028", "020", "022", "050", "021", "013", "035", "037", "040", "017", "051", "044");
         assertThat(FitnessItem.RELATIVE_GRIP.getEquipment()).isEqualTo("악력계");
+    }
+
+    @Test
+    @DisplayName("044 눈-손협응력(벽패스)은 유소년 협응력 항목이다 — 회 · 높을수록 좋음 · 벽과 공이 필요한 선택 항목 · 0~60회")
+    void 눈_손협응력_벽패스_044_는_유소년_협응력_항목이다() {
+        FitnessItem wallPass = FitnessItem.resolve("044");
+        assertThat(wallPass).isEqualTo(FitnessItem.WALL_PASS);
+        assertThat(wallPass.getItemName()).isEqualTo("눈-손협응력(벽패스)");
+        assertThat(wallPass.label(AgeGroup.YOUTH)).isEqualTo("눈-손협응력(벽패스)");
+        assertThat(wallPass.getUnit()).isEqualTo("회");
+        assertThat(wallPass.getFactor()).isEqualTo(FitnessFactor.COORDINATION);
+        assertThat(wallPass.isHigherIsBetter()).isTrue();
+        assertThat(wallPass.getInputGroup()).isEqualTo(InputGroup.EQUIPMENT);
+        assertThat(wallPass.isOptional()).isTrue();
+        assertThat(wallPass.getEquipment()).isEqualTo("벽과 공");
+        assertThat(wallPass.getRange()).isEqualTo(new ValueRange(0, 60));
+        assertThat(wallPass.isFor(AgeGroup.YOUTH)).isTrue();
+        assertThat(wallPass.isFor(AgeGroup.ADOLESCENT)).isFalse();
+        // 레이더(육각형)에는 협응력이 없다 — FE 육각형도 협응력 · 평형성은 그리지 않는다
+        assertThat(FitnessFactor.RADAR).doesNotContain(FitnessFactor.COORDINATION);
     }
 
     @Test

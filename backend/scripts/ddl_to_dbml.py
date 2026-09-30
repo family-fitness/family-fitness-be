@@ -3,7 +3,7 @@
 
 파일은 버전 차례로, 파일 안에서는 문장 차례로 적용한다. 뒤 마이그레이션이 걷은 외래 키 · 제약 · 인덱스는 ERD 에서도
 빠지고, 새로 건 것은 더해진다. 읽는 DDL 은 아래와 같다.
-  create table · create [unique] index
+  create table · drop table · create [unique] index
   alter table … add column · drop column · rename column … to … · alter column … set/drop not null
   alter table … add constraint(primary key · unique · foreign key · check) · drop constraint
 insert · update · delete · select 는 건너뛴다. 이 밖의 DDL 을 만나면 ERD 를 내지 않고 그 문장을 stderr 에 적고 1로
@@ -201,12 +201,24 @@ def set_not_null(schema: Schema, tname: str, cname: str, action: str) -> None:
         attrs.remove("not null")
 
 
+def drop_table(schema: Schema, tname: str) -> None:
+    """PostgreSQL 처럼 그 표가 건 외래 키도 같이 걷는다. 다른 표의 외래 키가 아직 가리키면 PostgreSQL 이 거절하므로(cascade
+    없이) 여기서도 멈춘다 — 가리키는 표를 먼저 걷어야 한다."""
+    schema.table(tname)
+    blockers = [n for n, r in schema.refs.items() if r.target == tname and r.table != tname]
+    if blockers:
+        raise UnknownDdl(f"다른 표의 외래 키가 아직 가리킨다: {tname} ← {', '.join(blockers)}")
+    del schema.tables[tname]
+    schema.refs = {n: r for n, r in schema.refs.items() if r.table != tname}
+
+
 def create_index(schema: Schema, unique: str | None, iname: str, tname: str, cols: str) -> None:
     schema.table(tname).indexes[iname] = Index(names(cols), "unique" if unique else "index")
 
 
 HANDLERS = [
     (r"create table (\w+) ?\((.*)\)", create_table),
+    (r"drop table (\w+)", drop_table),
     (r"create (unique )?index (\w+) on (\w+) ?\(([^()]*)\)", create_index),
     (r"alter table (\w+) add column (.+)",
      lambda s, t, c: s.table(t).columns.append(parse_column(c))),

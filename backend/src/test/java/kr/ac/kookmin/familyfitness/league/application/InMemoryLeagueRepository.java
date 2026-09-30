@@ -123,7 +123,12 @@ class InMemoryLeagueRepository implements LeagueRepository {
 
     @Override
     public void saveResult(
-            UUID roundId, UUID familyId, @Nullable Integer finalRate, @Nullable Integer finalRank, LeagueMove moved) {
+            UUID roundId,
+            UUID familyId,
+            @Nullable Integer finalRate,
+            @Nullable Double finalScore,
+            @Nullable Integer finalRank,
+            LeagueMove moved) {
         LeagueMember member = members.stream()
                 .filter(it -> it.roundId().equals(roundId) && it.familyId().equals(familyId))
                 .findFirst()
@@ -137,6 +142,7 @@ class InMemoryLeagueRepository implements LeagueRepository {
                         member.seatNo(),
                         member.joinedAt(),
                         finalRate,
+                        finalScore,
                         finalRank,
                         moved));
     }

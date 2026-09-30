@@ -6,6 +6,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiGateway;
+import kr.ac.kookmin.familyfitness.shared.ai.AiRunInProgressException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted;
@@ -30,7 +31,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *   <li>AI 가 succeeded(제안 있음) → AWAITING_APPROVAL.
  *   <li>AI 가 refused → FAILED(NO_CITATIONS). 근거가 없다는 AI 의 판단이라 대체 편성도 하지 않는다.
  *   <li>AI 에 닿지 못함(연결 실패 · 5xx) · AI 가 failed · 폴링 만료 · 폴링 404(실행이 사라짐) → 라벨 기반 대체 편성.
- *       대체 편성할 근거(측정 · 고른 힘)가 없거나 대체 편성이 실패하면 FAILED(AI_FAILED).
+ *       고를 요인(측정 · 보호자가 키워 주고 싶은 역량)이 없으면 그 연령대 클립으로 전신 미션을 짠다. 그 클립도 없거나 대체 편성이
+ *       실패하면 FAILED(AI_FAILED).
+ *   <li>이벤트가 labelsOnly(심사용 계정 모두의 오늘 AI 몫이 끝남)면 AI 를 부르지 않고 곧바로 라벨 기반 대체 편성.
+ *   <li>AI 가 409(그 프로필에 실행 중인 것이 있음 — AI 는 날짜와 상관없이 프로필 하나에 실행 하나만 받는다)로 거절하면
+ *       {@code pollIntervalMs × 2} 쉬고 {@value #IN_PROGRESS_RETRIES} 번까지 다시 부른다. 그래도 409 이면 라벨 기반 대체 편성.
  *   <li>폴링 한 번의 일시 오류(타임아웃 · 연결 실패 · 5xx)는 그 회차만 건너뛰고 다음 폴링으로 넘긴다.
  *   <li>보호자 동의가 그 사이 거둬졌으면 FAILED(CONSENT_REQUIRED), 그 밖의 예외(AI 400 등)는 FAILED(ERROR).
  * </ol>
@@ -42,6 +47,13 @@ public class CoachRunExecutor {
     public static final long DEFAULT_POLL_INTERVAL_MS = 1500L;
 
     public static final int DEFAULT_MAX_POLLS = 40;
+
+    /**
+     * AI 가 409 로 거절했을 때 다시 부르는 횟수. 한 번 쉬는 시간은 pollIntervalMs × 2(운영 3초)라 다 합쳐 30초를 기다린다. AI 편성 한 번은
+     * 5~13초라, 같은 아이의 편성 셋을 한꺼번에 요청해도 세 번째가 앞의 둘이 끝나기를 기다렸다가 AI 로 짠다. 2번(6초)일 때는 세 번째가 늘 대체
+     * 편성으로 끝났다.
+     */
+    static final int IN_PROGRESS_RETRIES = 10;
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -72,7 +84,7 @@ public class CoachRunExecutor {
     public void on(CoachRunRequested event) {
         UUID runId = event.runId();
         try {
-            threads.execute(() -> execute(runId));
+            threads.execute(() -> execute(runId, event.labelsOnly()));
         } catch (TaskRejectedException e) {
             log.warn("편성 스레드와 대기열이 가득 차 시작하지 못했다: run={} ({})", runId, e.getMessage());
             failQuietly(runId, CoachRunFailureCode.BUSY, "busy: 편성 스레드와 대기열이 가득 차 받지 못했다");
@@ -80,14 +92,30 @@ public class CoachRunExecutor {
     }
 
     public void execute(UUID runId) {
+        execute(runId, false);
+    }
+
+    /** {@code labelsOnly} 면 AI 를 부르지 않고 라벨 대체 편성으로 짠다(심사용 계정 모두의 오늘 AI 몫이 끝남, {@link ReviewRunQuota}). */
+    public void execute(UUID runId, boolean labelsOnly) {
         try {
+            if (labelsOnly) {
+                // 기다리는 사이 정리 작업이 끝낸 실행이면 prepare 가 null 이다
+                if (pipeline.prepare(runId) != null) {
+                    fallbackOrFail(
+                            runId, LabelBasedProposalPlanner.AI_LIMIT_REACHED, "review quota: AI 를 부르지 않는다", null);
+                }
+                return;
+            }
             CoachRunRequest request = pipeline.prepare(runId);
             if (request == null) return; // 기다리는 사이 정리 작업이 끝낸 실행
-            CoachRunAccepted accepted = gateway.startCoachRun(request);
+            CoachRunAccepted accepted = start(runId, request);
             if (!pipeline.attachAiRun(runId, accepted.runId())) return; // 그 사이 정리 작업이 끝낸 실행은 폴링하지 않는다
             finish(runId, accepted.runId(), poll(accepted.runId()));
         } catch (AiUnavailableException e) {
             fallbackOrFail(runId, "연결 실패", "unavailable: " + e.getMessage(), null);
+        } catch (AiRunInProgressException e) {
+            // 같은 프로필의 다른 날 편성이 AI 에서 아직 돈다(동시 요청, 또는 BE 가 대체 편성으로 끝낸 실행이 AI 에 남음)
+            fallbackOrFail(runId, LabelBasedProposalPlanner.AI_BUSY, "in progress: " + e.getMessage(), null);
         } catch (AiRunNotFoundException e) {
             fallbackOrFail(runId, "실행 없음", "not found: " + e.getMessage(), null);
         } catch (ParticipantConsentRequiredException e) {
@@ -99,6 +127,21 @@ public class CoachRunExecutor {
         } catch (Exception e) {
             log.error("코치 실행 실패: run={}", runId, e);
             failQuietly(runId, CoachRunFailureCode.ERROR, describe(e));
+        }
+    }
+
+    /**
+     * POST /v1/coach/runs. 409 면 쉬었다가 {@link #IN_PROGRESS_RETRIES} 번까지 다시 부르고, 그래도 409 면 그 예외를 던진다.
+     */
+    private CoachRunAccepted start(UUID runId, CoachRunRequest request) throws InterruptedException {
+        for (int retry = 0; ; retry++) {
+            try {
+                return gateway.startCoachRun(request);
+            } catch (AiRunInProgressException e) {
+                if (retry >= IN_PROGRESS_RETRIES) throw e;
+                log.info("AI 가 409(실행 중)로 거절했다 — 쉬었다가 다시 부른다 {}/{}: run={}", retry + 1, IN_PROGRESS_RETRIES, runId);
+                if (pollIntervalMs > 0) Thread.sleep(pollIntervalMs * 2);
+            }
         }
     }
 
@@ -129,7 +172,7 @@ public class CoachRunExecutor {
     }
 
     /**
-     * 보드 F3 「LLM 없이도 돈다」 — 라벨만으로 편성한다. 고를 요인도 인용할 근거도 없으면 FAILED(AI_FAILED).
+     * 보드 F3 「LLM 없이도 돈다」 — 라벨만으로 편성한다. 짤 클립도 인용할 근거도 없으면 FAILED(AI_FAILED).
      * summary 는 대체 편성 단계 요약에 보일 짧은 까닭, detail 은 로그 · failure_reason 에 남길 원문이다.
      * aiSteps 는 근거가 없어 FAILED 로 끝낼 때 남길 AI 의 단계(없으면 저장된 단계를 그대로 둔다).
      * 이 메서드는 예외를 밖으로 내지 않는다 — RUNNING 으로 남으면 그 (프로필, 날짜)가 정리 작업 전까지 잠긴다.
@@ -142,7 +185,7 @@ public class CoachRunExecutor {
                 pipeline.fail(
                         runId,
                         CoachRunFailureCode.AI_FAILED,
-                        "AI 로 짜지 못했고(" + detail + ") 대체 편성 근거(측정 · 고른 힘)도 없다",
+                        "AI 로 짜지 못했고(" + detail + ") 대체 편성 근거(측정 · 보호자가 키워 주고 싶은 역량 · 그 연령대 클립)도 없다",
                         aiSteps,
                         false,
                         null);

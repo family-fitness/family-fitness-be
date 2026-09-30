@@ -12,14 +12,17 @@ import org.jspecify.annotations.Nullable;
  * 방 크기(groupSize)     방에 든 가족 수
  * 올라가는 자리(promote)  3. 다이아 0 · 방이 8가족 미만이면 0          fe:src/mocks/league.ts:24,123 · FE 요청서 0장 수정 요청 1
  * 내려가는 자리(demote)   3. 브론즈 0 · 방이 8가족 미만이면 0          fe:src/mocks/league.ts:24,124
- * 줄 세우기              달성률 내림차순, 없는 집(null)은 맨 아래,      fe:src/mocks/league.ts:115
+ * 줄 세우기              순위 점수(score, {@link AchievementRate}) 내림차순, 없는 집(null)은 맨 아래,
  *                        같으면 보는 가족 먼저, 그다음 들어온 자리 차례
- * 순위(rank)             달성률이 나보다 높은 집 수 + 1(같으면 같은 순위). fe:src/mocks/league.ts:116 — 보는 가족을 같은 값 맨 앞에 두면
- *                        달성률이 없으면 null                          그 자리 + 1 이 곧 이 값이다
- * 가는 곳(move)          FE zoneOf 그대로 — 달성률이 있는 집 수(ranked)로   fe:src/lib/league.ts:46-58,
+ * 순위(rank)             점수가 나보다 높은 집 수 + 1(같으면 같은 순위). 보는 가족을 같은 값 맨 앞에 두면
+ *                        점수가 없으면 null                            그 자리 + 1 이 곧 이 값이다
+ * 가는 곳(move)          FE zoneOf 그대로 — 점수가 있는 집 수(ranked)로     fe:src/lib/league.ts:46-58,
  *                        up = min(promote, ⌊ranked/2⌋), down = min(demote, ⌊ranked/2⌋),  fe:src/app/parent/league/page.tsx:106-107
- *                        rank ≤ up 이면 UP, rank &gt; ranked − down 이면 DOWN, 나머지 · 달성률 없는 집은 STAY
+ *                        rank ≤ up 이면 UP, rank &gt; ranked − down 이면 DOWN, 나머지 · 점수 없는 집은 STAY
  * </pre>
+ *
+ * 달성률과 점수는 같이 있거나 같이 없다(셀 날이 없으면 둘 다 null). 달성률은 화면에 보이는 값일 뿐 줄 세우기에 쓰지 않는다 —
+ * 하루만 해낸 100% 가족이 날마다 해낸 가족 앞에 서지 않게 하려는 것이다.
  *
  * 순위를 같은 값끼리 같게 두는 것은 가족마다 화면에서 본 자리와 정산 결과를 맞추려는 것이다. 보는 가족을 같은 값 맨 앞에 두는 목은
  * 동률인 두 집이 모두 자기를 앞자리로 본다. 그래서 경계에서 동률이면 두 집 모두 올라가고(또는 모두 머물고), 어느 쪽 화면도 틀리지 않는다.
@@ -39,8 +42,13 @@ public record LeagueTable(LeagueTier tier, List<Seat> seats) {
      *
      * @param seatNo 방에 들어온 차례(1부터). 동률일 때 보는 가족 다음의 차례다
      * @param rate 달성률(%). 셀 날이 없으면 null
+     * @param score 순위 점수(0~1). 셀 날이 없으면 null
      */
-    public record Seat(UUID familyId, int seatNo, @Nullable Integer rate) {}
+    public record Seat(
+            UUID familyId,
+            int seatNo,
+            @Nullable Integer rate,
+            @Nullable Double score) {}
 
     public LeagueTable {
         seats = List.copyOf(seats);
@@ -50,9 +58,9 @@ public record LeagueTable(LeagueTier tier, List<Seat> seats) {
         return seats.size();
     }
 
-    /** 달성률이 있는 집 수. 올라가는 · 내려가는 자리를 이 수로 자른다(FE 화면과 같다). */
+    /** 점수가 있는 집 수. 올라가는 · 내려가는 자리를 이 수로 자른다(FE 화면과 같다). */
     public int ranked() {
-        return (int) seats.stream().filter(it -> it.rate() != null).count();
+        return (int) seats.stream().filter(it -> it.score() != null).count();
     }
 
     public int promote() {
@@ -63,12 +71,12 @@ public record LeagueTable(LeagueTier tier, List<Seat> seats) {
         return tier.isBottom() || groupSize() < MIN_FAMILIES_FOR_MOVES ? 0 : MOVES;
     }
 
-    /** 이 가족의 순위(1부터). 달성률이 없으면 null. 방에 없는 가족이면 IllegalArgumentException. */
+    /** 이 가족의 순위(1부터). 점수가 없으면 null. 방에 없는 가족이면 IllegalArgumentException. */
     public @Nullable Integer rankOf(UUID familyId) {
-        Integer rate = seatOf(familyId).rate();
-        if (rate == null) return null;
+        Double score = seatOf(familyId).score();
+        if (score == null) return null;
         int higher = (int) seats.stream()
-                .filter(it -> it.rate() != null && it.rate() > rate)
+                .filter(it -> it.score() != null && it.score() > score)
                 .count();
         return higher + 1;
     }
@@ -88,12 +96,12 @@ public record LeagueTable(LeagueTier tier, List<Seat> seats) {
 
     /** {@code viewer} 가 보는 순위표 차례. */
     public List<Seat> orderedFor(UUID viewer) {
-        Comparator<Seat> byRate = Comparator.comparing(
-                Seat::rate,
-                Comparator.nullsLast(Comparator.<Integer>naturalOrder().reversed()));
+        Comparator<Seat> byScore = Comparator.comparing(
+                Seat::score,
+                Comparator.nullsLast(Comparator.<Double>naturalOrder().reversed()));
         Comparator<Seat> viewerFirst = Comparator.comparing(it -> !it.familyId().equals(viewer));
         return seats.stream()
-                .sorted(byRate.thenComparing(viewerFirst).thenComparingInt(Seat::seatNo))
+                .sorted(byScore.thenComparing(viewerFirst).thenComparingInt(Seat::seatNo))
                 .toList();
     }
 

@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRoles;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
@@ -52,6 +53,15 @@ public class CoachRunPipeline {
     private final LabelBasedProposalPlanner fallbackPlanner;
     private final ExerciseClipRepository clips;
     private final ExerciseVideoRepository videos;
+    private final MissionRepository missions;
+
+    /**
+     * 최근 받은 영상을 모으는 기간(편성 날 앞 14일)과 최대 개수 — AI 요청 recent_video_ids 약속. 20분 편성(하루 7칸)을 14일 받아도
+     * 98개라 잘리지 않는다. 60개일 때는 9일쯤에 넘쳐, 목록에서 빠진 오래된 영상이 새 영상처럼 먼저 뽑혔다.
+     */
+    static final int RECENT_DAYS = 14;
+
+    static final int RECENT_LIMIT = 150;
 
     public CoachRunPipeline(
             CoachRunRepository runs,
@@ -61,7 +71,8 @@ public class CoachRunPipeline {
             AppTime time,
             LabelBasedProposalPlanner fallbackPlanner,
             ExerciseClipRepository clips,
-            ExerciseVideoRepository videos) {
+            ExerciseVideoRepository videos,
+            MissionRepository missions) {
         this.runs = runs;
         this.profileQuery = profileQuery;
         this.fitnessQuery = fitnessQuery;
@@ -70,13 +81,30 @@ public class CoachRunPipeline {
         this.fallbackPlanner = fallbackPlanner;
         this.clips = clips;
         this.videos = videos;
+        this.missions = missions;
     }
 
-    /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓴다. */
+    /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓰고, 최근 받은 영상은 AI 요청과 같게 모은다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public @Nullable CoachRunResult planFallback(UUID runId, String reason) {
         CoachRun run = load(runId);
-        return fallbackPlanner.plan(subjectOf(run), requireRunDate(run), requireConditions(run), time.today(), reason);
+        ProfileDetails subject = subjectOf(run);
+        LocalDate runDate = requireRunDate(run);
+        return fallbackPlanner.plan(
+                subject,
+                runDate,
+                requireConditions(run),
+                time.today(),
+                reason,
+                recentVideoIds(subject.profileId(), runDate));
+    }
+
+    /**
+     * 대상이 편성 날 앞 14일(runDate−14 ~ runDate−1) 동안 시작한 미션의 칸 영상 id, 최근 것부터 최대 150개(AI 요청 recent_video_ids).
+     * 승인해 미션이 된 칸만 센다 — 승인을 기다리는 제안은 아직 받은 영상이 아니다.
+     */
+    private List<String> recentVideoIds(UUID profileId, LocalDate runDate) {
+        return missions.recentVideoIds(profileId, runDate.minusDays(RECENT_DAYS), runDate.minusDays(1), RECENT_LIMIT);
     }
 
     /**
@@ -85,7 +113,10 @@ public class CoachRunPipeline {
      * AI 로 이름 · 생년월일은 나가지 않는다. 대상의 보호자 동의가 그 사이 거둬졌으면 예외 → FAILED(CONSENT_REQUIRED).
      * constraints: 하루 한 번(days_per_week 1) · minutes · 주간 미션 없음(weekly_minutes null) · quiet ·
      * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
-     * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor · with_companion(둘은 AI 계약에 아직 없어 AI 가 무시한다).
+     * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(보호자가 키워 주고 싶은 역량 — AI develop 은 아직 이 칸을 몰라
+     * 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다) ·
+     * with_companion(AI 계약에 아직 없어 AI 가 무시한다) · recent_video_ids(대상이 앞 14일 동안 받은 영상 id, 최근 것부터 최대 150개 —
+     * AI 는 이 영상들을 뒤로 미뤄 날마다 같은 영상이 나오지 않게 한다).
      * 대기열에서 기다리는 사이 정리 작업이 끝낸 실행이면 null — 호출자는 AI 를 부르지 않는다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
@@ -103,10 +134,13 @@ public class CoachRunPipeline {
                 latest == null ? Map.of() : latest.measurements(),
                 latest == null ? null : latest.heightCm(),
                 latest == null ? null : latest.weightKg(),
+                latest == null ? null : latest.bodyFatPct(),
+                latest == null ? null : latest.waistCm(),
                 time.today());
+        LocalDate runDate = requireRunDate(run);
         return new CoachRunRequest(
                 List.of(new CoachRunRequest.Participant(profile, CoachRoles.DRIVER)),
-                requireRunDate(run).toString(),
+                runDate.toString(),
                 1,
                 new CoachRunRequest.Constraints(
                         1,
@@ -118,7 +152,8 @@ public class CoachRunPipeline {
                         conditions.focusFactor() == null
                                 ? null
                                 : conditions.focusFactor().getLabel(),
-                        conditions.withParent()));
+                        conditions.withParent(),
+                        recentVideoIds(subject.profileId(), runDate)));
     }
 
     /** AI 접수 번호를 남긴다. 그 사이 정리 작업이 끝낸 실행이면 false — 호출자는 폴링하지 않는다. */
@@ -141,8 +176,9 @@ public class CoachRunPipeline {
         }
         ProfileDetails subject = subjectOf(run);
         @Nullable UUID companion = requireConditions(run).withParent() ? run.getRequestedBy() : null;
-        ProposalConverter converter =
-                new ProposalConverter(subject.profileId(), subject.role(), companion, clipTitlesOf(proposal));
+        Catalog catalog = catalogOf(proposal);
+        ProposalConverter converter = new ProposalConverter(
+                subject.profileId(), subject.role(), companion, catalog.titles(), catalog.unplayableKspo());
         run.complete(
                 ProposalConverter.steps(result),
                 converter.convert(proposal),
@@ -168,24 +204,39 @@ public class CoachRunPipeline {
         written(runs.finishIfRunning(run), runId, "실패 기록");
     }
 
-    /** 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다). */
-    private ClipTitles clipTitlesOf(CoachRunResult.Proposal proposal) {
+    /** 칸 영상 구간 제목과, 틀 수 없는 공단 영상 id. */
+    private record Catalog(ClipTitles titles, Set<String> unplayableKspo) {}
+
+    /**
+     * 제안의 칸 영상 구간 제목을 클립 표 한 번 · 영상 표 한 번의 조회로 모은다(칸마다 조회하지 않는다).
+     * 공단 영상(video.source = kspo)의 mp4 주소는 칸에 따로 저장하지 않고 조회 때 영상 표에서 붙인다. 그래서 AI 가 고른 공단 영상이 영상 표에
+     * 없으면(BE 에 실은 AI 판이 뒤처졌다) 화면이 그 칸을 유튜브로 틀려다 실패한다 — 그런 영상은 변환기가 칸에서 빼도록 따로 모으고 경고로 남긴다.
+     */
+    private Catalog catalogOf(CoachRunResult.Proposal proposal) {
         Set<String> clipIds = new LinkedHashSet<>();
         Set<String> videoIds = new LinkedHashSet<>();
+        Set<String> kspoVideoIds = new LinkedHashSet<>();
         for (CoachRunResult.Mission mission : proposal.missions()) {
             for (CoachRunResult.Session session : mission.sessions()) {
                 CoachRunResult.Video video = session.video();
                 if (video == null || video.videoId().isBlank()) continue;
                 videoIds.add(video.videoId());
+                if (video.isKspo()) kspoVideoIds.add(video.videoId());
                 clipIds.add(ExerciseClip.idOf(video.videoId(), ProposalConverter.clipStart(video)));
             }
         }
-        if (videoIds.isEmpty()) return ClipTitles.none();
+        if (videoIds.isEmpty()) return new Catalog(ClipTitles.none(), Set.of());
         Map<String, String> clipTitles = clips.findAllByIds(clipIds).stream()
                 .collect(Collectors.toMap(ExerciseClip::clipId, ExerciseClip::title, (a, b) -> a));
-        Map<String, String> videoTitles = videos.findAllByIds(videoIds).stream()
+        List<ExerciseVideo> known = videos.findAllByIds(videoIds);
+        Map<String, String> videoTitles = known.stream()
                 .collect(Collectors.toMap(ExerciseVideo::getVideoId, ExerciseVideo::getTitle, (a, b) -> a));
-        return ClipTitles.of(clipTitles, videoTitles);
+        Set<String> unplayable = new LinkedHashSet<>(kspoVideoIds);
+        known.stream().filter(it -> it.getMedia().mediaUrl() != null).forEach(it -> unplayable.remove(it.getVideoId()));
+        if (!unplayable.isEmpty()) {
+            log.warn("AI 가 고른 공단 영상이 영상 표에 없거나 mp4 주소가 없어 그 칸은 영상 없이 둔다 — BE 에 실은 AI 판을 올려야 한다: {}", unplayable);
+        }
+        return new Catalog(ClipTitles.of(clipTitles, videoTitles), unplayable);
     }
 
     /** 읽었을 때 이미 RUNNING 이 아니다(정리 작업 · 새 요청이 FAILED 로 바꿨다). 결과를 버린다. */

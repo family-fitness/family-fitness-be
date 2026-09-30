@@ -32,8 +32,9 @@ public class FitnessTest {
     /** testedOn 기준 만 나이 */
     private final int ageAtTest;
 
-    private final @Nullable BigDecimal heightCm;
-    private final @Nullable BigDecimal weightKg;
+    /** 그 회차에 같이 적은 키 · 몸무게 · 체지방률 · 허리둘레. 안 적은 값은 null. */
+    private final BodyMeasures body;
+
     private final List<FitnessTestItem> items;
     private final Instant createdAt;
     private final AgeGroup ageGroup;
@@ -44,8 +45,7 @@ public class FitnessTest {
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<FitnessTestItem> items,
             Instant createdAt) {
         this.id = id;
@@ -53,8 +53,7 @@ public class FitnessTest {
         this.testedOn = testedOn;
         this.source = source;
         this.ageAtTest = ageAtTest;
-        this.heightCm = heightCm;
-        this.weightKg = weightKg;
+        this.body = body;
         this.items = items;
         this.createdAt = createdAt;
         this.ageGroup = AgeGroup.ofAge(ageAtTest);
@@ -80,12 +79,24 @@ public class FitnessTest {
         return ageAtTest;
     }
 
+    public BodyMeasures getBody() {
+        return body;
+    }
+
     public @Nullable BigDecimal getHeightCm() {
-        return heightCm;
+        return body.heightCm();
     }
 
     public @Nullable BigDecimal getWeightKg() {
-        return weightKg;
+        return body.weightKg();
+    }
+
+    public @Nullable BigDecimal getBodyFatPct() {
+        return body.bodyFatPct();
+    }
+
+    public @Nullable BigDecimal getWaistCm() {
+        return body.waistCm();
     }
 
     public List<FitnessTestItem> getItems() {
@@ -140,7 +151,7 @@ public class FitnessTest {
                 .orElse(null);
     }
 
-    /** 측정 항목 백분위의 평균(반올림, 1~99). 규준이 붙은 항목이 없으면 null. 가족 체력 지도 카드의 한 줄 요약에 쓴다. */
+    /** 측정 항목 백분위의 평균(반올림, 1~99 로 자름). 백분위가 붙은 항목이 없으면 null. 가족 체력 지도 카드의 한 줄 요약. */
     public @Nullable Integer getOverallPercentile() {
         List<Integer> percentiles =
                 scoredItems().stream().map(FitnessTestItem::percentile).toList();
@@ -165,7 +176,8 @@ public class FitnessTest {
     }
 
     /**
-     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(규준 없으면 null) 를 돌려주고, 그 결과가 저장 시점 값으로 굳는다.
+     * 새 측정 회차. {@code scorer} 가 (항목, 값) → 백분위(또래 분포가 없으면 null)를 돌려주고, 저장 시점 값으로 굳는다.
+     * 등급은 여기서 매기지 않는다 — 읽을 때 {@link Certifier} 가 한 사람에게 하나를 매긴다.
      */
     public static FitnessTest register(
             UUID id,
@@ -173,8 +185,7 @@ public class FitnessTest {
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<Measurement> measurements,
             BiFunction<FitnessItem, BigDecimal, @Nullable Integer> scorer,
             Instant createdAt) {
@@ -189,21 +200,23 @@ public class FitnessTest {
                     if (!item.getRange().contains(m.value())) {
                         throw new ItemOutOfRangeException(item.getCode(), m.value(), item.getRange());
                     }
-                    return new FitnessTestItem(item, m.value(), ItemScore.ofPercentile(scorer.apply(item, m.value())));
+                    ItemScore score = ItemScore.of(scorer.apply(item, m.value()));
+                    return new FitnessTestItem(item, m.value(), score);
                 })
                 .toList();
-        return new FitnessTest(id, profileId, testedOn, source, ageAtTest, heightCm, weightKg, items, createdAt);
+        return new FitnessTest(id, profileId, testedOn, source, ageAtTest, body, items, createdAt);
     }
 
-    /** 저장소에서 복원. 굳어 있는 백분위에서 등급·구간을 다시 파생한다(계산은 {@link ItemScore} 한 곳). */
+    /**
+     * 저장소에서 복원. 구간 · 문구는 굳어 있는 백분위에서 다시 파생한다(계산은 {@link ItemScore} 한 곳).
+     */
     public static FitnessTest reconstitute(
             UUID id,
             UUID profileId,
             LocalDate testedOn,
             FitnessTestSource source,
             int ageAtTest,
-            @Nullable BigDecimal heightCm,
-            @Nullable BigDecimal weightKg,
+            BodyMeasures body,
             List<StoredItem> items,
             Instant createdAt) {
         return new FitnessTest(
@@ -212,18 +225,18 @@ public class FitnessTest {
                 testedOn,
                 source,
                 ageAtTest,
-                heightCm,
-                weightKg,
+                body,
                 items.stream()
                         .map(it -> {
                             FitnessItem item = FitnessItem.findByCode(it.itemCode());
                             if (item == null) throw new UnknownItemException(it.itemCode());
-                            return new FitnessTestItem(item, it.value(), ItemScore.ofPercentile(it.percentile()));
+                            return new FitnessTestItem(item, it.value(), ItemScore.of(it.percentile()));
                         })
                         .toList(),
                 createdAt);
     }
 
+    /** 저장된 항목 한 줄. 또래 분포가 없던 항목은 백분위가 null. */
     public record StoredItem(
             String itemCode, BigDecimal value, @Nullable Integer percentile) {}
 }

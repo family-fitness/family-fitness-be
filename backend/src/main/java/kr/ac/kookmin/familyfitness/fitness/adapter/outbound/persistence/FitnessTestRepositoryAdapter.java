@@ -7,9 +7,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
+import kr.ac.kookmin.familyfitness.fitness.domain.BodyMeasures;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTestSource;
-import kr.ac.kookmin.familyfitness.fitness.domain.Grade;
 import kr.ac.kookmin.familyfitness.shared.domain.Band;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Limit;
@@ -82,16 +82,16 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
                 test.getAgeAtTest(),
                 test.getHeightCm(),
                 test.getWeightKg(),
+                test.getBodyFatPct(),
+                test.getWaistCm(),
                 test.getCreatedAt(),
                 test.getItems().stream()
                         .map(it -> {
-                            Grade grade = it.score().grade();
                             Band band = it.score().band();
                             return new FitnessTestItemEmbeddable(
                                     it.item().getCode(),
                                     it.value(),
                                     it.score().percentile(),
-                                    grade == null ? null : grade.getLabel(),
                                     band == null ? null : band.getWire());
                         })
                         .toList());
@@ -104,8 +104,8 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
                 entity.getTestedOn(),
                 FitnessTestSource.valueOf(entity.getSource()),
                 entity.getAgeAtTest(),
-                entity.getHeightCm(),
-                entity.getWeightKg(),
+                new BodyMeasures(
+                        entity.getHeightCm(), entity.getWeightKg(), entity.getBodyFatPct(), entity.getWaistCm()),
                 entity.getItems().stream()
                         .map(it -> new FitnessTest.StoredItem(it.getItemCode(), it.getRawValue(), it.getPercentile()))
                         .toList(),

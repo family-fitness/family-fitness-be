@@ -116,7 +116,7 @@ public class DailyActivityRecord {
 
     public static void validateMinuteSource(ActivitySource source) {
         if (!source.isServerVerified()) {
-            throw new IllegalArgumentException("활동 분의 출처는 TIMER·VIDEO 만 가능합니다: " + source);
+            throw new IllegalArgumentException("활동 분의 출처는 TIMER 와 VIDEO 만 됩니다: " + source);
         }
     }
 }

@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -195,6 +196,8 @@ class CoachingFlowWebTest {
                         today.minusDays(2),
                         new BigDecimal("140.5"),
                         new BigDecimal("35.0"),
+                        null,
+                        null,
                         Map.of("012", new BigDecimal("8.0")),
                         null,
                         null));
@@ -284,7 +287,9 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.proposals[0].targetValue").value(20))
                 .andExpect(jsonPath("$.proposals[0].video.videoId").value("Eg3GpTv7z8s"))
                 .andExpect(jsonPath("$.proposals[0].video.title").value("[👦🏻유소년] 성장기 학생들을 위한 근력 운동 프로그램 (30min)"))
-                .andExpect(jsonPath("$.proposals[0].video.startSec").value(144))
+                // 대표 영상은 첫 본운동 칸(3번 칸 「앉아서 상체숙여 양팔 등 뒤로 펴기」 500초)이다 — 준비운동 첫 칸(144초)이 아니다
+                .andExpect(jsonPath("$.proposals[0].video.startSec").value(500))
+                .andExpect(jsonPath("$.proposals[0].sessions[2].clip.startSec").value(500))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].participants[0].profileId")
                         .value(childId().toString()))
@@ -442,8 +447,8 @@ class CoachingFlowWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refused").value(false))
                 .andExpect(jsonPath("$.citations", hasSize(1)))
-                .andExpect(jsonPath("$.citations[0].sourceLabel").value("국민체력100 운동처방 · 유소년 11세"))
-                .andExpect(jsonPath("$.citations[0].excerpt").value("국민체력100 운동처방 · 유소년 11세"))
+                .andExpect(jsonPath("$.citations[0].sourceLabel").value("국민체력100 운동처방, 유소년 11세"))
+                .andExpect(jsonPath("$.citations[0].excerpt").value("국민체력100 운동처방, 유소년 11세"))
                 .andReturn();
         String conversationId = extract("\"conversationId\":\"([^\"]+)\"", chatResult);
         // 계정 있는 아이 이름으로는 그 아이 계정만 묻는다 — 보호자 계정은 403
@@ -587,16 +592,43 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.missions[0].participants[0].needsGuardianCheck")
                         .value(false));
 
-        // 영상 목록(V132 AI 영상): 유소년 안전 필터 + 요인 — 근력 영상 중 유아기(IfV5H7USgaA) · 성인(IhShIA-WJNE 등)은 빠진다
+        // 영상 목록: 유소년 안전 필터 + 요인. videoId 차례라 공단 영상(V161, 0AUDLJ08S_…)이 먼저 나온다 — url 은 mp4 주소다
         mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=근력&size=1").header(HttpHeaders.AUTHORIZATION, child))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.videos", hasSize(1)))
+                .andExpect(jsonPath("$.videos[0].videoId").value("0AUDLJ08S_00351"))
+                .andExpect(jsonPath("$.videos[0].title").value("팔굽혀펴기"))
+                .andExpect(
+                        jsonPath("$.videos[0].url").value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
+                .andExpect(jsonPath("$.videos[0].mediaUrl")
+                        .value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
+                .andExpect(jsonPath("$.videos[0].thumbnailUrl")
+                        .value("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00351/0AUDLJ08S_00351_SC_00002.jpeg"))
+                .andExpect(jsonPath("$.videos[0].durationSec").value(91))
+                .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"));
+        // 유튜브 영상(V132): 근력 영상 중 유아기(IfV5H7USgaA) · 성인(IhShIA-WJNE 등)은 빠진다. mediaUrl 은 null 이다
+        mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&factor=근력&size=1&cursor=0AUDLJ08S_99999")
+                        .header(HttpHeaders.AUTHORIZATION, child))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.videos", hasSize(1)))
                 .andExpect(jsonPath("$.videos[0].videoId").value("Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.videos[0].url").value("https://www.youtube.com/watch?v=Eg3GpTv7z8s"))
+                .andExpect(jsonPath("$.videos[0].mediaUrl", nullValue()))
                 .andExpect(
                         jsonPath("$.videos[0].thumbnailUrl").value("https://i.ytimg.com/vi/Eg3GpTv7z8s/hqdefault.jpg"))
                 .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"))
                 .andExpect(jsonPath("$.videos[0].favorited").value(false))
                 .andExpect(jsonPath("$.nextCursor", nullValue()));
+        // 어르신: 공단 어르신 영상은 V164 부터 싣지 않는다. 성인(공통) 영상을 똑같이 받는다.
+        // 「공통」 영상은 V165 부터 청소년 · 성인 두 연령대라 연령 범위가 13 ~ 64세다 — 청소년 목록에도 같은 영상이 나온다
+        for (String ageGroup : List.of("어르신", "청소년")) {
+            mockMvc.perform(get("/api/v1/videos?size=1&ageGroup=" + ageGroup).header(HttpHeaders.AUTHORIZATION, child))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.videos", hasSize(1)))
+                    .andExpect(jsonPath("$.videos[0].videoId").value("0AUDLJ08S_00181"))
+                    .andExpect(jsonPath("$.videos[0].label.ageFrom").value(13))
+                    .andExpect(jsonPath("$.videos[0].label.ageTo").value(64));
+        }
         // 커서: videoId 오름차순으로 다음 유소년 영상
         mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&size=1&cursor=Eg3GpTv7z8s")
                         .header(HttpHeaders.AUTHORIZATION, child))
@@ -931,6 +963,75 @@ class CoachingFlowWebTest {
                         .value(videoId))
                 .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + runId + "')].video.url")
                         .value("https://www.youtube.com/watch?v=" + videoId));
+    }
+
+    @Test
+    @DisplayName("AI 가 칸 요인을 빈 문자열로 보내면 제안 · 미션 칸의 factor 는 null 로 나가고, 공단 영상 칸은 mp4 · 첫 장면 주소와 AI 인용을 그대로 싣는다")
+    void 빈_요인_칸은_factor_null_로_나가고_공단_영상_칸은_mp4_로_나간다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        CoachRun run = Runs.running(familyId(), childId(), time.today(), parentId(), time.now());
+        tx.executeWithoutResult(
+                status -> assertThat(coachRuns.insertRunning(run)).isTrue());
+        // AI 명세 82b3614 · 담당자 코드 모양: 요인 라벨이 없는 클립이고 대상 요인도 없으면 fitness_factor 는 "", 공단 영상은 url 이 mp4 다
+        String mp4 = "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00234.mp4";
+        CoachRunResult.Session session = new CoachRunResult.Session(
+                0,
+                "본운동",
+                1,
+                "누워서 배가로근 수축1",
+                "",
+                60,
+                new CoachRunResult.Video("0AUDLJ08S_00234", 0, 60, CoachRunResult.Video.SOURCE_KSPO, mp4),
+                List.of(1));
+        CoachRunResult.Mission mission = new CoachRunResult.Mission(
+                "일간",
+                "코어 깨우기",
+                time.today().toString(),
+                time.today().toString(),
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(childId()), "주행자")),
+                10,
+                60,
+                List.of(session),
+                "아이",
+                "부모",
+                "배 속 근육을 깨웁니다 [1].");
+        pipeline.complete(
+                run.getId(),
+                new CoachRunResult(
+                        "cr_empty_factor",
+                        "succeeded",
+                        List.of(),
+                        new CoachRunResult.Proposal(
+                                List.of(mission),
+                                List.of(new Citation(
+                                        1, "국민체력100 운동처방동영상 · 누워서 배가로근 수축 I", "kspo:0AUDLJ08S_00234", mp4)),
+                                List.of()),
+                        false,
+                        null));
+
+        mockMvc.perform(get("/api/v1/coach/runs/" + run.getId()).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.proposals[0].sessions", hasSize(1)))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].title").value("누워서 배가로근 수축1"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].factor").value(nullValue()))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.videoId").value("0AUDLJ08S_00234"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.mediaUrl").value(mp4))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.thumbnailUrl")
+                        .value(startsWith("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00234/")))
+                .andExpect(jsonPath("$.proposals[0].video.url").value(mp4))
+                .andExpect(jsonPath("$.proposals[0].citations[0].chunkId").value("kspo:0AUDLJ08S_00234"))
+                .andExpect(jsonPath("$.proposals[0].citations[0].label").value("국민체력100 운동처방동영상 · 누워서 배가로근 수축 I"))
+                .andExpect(jsonPath("$.proposals[0].citations[0].url").value(mp4));
+        mockMvc.perform(post("/api/v1/coach/runs/" + run.getId() + "/approve")
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/missions").header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + run.getId() + "')].sessions[0].factor")
+                        .value(contains((Object) null)))
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + run.getId() + "')].sessions[0].clip.mediaUrl")
+                        .value(contains(mp4)));
     }
 
     @Test

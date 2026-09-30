@@ -16,6 +16,9 @@ public record User(
     public static final String PROVIDER_GOOGLE = "GOOGLE";
     public static final String PROVIDER_DEV = "DEV";
 
+    /** 심사용 계정 로그인이 만든 계정. providerUserId 는 「review-」 + 무작위라 같은 계정으로 다시 들어오는 길은 없다. */
+    public static final String PROVIDER_REVIEW = "REVIEW";
+
     public User {
         if (provider.isBlank()) throw new IllegalArgumentException("provider 는 비어 있을 수 없다");
         if (providerUserId.isBlank()) throw new IllegalArgumentException("providerUserId 는 비어 있을 수 없다");

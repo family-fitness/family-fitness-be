@@ -123,10 +123,11 @@ class ProposalConverterTest {
         assertThat(item.targetMetric()).isEqualTo("TIMER_MINUTES");
         assertThat(item.targetValue()).isEqualTo(15);
         assertThat(item.rationale()).isEqualTo("또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
-        assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세) · 준비운동 척추 들어올리기 (고양이자세)");
+        assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세), 준비운동 척추 들어올리기 (고양이자세)");
         assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
-        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 144));
+        // 대표 영상은 첫 본운동 칸이다(준비운동 첫 칸이 아니다)
+        assertThat(item.video()).isEqualTo(new ProposalVideo("Eg3GpTv7z8s", 500));
         assertThat(item.participants())
                 .containsExactly(new ProposalParticipant(family.child.profileId(), ProfileRole.CHILD, "주행자"));
         assertThat(item.citations().stream().map(ProposalCitation::index).toList())
@@ -295,6 +296,32 @@ class ProposalConverterTest {
     }
 
     @Test
+    @DisplayName("대표 영상은 첫 본운동 칸의 영상이다 — 준비운동 첫 칸(근력 동작)이 「심폐지구력 키우기」 미션의 대표 영상이 됐다")
+    void 대표_영상은_첫_본운동_칸이다() {
+        CoachRunResult.Mission warmupFirst = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                List.of(
+                        clipSession("준비운동", 1, "팔굽혀 펴기", "근력", "warmupVid01", 0, 30),
+                        clipSession("본운동", 2, "제자리 뛰기", "심폐지구력", "mainVideo01", 10, 70),
+                        clipSession("정리운동", 3, "숨 고르기", "유연성", "coolVideo01", 0, 30)),
+                "부모 문구",
+                "골랐습니다 [1].");
+        CoachRunResult.Mission noMainVideo = mission(
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(family.child.profileId()), "주행자")),
+                20,
+                List.of(clipSession("준비운동", 1, "팔굽혀 펴기", "근력", "warmupVid01", 0, 30), session(2, null, List.of(1))),
+                "부모 문구",
+                "골랐습니다 [1].");
+
+        List<CoachProposalItem> items = converter.convert(proposal(List.of(warmupFirst, noMainVideo)));
+
+        assertThat(items.get(0).video()).isEqualTo(new ProposalVideo("mainVideo01", 10));
+        // 본운동 칸에 영상이 없으면 예전처럼 첫 영상 있는 칸
+        assertThat(items.get(1).video()).isEqualTo(new ProposalVideo("warmupVid01", 0));
+    }
+
+    @Test
     @DisplayName("AI 가 넣은 응원 부모는 빼고, withParent 면 요청한 보호자를 동반자로 덧붙인다")
     void 응원_부모는_빼고_withParent_면_요청한_보호자를_동반자로_덧붙인다() {
         ProposalConverter withParent =
@@ -372,7 +399,13 @@ class ProposalConverterTest {
                 base.supportMode(),
                 base.consentGiven());
         AiProfile profile = AiProfileFactory.of(
-                toddler, Map.of("012", new BigDecimal("5.5"), "005", new BigDecimal("80")), null, null, Fixed.TODAY);
+                toddler,
+                Map.of("012", new BigDecimal("5.5"), "005", new BigDecimal("80")),
+                null,
+                null,
+                null,
+                null,
+                Fixed.TODAY);
 
         assertThat(profile.profileRef()).isEqualTo(ProfileRef.of(toddler.profileId()));
         assertThat(profile.age()).isEqualTo(38);
@@ -381,11 +414,25 @@ class ProposalConverterTest {
         assertThat(profile.measurements()).containsOnlyKeys("012");
         assertThat(profile.inputLevel()).isEqualTo("L2");
 
-        AiProfile child =
-                AiProfileFactory.of(family.child, Map.of(), new BigDecimal("140.5"), new BigDecimal("35"), Fixed.TODAY);
+        AiProfile child = AiProfileFactory.of(
+                family.child, Map.of(), new BigDecimal("140.5"), new BigDecimal("35"), null, null, Fixed.TODAY);
         assertThat(child.age()).isEqualTo(11);
         assertThat(child.ageUnit()).isEqualTo("세");
         assertThat(child.inputLevel()).isEqualTo("L1");
+        // 체지방률 003 · 허리둘레 004 는 적은 것만 measurements 에 싣는다 — AI 가 3등급(BMI · 체지방률 · WHtR) 판정에 쓴다
+        AiProfile withBody = AiProfileFactory.of(
+                family.child,
+                Map.of("012", new BigDecimal("8")),
+                new BigDecimal("140.5"),
+                new BigDecimal("35"),
+                new BigDecimal("22.5"),
+                new BigDecimal("61.2"),
+                Fixed.TODAY);
+        assertThat(withBody.measurements())
+                .containsOnly(Map.entry("012", 8.0), Map.entry("003", 22.5), Map.entry("004", 61.2));
+        AiProfile waistOnly =
+                AiProfileFactory.of(family.child, Map.of(), null, null, null, new BigDecimal("61.2"), Fixed.TODAY);
+        assertThat(waistOnly.measurements()).containsOnly(Map.entry("004", 61.2));
         assertThat(AiProfileFactory.participant(family.child, child).role()).isEqualTo("주행자");
         assertThat(AiProfileFactory.participant(family.parent, child).role()).isEqualTo("동반자");
         assertThat(AiProfileFactory.participant(family.cheerParent, child).role())
@@ -406,7 +453,7 @@ class ProposalConverterTest {
                 null);
         assertThat(ProposalConverter.summary(withProposal)).isEqualTo("부모 요약");
         assertThat(ProposalConverter.summary(new CoachRunResult("r", "failed", steps, null, false, null)))
-                .isEqualTo("측정 2명 · 확인");
+                .isEqualTo("측정 2명. 확인");
         assertThat(ProposalConverter.steps(withProposal).stream()
                         .map(kr.ac.kookmin.familyfitness.coaching.domain.CoachStep::name)
                         .toList())

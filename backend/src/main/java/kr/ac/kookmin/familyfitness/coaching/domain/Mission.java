@@ -282,8 +282,8 @@ public class Mission {
         String problem = sessionProblem(targetMetric, targetValue, sessions);
         if (problem != null) throw new InvalidInputException(problem);
         if (sessions.isEmpty() && targetMetric == TargetMetric.TIMER_MINUTES && targetValue > MAX_WHOLE_MINUTES) {
-            throw new InvalidInputException("칸 없는 분 목표(targetValue " + targetValue + ")는 " + MAX_WHOLE_MINUTES
-                    + "분까지입니다 — 넘으면 칸 끝으로 끝낼 수 없습니다");
+            throw new InvalidInputException(
+                    "칸 없는 분 목표(targetValue " + targetValue + ")는 " + MAX_WHOLE_MINUTES + "분까지입니다. 넘으면 칸 끝으로 끝낼 수 없습니다");
         }
         Set<UUID> distinct = new LinkedHashSet<>(participantProfileIds);
         List<MissionParticipant> participants = new ArrayList<>();

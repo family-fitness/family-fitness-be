@@ -23,7 +23,8 @@ class LeagueRulesTest {
     private static List<Seat> seats(Integer... rates) {
         List<Seat> seats = new ArrayList<>();
         for (int i = 0; i < rates.length; i++) {
-            seats.add(new Seat(UUID.randomUUID(), i + 1, rates[i]));
+            Integer rate = rates[i];
+            seats.add(new Seat(UUID.randomUUID(), i + 1, rate, rate == null ? null : rate / 100.0));
         }
         return seats;
     }

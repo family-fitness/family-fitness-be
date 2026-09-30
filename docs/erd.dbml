@@ -81,23 +81,6 @@ Table cheers {
 (reply_to_cheer_id is null or kind = 'THANKS')'''
 }
 
-Table fitness_norms {
-  id bigint [pk, increment]
-  item_code varchar(3) [not null]
-  sex varchar(1) [not null]
-  age_from smallint [not null]
-  age_to smallint [not null]
-  percentile smallint [not null]
-  norm_value numeric(8,3) [not null]
-  source_year smallint [not null]
-  age_unit varchar(4) [not null]
-  indexes {
-    (item_code, sex, age_unit, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
-  }
-  Note: '''(sex in ('M', 'F'))
-(age_unit in ('세', '개월'))'''
-}
-
 Table fitness_tests {
   id uuid [pk, not null]
   profile_id uuid [not null]
@@ -107,6 +90,8 @@ Table fitness_tests {
   height_cm numeric(4,1)
   weight_kg numeric(4,1)
   created_at timestamptz [not null]
+  body_fat_pct numeric(4,1)
+  waist_cm numeric(4,1)
   indexes {
     (profile_id, tested_on) [unique, name: 'uq_fitness_test_date']
   }
@@ -118,39 +103,12 @@ Table fitness_test_items {
   item_code varchar(3) [not null]
   raw_value numeric(8,3) [not null]
   percentile smallint
-  grade varchar(10)
   band varchar(10)
   indexes {
     (fitness_test_id, item_code) [pk]
   }
-  Note: '''(percentile is null or (percentile between 1 and 99))
-(band is null or band in ('strength', 'steady', 'growth'))'''
-}
-
-Table predictions {
-  id uuid [pk, not null]
-  profile_id uuid [not null]
-  fitness_test_id uuid
-  item_code varchar(3) [not null]
-  horizon_years smallint [not null]
-  model_version varchar(40) [not null]
-  basis varchar(60) [not null]
-  notice varchar(300) [not null]
-  created_at timestamptz [not null]
-}
-
-Table prediction_points {
-  prediction_id uuid [not null]
-  scenario varchar(20) [not null]
-  item_code varchar(3) [not null]
-  years_from_now smallint [not null]
-  p10 numeric(8,3)
-  p50 numeric(8,3)
-  p90 numeric(8,3)
-  indexes {
-    (prediction_id, scenario, item_code, years_from_now) [pk]
-  }
-  Note: '''(scenario in ('MAINTAIN', 'IMPROVE'))'''
+  Note: '''(band is null or band in ('strength', 'steady', 'growth'))
+(percentile is null or (percentile between 0 and 100))'''
 }
 
 Table activity_daily {
@@ -186,6 +144,9 @@ Table exercise_videos {
   labeled_by varchar(20) [not null]
   label_model varchar(40)
   collected_at timestamptz [not null]
+  media_url varchar(300)
+  thumbnail_url varchar(300)
+  citation_label varchar(120)
 }
 
 Table video_interactions {
@@ -606,6 +567,76 @@ Table notifications {
   Note: '''(kind in ('KID_DONE', 'KID_THANKS', 'PRAISE', 'MISSION_READY', 'ACHIEVEMENT', 'REMEASURE'))'''
 }
 
+Table fitness_grade_thresholds {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age_unit varchar(4) [not null]
+  age_from smallint [not null]
+  age_to smallint [not null]
+  grade varchar(10) [not null]
+  item_code varchar(3) [not null]
+  op varchar(10) [not null]
+  cutoff numeric(8,3) [not null]
+  cutoff_upper numeric(8,3)
+  indexes {
+    (age_group, sex, age_unit, age_from, age_to, grade, item_code) [unique, name: 'uq_fitness_grade_threshold']
+  }
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))
+(age_from <= age_to)
+(grade in ('1등급', '2등급', '3등급'))
+(op in ('>=', '<=', '<', 'between'))
+((op = 'between' and cutoff_upper is not null) or (op <> 'between' and cutoff_upper is null))'''
+}
+
+Table fitness_value_quantiles {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age_unit varchar(4) [not null]
+  age smallint [not null]
+  item_code varchar(3) [not null]
+  n int [not null]
+  quantiles varchar(1000) [not null]
+  indexes {
+    (age_group, sex, age, item_code) [unique, name: 'uq_fitness_value_quantile']
+  }
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))
+(n >= 0)'''
+}
+
+Table fitness_grade_distribution {
+  id bigint [pk, increment]
+  age_group varchar(10) [not null]
+  sex varchar(1) [not null]
+  age smallint [not null]
+  grade varchar(10) [not null]
+  n int [not null]
+  ratio numeric(5,4) [not null]
+  indexes {
+    (age_group, sex, age, grade) [unique, name: 'uq_fitness_grade_distribution']
+  }
+  Note: '''(sex in ('M', 'F'))
+(grade in ('1등급', '2등급', '3등급', '참가'))
+(ratio between 0 and 1)'''
+}
+
+Table video_exercise_labels {
+  clip_id varchar(48) [not null]
+  seq smallint [not null]
+  age_group varchar(12) [not null]
+  fitness_factor varchar(20)
+  phase varchar(10) [not null]
+  indexes {
+    (clip_id, seq) [pk]
+  }
+  Note: '''(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(fitness_factor is null or fitness_factor in ('CARDIO', 'STRENGTH', 'MUSCULAR_ENDURANCE', 'FLEXIBILITY', 'AGILITY', 'POWER', 'COORDINATION', 'BALANCE'))
+(age_group in ('TODDLER', 'YOUTH', 'ADOLESCENT', 'ADULT', 'SENIOR'))'''
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id
@@ -614,9 +645,6 @@ Ref: cheers.from_profile_id > profiles.id
 Ref: cheers.to_profile_id > profiles.id
 Ref: fitness_tests.profile_id > profiles.id
 Ref: fitness_test_items.fitness_test_id > fitness_tests.id
-Ref: predictions.profile_id > profiles.id
-Ref: predictions.fitness_test_id > fitness_tests.id
-Ref: prediction_points.prediction_id > predictions.id
 Ref: activity_daily.profile_id > profiles.id
 Ref: video_interactions.profile_id > profiles.id
 Ref: video_interactions.video_id > exercise_videos.video_id
@@ -658,3 +686,4 @@ Ref: notifications.profile_id > profiles.id
 Ref: notifications.about_profile_id > profiles.id
 Ref: notifications.from_profile_id > profiles.id
 Ref: notifications.cheer_id > cheers.id
+Ref: video_exercise_labels.clip_id > video_exercises.clip_id

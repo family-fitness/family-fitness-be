@@ -211,6 +211,48 @@ class RestCardWebTest {
     }
 
     @Test
+    @DisplayName("전환기 별칭 rest-days(FE 가 부르는 이름)도 같은 핸들러다 — 쓰기 · 보기 · 되돌리기 · 권한이 rest-cards 와 같다")
+    void 별칭_rest_days_도_같은_핸들러다() throws Exception {
+        String alias = "/api/v1/families/" + familyId + "/rest-days";
+
+        mvc.perform(post(alias)
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(parentUser))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"date\":\"" + today + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.month").value(thisMonth.toString()))
+                .andExpect(jsonPath("$.perMonth").value(2))
+                .andExpect(jsonPath("$.left").value(1))
+                .andExpect(jsonPath("$.days", contains(today.toString())));
+        String viaAlias = mvc.perform(get(alias)
+                        .param("month", thisMonth.toString())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(childUser)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String viaContract = mvc.perform(get(path())
+                        .param("month", thisMonth.toString())
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(childUser)))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(viaAlias).isEqualTo(viaContract);
+
+        mvc.perform(post(alias)
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(childUser))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"date\":\"" + today + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARENT"));
+        mvc.perform(delete(alias + "/" + today).header(HttpHeaders.AUTHORIZATION, auth.bearer(parentUser)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.left").value(2))
+                .andExpect(jsonPath("$.days", empty()));
+        mvc.perform(get(alias)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("아이 계정은 쓰지도 되돌리지도 못한다 — 403 NOT_A_PARENT")
     void 아이는_쓰지도_되돌리지도_못한다() throws Exception {
         use(childUser, "{\"date\":\"" + today + "\"}")

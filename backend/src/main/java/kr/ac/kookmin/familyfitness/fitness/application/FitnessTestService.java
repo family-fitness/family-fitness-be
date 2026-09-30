@@ -7,12 +7,14 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered;
 import kr.ac.kookmin.familyfitness.fitness.api.FitnessTestRegistered.Round;
 import kr.ac.kookmin.familyfitness.fitness.application.port.FitnessTestRepository;
+import kr.ac.kookmin.familyfitness.fitness.domain.Certification;
+import kr.ac.kookmin.familyfitness.fitness.domain.Certifier;
 import kr.ac.kookmin.familyfitness.fitness.domain.ConsentRequiredException;
 import kr.ac.kookmin.familyfitness.fitness.domain.DuplicateDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.FitnessTest;
 import kr.ac.kookmin.familyfitness.fitness.domain.FutureTestDateException;
 import kr.ac.kookmin.familyfitness.fitness.domain.NotMeasurableException;
-import kr.ac.kookmin.familyfitness.fitness.domain.PercentileCalculator;
+import kr.ac.kookmin.familyfitness.fitness.domain.PeerTable;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
@@ -32,7 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       403 NOT_A_PARENT(FE 는 측정 화면을 부모 화면에만 둔다). 규칙 순서: 같은 가족 → 보호자 → 미래 날짜 → 만 4세 미만 →
  *       보호자 동의 → 같은 날짜 중복 → 항목 규칙(애그리거트 — 항목 · 연령대 · 범위).
  *   <li>조회(latest · 이력): 같은 가족이면 된다. 호출 계정이 CHILD 면 {@code parentScope=false} 로 돌려주고, 웹 어댑터가
- *       부모만 볼 값(등급 · 요인별 백분위 · 가장 낮은 · 높은 항목 · 코치 방향 · 체중 · 「상위 n%」 문구)을 비운다.
+ *       부모만 볼 값(인증 등급 · 요인별 백분위 · 가장 낮은 · 높은 항목 · 코치 방향 · 체중 · 체지방률 · 허리둘레 · 「상위 n%」
+ *       문구)을 비운다.
+ *   <li>인증 등급: 저장하지 않고 등록 · latest 때 셈한다({@link Certifier}). 성별은 프로필, 나이는 측정일 기준이다.
  *       overallPercentile 은 남긴다(아이 화면의 「신체 점수」). 부모 계정은 아이 모드여도 다 받는다 — 서버가 화면을 알 수 없다.
  * </ul>
  * 등록한 뒤 {@link FitnessTestRegistered} 를 발행한다.
@@ -46,7 +50,8 @@ public class FitnessTestService {
     public static final int HISTORY_MAX_SIZE = 100;
 
     private final FitnessTestRepository tests;
-    private final NormCatalog norms;
+    private final PeerCatalog peers;
+    private final GradeCatalog grades;
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
     private final ApplicationEventPublisher events;
@@ -55,14 +60,16 @@ public class FitnessTestService {
 
     public FitnessTestService(
             FitnessTestRepository tests,
-            NormCatalog norms,
+            PeerCatalog peers,
+            GradeCatalog grades,
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
             ApplicationEventPublisher events,
             Clock clock,
             ZoneId zone) {
         this.tests = tests;
-        this.norms = norms;
+        this.peers = peers;
+        this.grades = grades;
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
         this.events = events;
@@ -71,7 +78,7 @@ public class FitnessTestService {
     }
 
     @Transactional
-    public FitnessTest register(UUID actorId, UUID profileId, RegisterFitnessTestCommand command) {
+    public RegisteredFitnessTest register(UUID actorId, UUID profileId, RegisterFitnessTestCommand command) {
         familyAccess.requireParentOfProfile(actorId, profileId);
         ProfileSummary summary = familyAccess.requireSameFamilyAsProfile(actorId, profileId);
         ProfileDetails details = details(profileId);
@@ -85,23 +92,21 @@ public class FitnessTestService {
         }
 
         FitnessTest earliestBefore = tests.findEarliestByProfileId(profileId);
-        PercentileCalculator calculator = norms.calculator();
+        PeerTable peerTable = peers.table();
         FitnessTest test = FitnessTest.register(
                 UUID.randomUUID(),
                 profileId,
                 command.testedOn(),
                 command.source(),
                 ageAtTest,
-                command.heightCm(),
-                command.weightKg(),
+                command.body(),
                 command.measurements(),
-                (item, value) ->
-                        calculator.percentile(item, details.sex(), ageAtTest, value.doubleValue(), ageMonthsAtTest),
+                (item, value) -> peerTable.percentile(item, details.sex(), ageAtTest, ageMonthsAtTest, value),
                 clock.instant());
         FitnessTest saved = tests.save(test);
         events.publishEvent(new FitnessTestRegistered(
                 profileId, saved.getId(), saved.getTestedOn(), remeasuredBy(earliestBefore, saved)));
-        return saved;
+        return new RegisteredFitnessTest(saved, grades.certifier().certify(saved, details.sex(), ageMonthsAtTest));
     }
 
     /**
@@ -117,11 +122,20 @@ public class FitnessTestService {
         return new Round(remeasured.getId(), remeasured.getTestedOn());
     }
 
-    /** 최신 회차. 이력이 없으면 test 가 null — 웹 어댑터가 빈 응답(200)으로 바꾼다. */
+    /** 최신 회차. 이력이 없으면 test 가 null — 웹 어댑터가 빈 응답(200)으로 바꾼다. 인증 등급은 보호자에게만 셈한다. */
     @Transactional(readOnly = true)
     public LatestFitnessView latest(UUID actorId, UUID profileId) {
         ProfileSummary target = familyAccess.requireSameFamilyAsProfile(actorId, profileId);
-        return new LatestFitnessView(tests.findLatestByProfileId(profileId), parentScope(actorId, target));
+        boolean parentScope = parentScope(actorId, target);
+        FitnessTest test = tests.findLatestByProfileId(profileId);
+        Certification certification = test == null || !parentScope ? null : certify(test, details(profileId));
+        return new LatestFitnessView(test, parentScope, certification);
+    }
+
+    /** 저장된 회차의 인증 등급. 유아기 기준 · 등급 비율은 개월이라 측정일 기준 개월 나이를 같이 준다. */
+    private Certification certify(FitnessTest test, ProfileDetails details) {
+        int ageMonths = Ages.fullMonths(details.birthDate(), test.getTestedOn());
+        return grades.certifier().certify(test, details.sex(), ageMonths);
     }
 
     /**
@@ -160,7 +174,7 @@ public class FitnessTestService {
         return LocalDate.now(clock.withZone(zone));
     }
 
-    /** testedOn 기준 만 나이. 미래 날짜는 400, 만 4세 미만은 규준이 없어 422 NOT_MEASURABLE. */
+    /** testedOn 기준 만 나이. 미래 날짜는 400, 만 4세 미만은 또래 분포 · 기준표가 없어 422 NOT_MEASURABLE. */
     private int measurableAgeOn(ProfileDetails details, LocalDate testedOn) {
         if (testedOn.isAfter(today())) throw new FutureTestDateException(testedOn);
         int age = Ages.fullYears(details.birthDate(), testedOn);

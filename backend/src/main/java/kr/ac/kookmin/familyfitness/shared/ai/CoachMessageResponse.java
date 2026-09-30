@@ -7,5 +7,5 @@ public record CoachMessageResponse(
         String answer,
         List<Citation> citations,
         boolean refused,
-        /** no_relevant_source · age_filter_empty · medical_query · no_citation_generated */
+        /* no_relevant_source · age_filter_empty · medical_query · no_citation_generated */
         @Nullable String refusalReason) {}

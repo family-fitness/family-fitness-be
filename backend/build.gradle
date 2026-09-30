@@ -82,10 +82,15 @@ tasks.withType(org.springframework.boot.gradle.tasks.run.BootRun).configureEach 
 	systemProperty 'spring.profiles.default', 'local'
 }
 
+// 시험 JVM 은 Gradle 기본 힙이 512MB 다. @SpringBootTest 시험은 @MockitoBean · @TestPropertySource 조합마다
+// 컨텍스트를 따로 띄우고 캐시(기본 32개)에 쌓아 두는데, 512MB 로는 전체 시험 도중 힙이 가득 차 full GC 만
+// 되풀이하다 멈췄다. 힙을 1.5GB 로 올리고, 캐시는 12개까지만 두어 오래 안 쓴 컨텍스트를 닫게 한다.
 tasks.named('test') {
 	useJUnitPlatform()
+	maxHeapSize = '1536m'
+	systemProperty 'spring.test.context.cache.maxSize', '12'
 	testLogging {
 		events 'failed'
-		exceptionFormat 'full'
+		exceptionFormat = 'full'
 	}
 }

@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import kr.ac.kookmin.familyfitness.fitness.domain.NormPoint;
+import kr.ac.kookmin.familyfitness.fitness.domain.PeerQuantiles;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
@@ -17,15 +17,11 @@ import org.jspecify.annotations.Nullable;
 public final class FitnessFakes {
     private FitnessFakes() {}
 
-    public record NormPair(int percentile, double value) {}
-
-    /** 규준 한 구간을 짧게 만든다. */
-    public static List<NormPoint> norms(String itemCode, Sex sex, int ageFrom, int ageTo, NormPair... pairs) {
-        List<NormPoint> points = new ArrayList<>();
-        for (NormPair pair : pairs) {
-            points.add(new NormPoint(itemCode, sex, ageFrom, ageTo, pair.percentile(), pair.value(), 1900));
-        }
-        return List.copyOf(points);
+    /** 또래 분포 한 칸을 짧게 만든다 — 백분위 i 의 값이 {@code from + step × i} 인 곧은 분포(표본 1,000). */
+    public static PeerQuantiles peers(AgeGroup ageGroup, Sex sex, int age, String itemCode, double from, double step) {
+        List<Double> quantiles = new ArrayList<>();
+        for (int i = 0; i <= 100; i++) quantiles.add(from + step * i);
+        return new PeerQuantiles(ageGroup, sex, age, itemCode, 1000, quantiles);
     }
 
     public static ProfileSummary summaryOf(UUID profileId, UUID familyId, AgeGroup ageGroup) {

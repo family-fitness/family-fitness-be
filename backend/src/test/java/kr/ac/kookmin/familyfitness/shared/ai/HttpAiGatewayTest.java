@@ -45,7 +45,8 @@ class HttpAiGatewayTest {
                 List.of(new CoachRunRequest.Participant(child, "주행자")),
                 "2026-09-09",
                 1,
-                new CoachRunRequest.Constraints(1, 20, null, true, true, true, "민첩성", true));
+                new CoachRunRequest.Constraints(
+                        1, 20, null, true, true, true, "민첩성", true, List.of("0AUDLJ08S_00351", "abc123XYZ_-")));
     }
 
     @Test
@@ -72,6 +73,8 @@ class HttpAiGatewayTest {
                 .andExpect(jsonPath("$.constraints.no_props").value(true))
                 .andExpect(jsonPath("$.constraints.focus_factor").value("민첩성"))
                 .andExpect(jsonPath("$.constraints.with_companion").value(true))
+                .andExpect(jsonPath("$.constraints.recent_video_ids[0]").value("0AUDLJ08S_00351"))
+                .andExpect(jsonPath("$.constraints.recent_video_ids[1]").value("abc123XYZ_-"))
                 .andRespond(withStatus(HttpStatus.ACCEPTED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"run_id\":\"cr_1\",\"status\":\"running\",\"poll_after_ms\":1500}"));
@@ -232,6 +235,135 @@ class HttpAiGatewayTest {
     }
 
     @Test
+    @DisplayName("video 의 source · url 을 읽는다 — 공단 영상은 kspo 와 url 의 mp4 주소, 유튜브는 youtube 이고 보기 주소(url)는 버린다")
+    void video_의_source_와_url_을_읽는다() {
+        // AI 담당자 코드(catalog.py Clip.as_video)의 모양: {source, video_id, url, start_sec, end_sec}. 유튜브 url 은
+        // watch?v=<id>&t=<초>s 다.
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_7"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_7","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"공단 영상","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],"duration_min":10,
+                             "sessions":[{"phase":"본운동","order":1,"exercise_name":"팔굽혀펴기","fitness_factor":"근력",
+                                          "video":{"source":"kspo","video_id":"0AUDLJ08S_00351",
+                                                   "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4",
+                                                   "start_sec":0,"end_sec":91},
+                                          "evidence":[1]},
+                                         {"phase":"정리운동","order":2,"exercise_name":"나비자세","fitness_factor":"유연성",
+                                          "video":{"source":"youtube","video_id":"Eg3GpTv7z8s",
+                                                   "url":"https://www.youtube.com/watch?v=Eg3GpTv7z8s&t=144s",
+                                                   "start_sec":144,"end_sec":182},
+                                          "evidence":[]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"국민체력100 운동처방동영상 · 팔굽혀펴기","chunk_id":"kspo:0AUDLJ08S_00351",
+                                        "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        CoachRunResult.Proposal proposal = gateway.getCoachRun("cr_7").proposal();
+        List<CoachRunResult.Session> sessions = proposal.missions().getFirst().sessions();
+
+        assertThat(sessions)
+                .extracting(CoachRunResult.Session::video)
+                .containsExactly(
+                        new CoachRunResult.Video(
+                                "0AUDLJ08S_00351",
+                                0,
+                                91,
+                                "kspo",
+                                "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"),
+                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182, "youtube", null));
+        assertThat(sessions.getFirst().video().isKspo()).isTrue();
+        assertThat(sessions.get(1).video().isKspo()).isFalse();
+        // 인용은 AI 가 준 그대로다 — label 은 끝에 「-1」 이 없는 운동 이름, chunk_id 는 kspo:<video_id>, url 은 mp4 주소
+        assertThat(proposal.citations())
+                .containsExactly(new Citation(
+                        1,
+                        "국민체력100 운동처방동영상 · 팔굽혀펴기",
+                        "kspo:0AUDLJ08S_00351",
+                        "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"));
+    }
+
+    @Test
+    @DisplayName("sessions[].fitness_factor 가 빈 문자열이어도 제안 전체를 버리지 않고 읽는다")
+    void 빈_fitness_factor_도_읽는다() {
+        // AI 명세 82b3614: 클립에 요인 라벨이 없고 측정도 없어 대상 요인이 없으면 빈 문자열이다(어르신 코치 편성에서 나왔다)
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_6"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_6","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"코어","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],"duration_min":10,
+                             "sessions":[{"phase":"본운동","order":1,"exercise_name":"누워서 배가로근 수축1","fitness_factor":"",
+                                          "video":{"source":"kspo","video_id":"0AUDLJ08S_00234",
+                                                   "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00234.mp4",
+                                                   "start_sec":0,"end_sec":60},
+                                          "evidence":[1]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"국민체력100 운동처방동영상 · 누워서 배가로근 수축 I",
+                                        "chunk_id":"kspo:0AUDLJ08S_00234",
+                                        "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00234.mp4"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        CoachRunResult.Session session = gateway.getCoachRun("cr_6")
+                .proposal()
+                .missions()
+                .getFirst()
+                .sessions()
+                .getFirst();
+
+        assertThat(session.fitnessFactor()).isEmpty();
+        assertThat(session.video())
+                .isEqualTo(new CoachRunResult.Video(
+                        "0AUDLJ08S_00234", 0, 60, "kspo", "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00234.mp4"));
+    }
+
+    @Test
+    @DisplayName("옛 응답의 media_url 도 읽는다 — url 이 없으면 media_url 을 mp4 주소로 쓰고, 둘 다 없으면 유튜브로 본다")
+    void 옛_응답의_media_url_도_읽는다() {
+        server.expect(requestTo("http://ai.internal:8000/v1/coach/runs/cr_4"))
+                .andRespond(withSuccess("""
+                        {"run_id":"cr_4","status":"succeeded","steps":[],
+                         "proposal":{"missions":[
+                            {"kind":"일간","title":"공단 영상","period":{"start_date":"2026-09-07","end_date":"2026-09-07"},
+                             "participants":[{"ref":"p_abc","role":"주행자"}],"duration_min":10,
+                             "sessions":[{"phase":"본운동","order":1,"exercise_name":"팔굽혀펴기","fitness_factor":"근력",
+                                          "video":{"video_id":"0AUDLJ08S_00351","start_sec":0,"end_sec":91,"source":"kspo",
+                                                   "media_url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"},
+                                          "evidence":[1]},
+                                         {"phase":"정리운동","order":2,"exercise_name":"나비자세","fitness_factor":"유연성",
+                                          "video":{"video_id":"Eg3GpTv7z8s","start_sec":144,"end_sec":182,"source":"youtube"},
+                                          "evidence":[]},
+                                         {"phase":"정리운동","order":3,"exercise_name":"목 돌리기","fitness_factor":"유연성",
+                                          "video":{"video_id":"IdpXx2gm90o","start_sec":56,"end_sec":96,"media_url":""},
+                                          "evidence":[]}],
+                             "copy":{"child":"c","parent":"p"}}],
+                          "citations":[{"index":1,"label":"국민체력100 동영상 정보 · 팔굽혀펴기","chunk_id":"kspo:0AUDLJ08S_00351",
+                                        "url":"https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"}]},
+                         "refused":false,"refusal_reason":null}\
+                        """, MediaType.APPLICATION_JSON));
+
+        List<CoachRunResult.Session> sessions =
+                gateway.getCoachRun("cr_4").proposal().missions().getFirst().sessions();
+
+        assertThat(sessions)
+                .extracting(CoachRunResult.Session::video)
+                .containsExactly(
+                        new CoachRunResult.Video(
+                                "0AUDLJ08S_00351",
+                                0,
+                                91,
+                                "kspo",
+                                "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"),
+                        new CoachRunResult.Video("Eg3GpTv7z8s", 144, 182, "youtube", null),
+                        new CoachRunResult.Video("IdpXx2gm90o", 56, 96));
+        assertThat(sessions.getFirst().video().isKspo()).isTrue();
+        assertThat(sessions.get(1).video().isKspo()).isFalse();
+    }
+
+    @Test
     @DisplayName("200 인데 JSON 이 깨졌으면 AiUnavailableException — 코치 실행이 대체 편성으로 넘어간다")
     void 깨진_JSON_은_AiUnavailableException() {
         server.expect(requestTo("http://ai.internal:8000/v1/coach/runs"))
@@ -356,17 +488,16 @@ class HttpAiGatewayTest {
     }
 
     @Test
-    @DisplayName("400 은 재시도 없이 AI_BAD_REQUEST 이고 trajectory 는 item_code·horizon_years 를 보낸다")
-    void 은_재시도_없이_AI_BAD_REQUEST_이고_trajectory_는_item_code_horizon_years_를_보낸다() {
-        server.expect(ExpectedCount.once(), requestTo("http://ai.internal:8000/v1/fitness/trajectory"))
-                .andExpect(jsonPath("$.item_code").value("028"))
-                .andExpect(jsonPath("$.horizon_years").value(10))
+    @DisplayName("400 은 재시도 없이 AI_BAD_REQUEST 이고 AI 가 준 코드를 문구에 싣는다")
+    void 은_재시도_없이_AI_BAD_REQUEST_이고_AI_가_준_코드를_문구에_싣는다() {
+        server.expect(ExpectedCount.once(), requestTo("http://ai.internal:8000/v1/fitness/assessment"))
+                .andExpect(jsonPath("$.profile_ref").value(child.profileRef()))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"error\":{\"code\":\"ITEM_NOT_ALLOWED\",\"message\":\"005\"}}"));
 
-        AiBadRequestException e = assertThrows(
-                AiBadRequestException.class, () -> gateway.trajectory(new TrajectoryRequest(child, "028", 10)));
+        AiBadRequestException e =
+                assertThrows(AiBadRequestException.class, () -> gateway.assess(new AssessmentRequest(child)));
 
         assertThat(e.getCode()).isEqualTo("AI_BAD_REQUEST");
         assertThat(e.getMessage()).contains("ITEM_NOT_ALLOWED");

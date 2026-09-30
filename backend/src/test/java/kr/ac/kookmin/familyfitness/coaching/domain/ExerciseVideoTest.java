@@ -28,6 +28,24 @@ class ExerciseVideoTest {
     }
 
     @Test
+    @DisplayName("어르신은 성인 범위 영상도 받는다 — 공단 어르신 영상을 싣지 않아 성인(공통) 영상을 똑같이 쓴다. 성인은 어르신 영상을 받지 않는다")
+    void 어르신은_성인_범위_영상도_받는다() {
+        ExerciseVideo adult = Videos.video("c", 19, 64);
+        ExerciseVideo senior = Videos.video("s", 65, 120);
+        ExerciseVideo youth = Videos.video("a", 7, 12);
+
+        assertThat(adult.matches(AgeGroup.SENIOR, null)).isTrue();
+        assertThat(senior.matches(AgeGroup.SENIOR, null)).isTrue();
+        assertThat(youth.matches(AgeGroup.SENIOR, null)).isFalse();
+        assertThat(senior.matches(AgeGroup.ADULT, null)).isFalse();
+        // 겨냥한 연령대인지는 따로 본다 — 대체 편성이 어르신 영상을 성인 영상보다 앞에 세울 때 쓴다
+        assertThat(adult.getLabel().aimsAt(AgeGroup.SENIOR)).isFalse();
+        assertThat(senior.getLabel().aimsAt(AgeGroup.SENIOR)).isTrue();
+        assertThat(Videos.video("u", null, null).getLabel().aimsAt(AgeGroup.SENIOR))
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("라벨 없는 영상은 아이 연령대에는 나가지 않고 성인·어르신에게는 나간다")
     void 라벨_없는_영상은_아이_연령대에는_나가지_않고_성인_어르신에게는_나간다() {
         ExerciseVideo unlabeled = Videos.video("u", null, null);

@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.shared.ai;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -23,7 +24,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * `{app.ai.base-url}/v1` 의 FastAPI 를 부르는 {@link AiGateway} 구현(app.ai.mode=http).
- * 엔드포인트별 타임아웃·재시도(계약 §5): assessment·trajectory 3s·2회 / videos/search 4s·2회 /
+ * 엔드포인트별 타임아웃·재시도(계약 §5): assessment 3s·2회 / videos/search 4s·2회 /
  * coach/messages 10s·0회 / POST coach/runs 2s·0회 / GET coach/runs/{id} 3s.
  * 오류 봉투 `{"error":{"code","message"}}` → 409 {@link AiRunInProgressException} · 404 {@link AiRunNotFoundException} ·
  * 400 {@link AiBadRequestException} · 그 외와 연결 실패·타임아웃 → {@link AiUnavailableException}(503).
@@ -86,19 +87,6 @@ public class HttpAiGateway implements AiGateway {
                         AiWire.ProfileBody.of(request.profile()),
                         AiWire.AssessmentBody.class,
                         AiWire.AssessmentBody::toDomain));
-    }
-
-    @Override
-    public TrajectoryResponse trajectory(TrajectoryRequest request) {
-        return withRetry(
-                2,
-                "fitness/trajectory",
-                () -> post(
-                        assessmentClient,
-                        "/fitness/trajectory",
-                        AiWire.TrajectoryRequestBody.of(request),
-                        AiWire.TrajectoryBody.class,
-                        AiWire.TrajectoryBody::toDomain));
     }
 
     @Override
@@ -172,15 +160,15 @@ public class HttpAiGateway implements AiGateway {
         } catch (RestClientResponseException e) {
             throw translate(what, e);
         } catch (ResourceAccessException e) {
-            throw new AiUnavailableException("AI 연결 실패·타임아웃: " + what + " — " + e.getMessage(), e);
+            throw new AiUnavailableException("AI 에 연결하지 못했거나 시간이 넘었다: " + what + ": " + e.getMessage(), e);
         } catch (RestClientException e) {
-            throw new AiUnavailableException("AI 응답 본문을 읽지 못했다: " + what + " — " + e.getMessage(), e);
+            throw new AiUnavailableException("AI 응답 본문을 읽지 못했다: " + what + ": " + e.getMessage(), e);
         }
         if (body == null) throw new AiUnavailableException("AI 응답이 비어 있다: " + what);
         try {
             return toDomain.apply(body);
         } catch (RuntimeException e) {
-            throw new AiUnavailableException("AI 응답을 해석하지 못했다: " + what + " — " + e, e);
+            throw new AiUnavailableException("AI 응답을 해석하지 못했다: " + what + ": " + e, e);
         }
     }
 
@@ -239,9 +227,13 @@ public class HttpAiGateway implements AiGateway {
         return b.build();
     }
 
-    /** JDK HttpClient. 연결 1초, 읽기는 엔드포인트별. */
+    /**
+     * JDK HttpClient. 연결 1초, 읽기는 엔드포인트별. HTTP/1.1 로 고정한다 — 기본(HTTP/2)이면 평문 http 주소에도 「Upgrade: h2c」 를 붙여
+     * 보내는데, AI(uvicorn)는 h2c 를 받지 않아 부를 때마다 「Unsupported upgrade request」 경고를 남겼다.
+     */
     public static ClientHttpRequestFactory jdkFactory(Duration readTimeout) {
         return ClientHttpRequestFactoryBuilder.jdk()
+                .withHttpClientCustomizer(client -> client.version(HttpClient.Version.HTTP_1_1))
                 .build(HttpClientSettings.defaults().withTimeouts(CONNECT_TIMEOUT, readTimeout));
     }
 

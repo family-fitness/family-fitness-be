@@ -1,7 +1,9 @@
 package kr.ac.kookmin.familyfitness.shared.config;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -13,8 +15,19 @@ public record AppProperties(
         @DefaultValue Cors cors,
         @DefaultValue Auth auth,
         @DefaultValue Ai ai) {
+    /**
+     * frontendBaseUrl 은 초대 링크(shareUrl)의 앞머리다. http(s):// 로 시작하지 않으면 기동을 멈춘다 — prod 는 기본값 없이
+     * APP_FRONTEND_BASE_URL 을 요구하므로(application-prod.properties) 빠뜨리면 빈 값이 들어와 여기서 멈춘다.
+     */
     @ConstructorBinding
-    public AppProperties {}
+    public AppProperties {
+        String url = frontendBaseUrl.strip();
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw new IllegalArgumentException(
+                    "app.frontend-base-url 은 http(s):// 로 시작하는 FE 주소여야 한다 (APP_FRONTEND_BASE_URL): '" + frontendBaseUrl
+                            + "'");
+        }
+    }
 
     public AppProperties() {
         this("Asia/Seoul", "http://localhost:5173", new Cors(), new Auth(), new Ai());
@@ -38,30 +51,53 @@ public record AppProperties(
             @DefaultValue Jwt jwt,
             @DefaultValue DevLogin devLogin,
             @DefaultValue DevAutoLogin devAutoLogin,
+            @DefaultValue ReviewLogin reviewLogin,
             @DefaultValue Google google) {
         @ConstructorBinding
         public Auth {}
 
         public Auth() {
-            this(new Jwt(), new DevLogin(), new DevAutoLogin(), new Google());
+            this(new Jwt(), new DevLogin(), new DevAutoLogin(), new ReviewLogin(), new Google());
         }
     }
 
-    /** local 시연용. 토큰 없는 요청을 {@code userId} 로 인증한다. 운영에서는 항상 꺼져 있다. */
-    public record DevAutoLogin(
+    /**
+     * 심사용 계정 로그인(`POST /api/v1/auth/review-login`). 부를 때마다 새 계정과 체험 가족을 만든다.
+     * 심사위원이 운영 서버에서 구글 계정 없이 둘러보라고 여는 길이라 개발용 기능이 아니다 — local · compose · prod 에서 켜고,
+     * DevFeatureGuard 목록에 넣지 않는다.
+     *
+     * @param until 받는 마지막 날(app.timezone 날짜, 그날 포함). 그 뒤로는 켜져 있어도 꺼진 것과 같게 404 다. 없으면 켜져 있는 동안 늘 받는다.
+     *     prod 는 기본 2026-10-31 이다(APP_AUTH_REVIEW_LOGIN_UNTIL) — 심사가 끝난 뒤 끄는 것을 잊어도 계정을 만드는 길이 열려 있지 않게.
+     */
+    public record ReviewLogin(
             @DefaultValue("false") boolean enabled,
-            @DefaultValue("") String userId) {
+            @Nullable LocalDate until) {
+        @ConstructorBinding
+        public ReviewLogin {}
+
+        public ReviewLogin() {
+            this(false, null);
+        }
+
+        /** 그날 심사용 계정 로그인을 받는지. 켜져 있고, 끝나는 날이 없거나 그날이 끝나는 날을 넘지 않았다. */
+        public boolean openOn(LocalDate today) {
+            return enabled && (until == null || !today.isAfter(until));
+        }
+    }
+
+    /** local 시연용. `X-Dev-User-Id` 헤더를 보낸 요청을 그 계정으로 인증한다. 운영에서는 항상 꺼져 있다. */
+    public record DevAutoLogin(@DefaultValue("false") boolean enabled) {
         @ConstructorBinding
         public DevAutoLogin {}
 
         public DevAutoLogin() {
-            this(false, "");
+            this(false);
         }
     }
 
     public record Jwt(
             @DefaultValue("familyfitness") String issuer,
-            /** HS256 대칭키. 32바이트 이상. 운영에서는 APP_JWT_SECRET 환경변수로 주입한다. */
+            /* HS256 대칭키. 32바이트 이상. 운영에서는 APP_JWT_SECRET 환경변수로 주입한다. */
             @DefaultValue("") String secret,
             @DefaultValue("1h") Duration accessTtl,
             @DefaultValue("30d") Duration refreshTtl) {
