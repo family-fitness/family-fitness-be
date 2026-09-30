@@ -280,14 +280,17 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 맞는 클립이 없을 때(클립 표가 비었거나 조건에 걸려 본운동이 없을 때)의 예전 편성: 대상 연령대에 맞고 그 요인 라벨이 있는 영상 중
-     * 연령 범위가 좁은 것, 같으면 짧은 것을 통째로 본운동 한 칸에 넣는다. 그런 영상도 없으면 영상 없는 본운동 한 칸.
+     * 제 연령대를 겨냥한 것(어르신이 받는 성인 영상은 뒤로), 연령 범위가 좁은 것, 같으면 짧은 것을 통째로 본운동 한 칸에 넣는다.
+     * 그런 영상도 없으면 영상 없는 본운동 한 칸.
      */
     private Plan wholeVideoPlan(List<Citation> base, AgeGroup ageGroup, FitnessFactor factor) {
         ExerciseVideo video = videos.findAllAfter(null).stream()
                 .filter(it ->
                         it.getLabel().suitableFor(ageGroup) && it.getLabel().hasFactor(factor.getLabel()))
-                // 연령 범위가 좁은(그 연령대를 겨냥한) 영상을 먼저, 같으면 짧은 것
-                .sorted(Comparator.comparingInt(LabelBasedProposalPlanner::ageSpan)
+                // 제 연령대를 겨냥한 영상 → 연령 범위가 좁은 영상 → 짧은 영상
+                .sorted(Comparator.comparing(
+                                (ExerciseVideo it) -> !it.getLabel().aimsAt(ageGroup))
+                        .thenComparingInt(LabelBasedProposalPlanner::ageSpan)
                         .thenComparingInt(LabelBasedProposalPlanner::durationOrMax))
                 .findFirst()
                 .orElse(null);
