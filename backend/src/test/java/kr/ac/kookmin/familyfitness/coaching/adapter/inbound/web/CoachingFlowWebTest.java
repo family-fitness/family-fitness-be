@@ -6,6 +6,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -956,6 +957,75 @@ class CoachingFlowWebTest {
                         .value(videoId))
                 .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + runId + "')].video.url")
                         .value("https://www.youtube.com/watch?v=" + videoId));
+    }
+
+    @Test
+    @DisplayName("AI 가 칸 요인을 빈 문자열로 보내면 제안 · 미션 칸의 factor 는 null 로 나가고, 공단 영상 칸은 mp4 · 첫 장면 주소와 AI 인용을 그대로 싣는다")
+    void 빈_요인_칸은_factor_null_로_나가고_공단_영상_칸은_mp4_로_나간다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        CoachRun run = Runs.running(familyId(), childId(), time.today(), parentId(), time.now());
+        tx.executeWithoutResult(
+                status -> assertThat(coachRuns.insertRunning(run)).isTrue());
+        // AI 명세 82b3614 · 담당자 코드 모양: 요인 라벨이 없는 클립이고 대상 요인도 없으면 fitness_factor 는 "", 공단 영상은 url 이 mp4 다
+        String mp4 = "https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00234.mp4";
+        CoachRunResult.Session session = new CoachRunResult.Session(
+                0,
+                "본운동",
+                1,
+                "누워서 배가로근 수축1",
+                "",
+                60,
+                new CoachRunResult.Video("0AUDLJ08S_00234", 0, 60, CoachRunResult.Video.SOURCE_KSPO, mp4),
+                List.of(1));
+        CoachRunResult.Mission mission = new CoachRunResult.Mission(
+                "일간",
+                "코어 깨우기",
+                time.today().toString(),
+                time.today().toString(),
+                List.of(new CoachRunResult.ParticipantRef(ProfileRef.of(childId()), "주행자")),
+                10,
+                60,
+                List.of(session),
+                "아이",
+                "부모",
+                "배 속 근육을 깨웁니다 [1].");
+        pipeline.complete(
+                run.getId(),
+                new CoachRunResult(
+                        "cr_empty_factor",
+                        "succeeded",
+                        List.of(),
+                        new CoachRunResult.Proposal(
+                                List.of(mission),
+                                List.of(new Citation(
+                                        1, "국민체력100 운동처방동영상 · 누워서 배가로근 수축 I", "kspo:0AUDLJ08S_00234", mp4)),
+                                List.of()),
+                        false,
+                        null));
+
+        mockMvc.perform(get("/api/v1/coach/runs/" + run.getId()).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.proposals[0].sessions", hasSize(1)))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].title").value("누워서 배가로근 수축1"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].factor").value(nullValue()))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.videoId").value("0AUDLJ08S_00234"))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.mediaUrl").value(mp4))
+                .andExpect(jsonPath("$.proposals[0].sessions[0].clip.thumbnailUrl")
+                        .value(startsWith("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00234/")))
+                .andExpect(jsonPath("$.proposals[0].video.url").value(mp4))
+                .andExpect(jsonPath("$.proposals[0].citations[0].chunkId").value("kspo:0AUDLJ08S_00234"))
+                .andExpect(jsonPath("$.proposals[0].citations[0].label").value("국민체력100 운동처방동영상 · 누워서 배가로근 수축 I"))
+                .andExpect(jsonPath("$.proposals[0].citations[0].url").value(mp4));
+        mockMvc.perform(post("/api/v1/coach/runs/" + run.getId() + "/approve")
+                        .header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/families/" + familyId() + "/missions").header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + run.getId() + "')].sessions[0].factor")
+                        .value(contains((Object) null)))
+                .andExpect(jsonPath("$.missions[?(@.coachRunId=='" + run.getId() + "')].sessions[0].clip.mediaUrl")
+                        .value(contains(mp4)));
     }
 
     @Test

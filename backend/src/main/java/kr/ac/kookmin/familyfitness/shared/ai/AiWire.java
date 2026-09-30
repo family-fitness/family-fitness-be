@@ -401,7 +401,10 @@ final class AiWire {
         /**
          * video_id 가 빠졌거나 null · 빈칸이면 영상이 없는 세션으로 읽는다. 도메인 {@link CoachRunResult.Video#videoId} 는
          * null 이 아니어야 한다 — 칸 변환과 구간 제목 조회가 그 값을 바로 쓴다. 영상 하나 때문에 제안 전체를 버리지 않는다.
-         * source(youtube · kspo) · media_url(공단 영상의 mp4 주소)은 없어도 읽힌다. 빈칸은 null 로 읽는다.
+         * source(youtube · kspo) · url 은 없어도 읽힌다. 빈칸은 null 로 읽는다.
+         * url 은 AI 가 트는 주소다(ai:video/catalog.py Clip.as_video). 공단 영상(source=kspo)이면 mp4 주소라 도메인 mediaUrl 로 쓰고,
+         * 유튜브면 watch?v=&lt;id&gt;&amp;t=&lt;초&gt;s 라 버린다 — 유튜브는 videoId · 구간으로 튼다.
+         * url 이 없으면 옛 응답의 media_url(공단 영상의 mp4 주소)을 쓴다.
          */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record VideoBody(
@@ -409,10 +412,14 @@ final class AiWire {
                 @JsonProperty("start_sec") @Nullable Integer startSec,
                 @JsonProperty("end_sec") @Nullable Integer endSec,
                 @JsonProperty("source") @Nullable String source,
+                @JsonProperty("url") @Nullable String url,
                 @JsonProperty("media_url") @Nullable String mediaUrl) {
             CoachRunResult.@Nullable Video toDomain() {
                 if (videoId == null || videoId.isBlank()) return null;
-                return new CoachRunResult.Video(videoId, startSec, endSec, blankToNull(source), blankToNull(mediaUrl));
+                String kind = blankToNull(source);
+                String played = CoachRunResult.Video.SOURCE_KSPO.equals(kind) ? blankToNull(url) : null;
+                return new CoachRunResult.Video(
+                        videoId, startSec, endSec, kind, played != null ? played : blankToNull(mediaUrl));
             }
 
             private static @Nullable String blankToNull(@Nullable String value) {
