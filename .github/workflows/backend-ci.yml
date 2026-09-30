@@ -1,10 +1,13 @@
 name: backend-ci
 
+# main 에 올라온 코드는 backend-deploy 가 이 작업을 먼저 부르고, 통과해야 배포한다(workflow_call).
+# 그래서 push 는 develop 만 본다. main 도 보면 같은 시험이 두 번 돈다.
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths: ["backend/**", ".github/workflows/backend-ci.yml"]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

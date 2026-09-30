@@ -1,0 +1,64 @@
+# 운영 서버(Lightsail ff-backend)에서 도는 묶음: PostgreSQL 과 BE(app).
+# 서버의 /opt/familyfitness 에 이 파일과 deploy.sh, .env 가 있다(deploy/README.md).
+# 배포 작업(backend-deploy)은 main 에 올라온 코드마다 이 파일을 다시 올리고 app 이미지만 바꿔 띄운다.
+#
+# BE 는 공인 IP 에 포트를 열지 않는다. FE 서버(ff-frontend)의 Next 가 같은 리전의 사설 IP 로 부른다.
+# Lightsail 방화벽은 공인 IP 로 들어오는 요청에만 걸리고, 같은 계정 같은 리전의 사설 IP 요청은 막지 않는다.
+name: familyfitness
+
+# BE 는 로그를 표준 출력으로만 낸다. journald 로 모아 30일 뒤 지운다(server-setup.sh, backend/README.md 「로그와 IP 보관」).
+x-logging: &logging
+  driver: journald
+  options:
+    tag: "{{.Name}}"
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    # 1GB 서버에 맞춰 줄인다. DB 가 작아 공유 버퍼 64MB 로 모자라지 않고, app 의 커넥션 풀은 10개다
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30"]
+    environment:
+      POSTGRES_DB: familyfitness
+      POSTGRES_USER: familyfitness
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env 에 POSTGRES_PASSWORD 가 없다}
+    # postgres 18 이미지부터 데이터는 /var/lib/postgresql/18/docker 에 둔다. 그 위 폴더를 볼륨으로 잡는다
+    volumes:
+      - pgdata:/var/lib/postgresql
+    # 포트를 서버 밖에도, 서버 안(호스트)에도 열지 않는다. 들여다볼 때: docker compose exec postgres psql -U familyfitness
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familyfitness -d familyfitness"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  app:
+    image: ${BACKEND_IMAGE:?.env 에 BACKEND_IMAGE 가 없다. deploy.sh 가 배포할 때 적는다}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # .env 의 값(APP_JWT_SECRET, GOOGLE_*, APP_FRONTEND_BASE_URL 등)을 그대로 넘긴다.
+    # 적지 않은 값은 넘기지 않아 application.properties 의 기본값이 쓰인다
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/familyfitness
+      SPRING_DATASOURCE_USERNAME: familyfitness
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+      # 1GB 서버에 맞춘 JVM 설정. GC 뒤 힙은 120MB 안팎이라 256MB 로 넉넉하다.
+      # JIT 은 C1 만 쓴다. C2 까지 쓰면 컴파일에 메모리와 CPU 를 더 쓰는데, 이 서버의 요청량에서는 빨라지는 것이 거의 없다
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xss512k -XX:+ExitOnOutOfMemoryError}
+    # 메모리가 새면 app 만 죽고 다시 뜨게 한도를 둔다. 한도가 없으면 커널이 postgres 를 대신 죽일 수 있다
+    mem_limit: 640m
+    ports:
+      # deploy.sh 가 새 app 이 떴는지 여기로 확인한다
+      - "127.0.0.1:8080:8080"
+      # FE 가 부르는 사설 IP. server-setup.sh 가 .env 에 적는다
+      - "${BE_PRIVATE_IP:?.env 에 BE_PRIVATE_IP 가 없다}:8080:8080"
+    logging: *logging
+
+volumes:
+  pgdata:
