@@ -579,7 +579,7 @@ class LeagueServiceTest {
                 .extracting(LeagueView.Standing::score)
                 .isSortedAccordingTo(java.util.Comparator.reverseOrder());
         assertThat(at(MID_SEPTEMBER).service().league(reviewer, trial, null))
-                .as("같은 체험 가족은 날마다 · 부를 때마다 같은 가짜 가족을 본다")
+                .as("같은 날에는 부를 때마다 같은 가짜 가족을 본다")
                 .isEqualTo(view);
         assertThat(repository.rounds).as("DB 의 실제 방을 만들지 않는다").isEmpty();
         assertThat(repository.members).isEmpty();
@@ -594,6 +594,35 @@ class LeagueServiceTest {
                 .isNotEqualTo(view.standings().stream()
                         .map(LeagueView.Standing::familyName)
                         .toList());
+    }
+
+    @Test
+    @DisplayName("체험 방의 가짜 가족 점수는 그달에 지난 날로 센다 — 달 첫날에는 하루를 했거나 안 했거나라 달성률 0 · 점수 0 이거나 달성률 100 · 점수 1 이다")
+    void 체험_방_가짜_가족은_달_첫날에_하루치_점수만_있다() {
+        UUID trial = family("체험 가족", 1);
+
+        LeagueView firstDay = at(OCTOBER_SETTLE).service().league(reviewer, trial, null);
+
+        assertThat(firstDay.month()).isEqualTo("2026-10");
+        assertThat(firstDay.standings())
+                .filteredOn(it -> !it.me())
+                .hasSize(TrialLeague.FAKE_FAMILIES)
+                .allSatisfy(it -> assertThat(List.of(it.rate(), it.score())).isIn(List.of(0, 0.0), List.of(100, 1.0)));
+    }
+
+    @Test
+    @DisplayName("체험 방의 가짜 가족 점수는 실제 가족과 같은 공식이다 — 운동한 날 = 지난 날 × 달성률, 점수 = 달성률 × ln(1+운동한 날) ÷ ln(1+지난 날)")
+    void 체험_방_가짜_가족_점수는_실제와_같은_공식() {
+        UUID trial = family("체험 가족", 1);
+
+        LeagueView view = at(MID_SEPTEMBER).service().league(reviewer, trial, null);
+
+        int elapsed = 15;
+        assertThat(view.standings()).filteredOn(it -> !it.me()).allSatisfy(it -> {
+            long moved = Math.round(elapsed * it.rate() / 100.0);
+            double expected = (double) moved / elapsed * Math.log1p(moved) / Math.log1p(elapsed);
+            assertThat(it.score()).isCloseTo(expected, org.assertj.core.api.Assertions.within(0.0001));
+        });
     }
 
     @Test

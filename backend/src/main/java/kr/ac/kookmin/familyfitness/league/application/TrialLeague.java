@@ -19,8 +19,12 @@ import org.jspecify.annotations.Nullable;
  * <pre>
  * 티어      브론즈(처음 들어온 가족과 같다)
  * 우리 가족  자리 1. 달성률 · 점수는 실제 가족과 같은 셈으로 지금 센다
- * 가짜 가족  자리 2~8. 이름 · 달성률(30~100%) · 점수는 체험 가족 id 를 시드로 삼아 뽑아 부를 때마다 같다.
- *           점수 = 달성률 ÷ 100 × (0.45~1) — 실제 셈처럼 날마다 한 집이 달성률 같은 하루치 집보다 앞선다
+ * 가짜 가족  자리 2~8. 이름과 기본 달성률(30~100%)은 체험 가족 id 를 시드로 삼아 뽑아 부를 때마다 같다.
+ *           달성률 · 점수는 그달에 지난 날(오늘까지, 1일이면 1)로 센다 — 날짜와 상관없이 같으면 달 첫날에 나올 수 없는 점수가 보인다.
+ *             운동한 날 = 지난 날 × 기본 달성률 을 반올림
+ *             달성률    = 운동한 날 ÷ 지난 날 × 100 을 반올림(날마다 잡힌 날로 본다)
+ *             점수      = 운동한 날 ÷ 지난 날 × ln(1 + 운동한 날) ÷ ln(1 + 지난 날) — 실제 가족의 점수({@link
+ *                         kr.ac.kookmin.familyfitness.league.domain.AchievementRate})와 같은 공식
  * </pre>
  *
  * DB 의 방(league_rounds · league_members)에 적지 않으므로 월초 정산 · 다른 가족의 순위표에 나오지 않는다. 지난달 방도 없다.
@@ -41,7 +45,11 @@ final class TrialLeague {
      */
     record Room(LeagueTable table, Map<UUID, String> names) {}
 
-    static Room of(UUID trialFamilyId, @Nullable Result mine) {
+    /**
+     * @param elapsedDays 그달에 지난 날(오늘 포함, 1 이상) — 이번 달 오늘의 날짜
+     */
+    static Room of(UUID trialFamilyId, @Nullable Result mine, int elapsedDays) {
+        int elapsed = Math.max(1, elapsedDays);
         Random random = new Random(trialFamilyId.getMostSignificantBits() ^ trialFamilyId.getLeastSignificantBits());
         List<String> pool = new ArrayList<>(NAMES);
         Collections.shuffle(pool, random);
@@ -52,8 +60,11 @@ final class TrialLeague {
         for (int i = 0; i < FAKE_FAMILIES; i++) {
             UUID fakeId =
                     UUID.nameUUIDFromBytes((trialFamilyId + "/trial-league/" + i).getBytes(StandardCharsets.UTF_8));
-            int rate = 30 + random.nextInt(71);
-            double score = Math.round(rate / 100.0 * (0.45 + random.nextDouble() * 0.55) * 10_000) / 10_000.0;
+            int baseRate = 30 + random.nextInt(71);
+            long moved = Math.round(elapsed * baseRate / 100.0);
+            double fraction = (double) moved / elapsed;
+            int rate = (int) Math.round(fraction * 100);
+            double score = Math.round(fraction * Math.log1p(moved) / Math.log1p(elapsed) * 10_000) / 10_000.0;
             seats.add(new LeagueTable.Seat(fakeId, i + 2, rate, score));
             names.put(fakeId, pool.get(i));
         }

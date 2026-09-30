@@ -137,7 +137,7 @@ public class LeagueService {
         if (!month.equals(current)) throw new LeagueNotFoundException();
         return read(() -> {
             TrialLeague.Room room = TrialLeague.of(
-                    familyId, rates.of(List.of(familyId), month, today).get(familyId));
+                    familyId, rates.of(List.of(familyId), month, today).get(familyId), today.getDayOfMonth());
             return view(month, room.table(), familyId, month.lengthOfMonth() - today.getDayOfMonth(), room.names());
         });
     }
