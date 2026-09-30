@@ -617,12 +617,16 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.videos[0].label.factors[0]").value("근력"))
                 .andExpect(jsonPath("$.videos[0].favorited").value(false))
                 .andExpect(jsonPath("$.nextCursor", nullValue()));
-        // 어르신: 공단 어르신 영상은 V164 부터 싣지 않는다. 성인(공통) 영상을 똑같이 받는다
-        mockMvc.perform(get("/api/v1/videos?ageGroup=어르신&size=1").header(HttpHeaders.AUTHORIZATION, child))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.videos", hasSize(1)))
-                .andExpect(jsonPath("$.videos[0].videoId").value("0AUDLJ08S_00181"))
-                .andExpect(jsonPath("$.videos[0].label.ageFrom").value(19));
+        // 어르신: 공단 어르신 영상은 V164 부터 싣지 않는다. 성인(공통) 영상을 똑같이 받는다.
+        // 「공통」 영상은 V165 부터 청소년 · 성인 두 연령대라 연령 범위가 13 ~ 64세다 — 청소년 목록에도 같은 영상이 나온다
+        for (String ageGroup : List.of("어르신", "청소년")) {
+            mockMvc.perform(get("/api/v1/videos?size=1&ageGroup=" + ageGroup).header(HttpHeaders.AUTHORIZATION, child))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.videos", hasSize(1)))
+                    .andExpect(jsonPath("$.videos[0].videoId").value("0AUDLJ08S_00181"))
+                    .andExpect(jsonPath("$.videos[0].label.ageFrom").value(13))
+                    .andExpect(jsonPath("$.videos[0].label.ageTo").value(64));
+        }
         // 커서: videoId 오름차순으로 다음 유소년 영상
         mockMvc.perform(get("/api/v1/videos?ageGroup=유소년&size=1&cursor=Eg3GpTv7z8s")
                         .header(HttpHeaders.AUTHORIZATION, child))

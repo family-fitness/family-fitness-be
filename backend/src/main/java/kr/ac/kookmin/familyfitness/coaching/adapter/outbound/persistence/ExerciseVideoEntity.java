@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * `exercise_videos` 행. 유튜브 AI 영상은 V132(scripts/ai_clips_to_sql.py), 공단 오픈API 영상은 V161(scripts/kspo_videos_to_sql.py)
- * 적재 마이그레이션이 채우고 이 모듈은 읽기만 한다. media_url · thumbnail_url 은 공단 영상에만 있다.
+ * 적재 마이그레이션이 채우고 이 모듈은 읽기만 한다. media_url · thumbnail_url · citation_label(V165) 은 공단 영상에만 있다.
  */
 @Entity
 @Table(name = "exercise_videos")
@@ -73,6 +73,9 @@ public class ExerciseVideoEntity {
     @Column(name = "thumbnail_url", length = 300)
     private @Nullable String thumbnailUrl;
 
+    @Column(name = "citation_label", length = 120)
+    private @Nullable String citationLabel;
+
     protected ExerciseVideoEntity() {}
 
     public ExerciseVideoEntity(
@@ -123,7 +126,8 @@ public class ExerciseVideoEntity {
                 equipment,
                 labeledBy,
                 collectedAt,
-                media());
+                media(),
+                citationLabel);
     }
 
     /** 공단 영상이면 mp4 · 첫 장면 주소, 유튜브 영상이면 {@link VideoMedia#NONE}. */

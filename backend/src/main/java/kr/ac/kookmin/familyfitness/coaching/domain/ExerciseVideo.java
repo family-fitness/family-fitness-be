@@ -26,6 +26,7 @@ public class ExerciseVideo {
     private final String labeledBy;
     private final Instant collectedAt;
     private final VideoMedia media;
+    private final @Nullable String citationLabel;
 
     public ExerciseVideo(
             String videoId,
@@ -61,6 +62,35 @@ public class ExerciseVideo {
             String labeledBy,
             Instant collectedAt,
             VideoMedia media) {
+        this(
+                videoId,
+                title,
+                channelName,
+                channelType,
+                durationSec,
+                label,
+                equipment,
+                labeledBy,
+                collectedAt,
+                media,
+                null);
+    }
+
+    /**
+     * @param citationLabel 근거로 들 때의 이름. 공단 영상만 AI 표 값(예: 「국민체력100 운동처방동영상 · 걷기」, V165)이 있고, 없으면 null
+     */
+    public ExerciseVideo(
+            String videoId,
+            String title,
+            String channelName,
+            String channelType,
+            @Nullable Integer durationSec,
+            VideoLabel label,
+            @Nullable String equipment,
+            String labeledBy,
+            Instant collectedAt,
+            VideoMedia media,
+            @Nullable String citationLabel) {
         this.videoId = videoId;
         this.title = title;
         this.channelName = channelName;
@@ -71,6 +101,7 @@ public class ExerciseVideo {
         this.labeledBy = labeledBy;
         this.collectedAt = collectedAt;
         this.media = media;
+        this.citationLabel = citationLabel;
     }
 
     public String getVideoId() {
@@ -119,6 +150,11 @@ public class ExerciseVideo {
     public String getThumbnailUrl() {
         String thumbnailUrl = media.thumbnailUrl();
         return thumbnailUrl != null ? thumbnailUrl : "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+    }
+
+    /** AI 가 이 영상을 근거로 들 때 쓰는 이름. 공단 영상만 있다(V165). */
+    public @Nullable String getCitationLabel() {
+        return citationLabel;
     }
 
     /** 유튜브가 아닌 영상의 주소. 유튜브 영상은 {@link VideoMedia#NONE}. */

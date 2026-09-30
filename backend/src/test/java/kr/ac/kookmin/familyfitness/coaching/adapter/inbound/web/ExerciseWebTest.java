@@ -48,8 +48,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * H2 + Flyway(V132 유튜브 클립 적재 · V141 구간 찜 · V161 공단 영상 클립 적재) 위에서 운동 구간 목록과 찜 주소를 끝까지 돈다.
- * 수는 AI 커밋 2af9002(유튜브) · 610959a(공단) 판 기준이다. 목록은 유튜브 구간과 공단 영상을 번갈아 세운다(ExerciseService.alternateSources).
+ * H2 + Flyway(V132 유튜브 클립 적재 · V141 구간 찜 · V161 ~ V165 공단 영상 클립 적재) 위에서 운동 구간 목록과 찜 주소를 끝까지 돈다.
+ * 수는 AI 커밋 2af9002(유튜브) · a84d392(공단) 커밋 기준이다. 공단 영상은 AI 표의 연령대 · 요인 · 단계 줄마다 후보가 된다(V165). 목록은 유튜브 구간과 공단 영상을 번갈아 세운다(ExerciseService.alternateSources).
  * identity 는 목: 같은 가족 판단과 계정의 자기 프로필만 흉내 낸다. 찜 행의 FK 때문에 프로필 행은 실제로 넣는다.
  */
 @SpringBootTest
@@ -57,8 +57,8 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("test")
 @Transactional
 class ExerciseWebTest {
-    /** 성인이 보는 운동 찾기 전체(같은 제목 하나씩). 어르신도 같은 수다. */
-    private static final int ADULT_TOTAL = 172;
+    /** 성인이 보는 운동 찾기 전체(같은 제목 하나씩). 어르신도 같은 수다. V165 에서 공단 클립 제목이 AI 표 이름으로 바뀌어 172 → 182. */
+    private static final int ADULT_TOTAL = 182;
 
     @Autowired
     MockMvc mvc;
@@ -151,7 +151,7 @@ class ExerciseWebTest {
         // 유튜브 구간과 공단 영상 구간을 같은 제목 하나씩 모아 156개. 유튜브 · 공단을 번갈아 세운다
         list(parentUser, "profileId", childId.toString())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(156))
+                .andExpect(jsonPath("$.total").value(157))
                 .andExpect(jsonPath("$.clips", hasSize(40)))
                 .andExpect(jsonPath("$.clips[0].clipId").value("Eg3GpTv7z8s-102"))
                 .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00351-0"))
@@ -163,7 +163,8 @@ class ExerciseWebTest {
                 .andExpect(jsonPath("$.clips[1].phase").value("MAIN"))
                 .andExpect(jsonPath("$.clips[1].homeOk").value(true))
                 .andExpect(jsonPath("$.clips[1].quiet").value(true))
-                .andExpect(jsonPath("$.clips[1].props").value(true))
+                // V165: AI 표는 매트로 하는 팔굽혀펴기를 준비물 없음(needs_props False)으로 둔다
+                .andExpect(jsonPath("$.clips[1].props").value(false))
                 .andExpect(jsonPath("$.clips[1].favorited").value(false))
                 .andExpect(jsonPath("$.clips[1].mediaUrl")
                         .value("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4"))
@@ -230,6 +231,40 @@ class ExerciseWebTest {
                 .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00181-0"));
         list(parentUser, "profileId", grandpaId.toString(), "q", "빠르게 걷기")
                 .andExpect(jsonPath("$.clips[*].clipId", hasItem("0AUDLJ08S_00182-0")));
+        // 청소년에게만 있는 공단 영상(복식 호흡 00919)은 어르신 · 성인 목록에 나오지 않는다
+        list(parentUser, "profileId", grandpaId.toString(), "q", "복식 호흡")
+                .andExpect(jsonPath("$.total").value(0));
+    }
+
+    @Test
+    @DisplayName("청소년이 보면 청소년 공단 영상과 「공통」 공단 영상을 함께 받는다 — V165 부터 「공통」 은 청소년 · 성인 두 줄이다")
+    void 청소년이_보면_공통_공단_영상도_받는다() throws Exception {
+        UUID teenId = rows.profile(familyId, LocalDate.of(2011, 6, 1), Sex.F, ProfileRole.CHILD, "하은");
+        when(familyAccess.requireSameFamilyAsProfile(parentUser, teenId))
+                .thenReturn(summary(teenId, "하은", ProfileRole.CHILD, AgeGroup.ADOLESCENT));
+
+        // 「공통」 걷기(00181)는 청소년 줄로 나오고, 청소년에게만 있는 복식 호흡(00919)도 나온다
+        list(parentUser, "profileId", teenId.toString())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.clips", hasSize(40)))
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00181-0"))
+                .andExpect(jsonPath("$.clips[1].title").value("걷기"))
+                .andExpect(jsonPath("$.clips[1].factor").value("심폐지구력"));
+        list(parentUser, "profileId", teenId.toString(), "q", "빠르게 걷기")
+                .andExpect(jsonPath("$.clips[*].clipId", hasItem("0AUDLJ08S_00182-0")));
+        list(parentUser, "profileId", teenId.toString(), "q", "복식 호흡")
+                .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00919-0")));
+        // 준비 · 정리 둘인 영상은 두 단계 목록에 모두 나온다(나무 자세 00943)
+        list(parentUser, "profileId", teenId.toString(), "phase", "WARMUP", "q", "나무 자세")
+                .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00943-0")))
+                .andExpect(jsonPath("$.clips[0].phase").value("WARMUP"));
+        list(parentUser, "profileId", teenId.toString(), "phase", "COOLDOWN", "q", "나무 자세")
+                .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00943-0")))
+                .andExpect(jsonPath("$.clips[0].phase").value("COOLDOWN"));
+        // 요인이 둘인 영상은 두 요인 목록에 모두 나온다(팔굽혀펴기 00248: 근력 · 근지구력)
+        list(parentUser, "profileId", teenId.toString(), "factor", "근지구력", "q", "팔굽혀펴기")
+                .andExpect(jsonPath("$.clips[*].clipId", hasItem("0AUDLJ08S_00248-0")))
+                .andExpect(jsonPath("$.clips[?(@.clipId == '0AUDLJ08S_00248-0')].factor", contains("근지구력")));
     }
 
     @Test
@@ -281,9 +316,10 @@ class ExerciseWebTest {
                 .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00311-0")))
                 .andExpect(jsonPath("$.clips[0].title").value("앉았다 일어서면서 점프하기"));
         list(parentUser, "profileId", childId.toString(), "quiet", "true")
-                .andExpect(jsonPath("$.total").value(128));
+                .andExpect(jsonPath("$.total").value(134));
+        // V165: 유소년 스트레칭(00410 ~ 00417 등)이 준비 · 정리 두 줄이라 준비운동 목록에도 나온다
         list(parentUser, "profileId", childId.toString(), "phase", "WARMUP")
-                .andExpect(jsonPath("$.total").value(29));
+                .andExpect(jsonPath("$.total").value(42));
     }
 
     @Test

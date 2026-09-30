@@ -57,7 +57,7 @@ public class LabelBasedProposalPlanner {
     /** 한 세트로 삼기 좋은 클립 길이(ai:video/catalog.py SET_SECONDS). 같은 순위면 이 길이에 가까운 것부터 고른다. */
     static final int SET_SECONDS = 60;
 
-    /** 공단 오픈API 영상 인용(ai:video/catalog.py KSPO_CITATION · chunk_id "kspo:<video_id>"). 코퍼스 색인에 없는 영상이라 표에서 세운다. */
+    /** 공단 오픈API 영상 인용 이름이 없을 때의 앞머리(chunk_id 는 AI 와 같은 "kspo:<video_id>"). 코퍼스 색인에 없는 영상이라 표에서 세운다. */
     static final String KSPO_CITATION = "국민체력100 동영상 정보";
 
     static final String KSPO_CHUNK_PREFIX = "kspo:";
@@ -321,14 +321,20 @@ public class LabelBasedProposalPlanner {
 
     /**
      * 영상 인용. 유튜브 영상은 코퍼스와 같은 "video:&lt;id&gt;" · 「국민체력100 운동영상 · 제목」 · 보기 주소, 공단 영상은 AI 와 같은
-     * "kspo:&lt;id&gt;" · 「국민체력100 동영상 정보 · 제목」 · mp4 주소다.
+     * "kspo:&lt;id&gt;" · AI 표의 인용 이름(citation_label, 예: 「국민체력100 운동처방동영상 · 걷기」) · mp4 주소다. 인용 이름이 없는
+     * 영상(V165 앞에 실린 채 꺼진 영상)은 「국민체력100 동영상 정보 · 제목」 이다.
      */
     private static Citation videoCitation(
             int index, String videoId, @Nullable ExerciseVideo video, String fallbackTitle) {
         String title = video == null ? fallbackTitle : video.getTitle();
         String mediaUrl = VideoMedia.of(video).mediaUrl();
         if (mediaUrl != null) {
-            return new Citation(index, KSPO_CITATION + " · " + title, KSPO_CHUNK_PREFIX + videoId, mediaUrl);
+            String label = video == null ? null : video.getCitationLabel();
+            return new Citation(
+                    index,
+                    label != null ? label : KSPO_CITATION + " · " + title,
+                    KSPO_CHUNK_PREFIX + videoId,
+                    mediaUrl);
         }
         return new Citation(
                 index,

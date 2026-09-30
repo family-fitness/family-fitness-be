@@ -25,8 +25,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 대체 편성이 H2 + Flyway 의 실제 클립 표(V132 유튜브 · V161 ~ V164 공단)에서 고른다. 측정은 없고(목이 null) 보호자가 키워 주고 싶은 역량만 준다.
- * 공단 영상 클립을 고르면 칸 video 에 source=kspo 와 mp4 주소가, 인용에 AI 와 같은 "kspo:&lt;id&gt;" 가 실려야 한다.
+ * 대체 편성이 H2 + Flyway 의 실제 클립 표(V132 유튜브 · V161 ~ V165 공단)에서 고른다. 측정은 없고(목이 null) 보호자가 키워 주고 싶은 역량만 준다.
+ * 공단 영상 클립을 고르면 칸 video 에 source=kspo 와 mp4 주소가, 인용에 AI 와 같은 "kspo:&lt;id&gt;" 와 AI 표의 인용 이름이 실려야 한다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -104,9 +104,33 @@ class LabelBasedProposalPlannerDbTest {
         List<Citation> kspo = result.proposal().citations().stream()
                 .filter(it -> it.chunkId().startsWith("kspo:"))
                 .toList();
+        // 인용 이름은 AI 표의 citation_label 그대로다(담당자 코드 형식, 끝에 「-1」 이 없다)
         assertThat(kspo).hasSizeGreaterThanOrEqualTo(main.size()).allSatisfy(it -> {
-            assertThat(it.label()).startsWith("국민체력100 동영상 정보 · ");
+            assertThat(it.label()).matches("국민체력100 운동처방(동영상|가이드) · .*").doesNotMatch(".*[-－]\\s*\\d+\\s*$");
             assertThat(it.url()).startsWith("https://openapi.kspo.or.kr/web/video/");
+        });
+    }
+
+    @Test
+    @DisplayName("청소년 편성은 「공통」 공단 영상 클립도 후보로 쓴다 — V165 부터 「공통」 은 청소년 줄도 있다")
+    void 청소년_편성은_공통_공단_영상도_쓴다() {
+        CoachRunResult result = planner.plan(
+                subject(LocalDate.of(2011, 3, 1)),
+                TODAY,
+                new CoachRunConditions(20, false, null, FitnessFactor.CARDIO, false),
+                TODAY,
+                "시험");
+
+        assertThat(result).isNotNull();
+        List<CoachRunResult.Session> main = sessionsOf(result).stream()
+                .filter(it -> it.phase().equals("본운동"))
+                .toList();
+        assertThat(main).isNotEmpty().allSatisfy(it -> assertThat(it.fitnessFactor())
+                .isEqualTo("심폐지구력"));
+        // 클립 행의 연령대가 성인(첫 줄)인 공단 클립 = 「공통」 영상이 청소년 본운동에 들어온다
+        assertThat(main).anySatisfy(it -> {
+            assertThat(it.video().isKspo()).isTrue();
+            assertThat(clipOf(it).ageGroup()).isEqualTo(AgeGroup.ADULT);
         });
     }
 

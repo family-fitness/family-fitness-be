@@ -162,13 +162,14 @@ flowchart LR
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V164`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
-  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 33개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V165`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 34개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.
 - 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 또래 분포 표는 AI 가 국민체력100 공공데이터로 만든 표(V156, `value_quantiles_to_sql.py`), 등급 기준표는 AI 의 공식 기준표(V154, `grade_thresholds_to_sql.py`), 또래 등급 비율은 AI 가 센 인증 결과(V159, `grade_distribution_to_sql.py`),
   운동 영상 48편과 구간 695개는 AI 클립 릴리스(V132, `ai_clips_to_sql.py`)다. 공단 「국민체력100 동영상 정보」 오픈API 영상 452편은 한 편이 곧 구간 하나로
-  V161 ~ V164(`kspo_videos_to_sql.py`)이 더한다(어르신 영상은 싣지 않고 65세 이상은 성인 영상을 받는다). AI 새 판은 새 V 파일로 넣고, 판에서 빠진 구간은 `active=false` 로 남긴다(두 스크립트는 제 출처 구간만 끈다).
+  V161 ~ V165(`kspo_videos_to_sql.py`)이 더한다(어르신 영상은 싣지 않고 65세 이상은 성인 영상을 받는다). V165 부터 AI 표의 연령대 · 요인 · 단계 줄을
+  `video_exercise_labels` 에 두고, 켜진 구간 목록을 읽을 때 줄마다 후보 하나로 펼친다(「공통」 영상은 청소년 · 성인 둘 다). AI 표가 새로 나오면 새 V 파일로 넣고, 새 표에서 빠진 구간은 `active=false` 로 남긴다(두 스크립트는 제 출처 구간만 끈다).
 - 영상은 videoId 로만 가리킨다. 유튜브 영상은 유튜브 id, 공단 영상은 파일 이름(예 `0AUDLJ08S_00351`)이고, 공단 영상은 `exercise_videos.media_url`(mp4) ·
   `thumbnail_url` 로 튼다. 이 두 주소는 제안 · 미션 칸에 사본으로 두지 않고 조회 때 영상 표에서 붙인다. 제안 · 미션의 `video_id` 에는 `exercise_videos` FK 가 없고(V134),
   제안 칸(`coach_run_proposal_sessions`) · 미션 칸(`mission_sessions`)은 영상 구간의 사본(videoId · startSec · endSec · 제목)을 든다.

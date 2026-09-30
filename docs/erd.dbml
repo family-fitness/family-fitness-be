@@ -146,6 +146,7 @@ Table exercise_videos {
   collected_at timestamptz [not null]
   media_url varchar(300)
   thumbnail_url varchar(300)
+  citation_label varchar(120)
 }
 
 Table video_interactions {
@@ -622,6 +623,20 @@ Table fitness_grade_distribution {
 (ratio between 0 and 1)'''
 }
 
+Table video_exercise_labels {
+  clip_id varchar(48) [not null]
+  seq smallint [not null]
+  age_group varchar(12) [not null]
+  fitness_factor varchar(20)
+  phase varchar(10) [not null]
+  indexes {
+    (clip_id, seq) [pk]
+  }
+  Note: '''(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(fitness_factor is null or fitness_factor in ('CARDIO', 'STRENGTH', 'MUSCULAR_ENDURANCE', 'FLEXIBILITY', 'AGILITY', 'POWER', 'COORDINATION', 'BALANCE'))
+(age_group in ('TODDLER', 'YOUTH', 'ADOLESCENT', 'ADULT', 'SENIOR'))'''
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id
@@ -671,3 +686,4 @@ Ref: notifications.profile_id > profiles.id
 Ref: notifications.about_profile_id > profiles.id
 Ref: notifications.from_profile_id > profiles.id
 Ref: notifications.cheer_id > cheers.id
+Ref: video_exercise_labels.clip_id > video_exercises.clip_id

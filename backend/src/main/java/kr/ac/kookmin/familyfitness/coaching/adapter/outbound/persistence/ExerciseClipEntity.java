@@ -15,8 +15,9 @@ import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
 
 /**
- * `video_exercises` 행. 유튜브 클립은 V132(scripts/ai_clips_to_sql.py), 공단 영상 클립은 V161(scripts/kspo_videos_to_sql.py)
+ * `video_exercises` 행. 유튜브 클립은 V132(scripts/ai_clips_to_sql.py), 공단 영상 클립은 V161 ~ V165(scripts/kspo_videos_to_sql.py)
  * 적재 마이그레이션이 채우고 이 모듈은 읽기만 한다. 트는 주소는 영상 표(exercise_videos)에 있어 부르는 쪽이 붙인다.
+ * 공단 클립의 연령대 · 요인 · 단계 칸은 AI 표 첫 줄 값이고, 줄 전체는 video_exercise_labels 에 있다(V165).
  */
 @Entity
 @Immutable
