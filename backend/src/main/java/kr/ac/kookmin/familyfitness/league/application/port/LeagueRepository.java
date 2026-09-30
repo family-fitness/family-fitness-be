@@ -45,5 +45,10 @@ public interface LeagueRepository {
 
     /** 정산 결과를 자리에 적는다. */
     void saveResult(
-            UUID roundId, UUID familyId, @Nullable Integer finalRate, @Nullable Integer finalRank, LeagueMove moved);
+            UUID roundId,
+            UUID familyId,
+            @Nullable Integer finalRate,
+            @Nullable Double finalScore,
+            @Nullable Integer finalRank,
+            LeagueMove moved);
 }

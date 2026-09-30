@@ -16,7 +16,7 @@ import org.springframework.data.domain.Persistable;
 
 /**
  * `league_members` — pk(round_id, family_id) · unique(family_id, round_month) · unique(round_id, seat_no).
- * 결과 칸(final_rate · final_rank · moved)은 정산 UPDATE 로만 채운다.
+ * 결과 칸(final_rate · final_score · final_rank · moved)은 정산 UPDATE 로만 채운다.
  *
  * <p>키를 직접 정하는 엔티티라 {@link Persistable} 로 새 행임을 알린다. 그러지 않으면 저장이 merge 로 가서, 같은 (방, 가족) 행을
  * 다른 요청이 먼저 넣었을 때 기본 키 위반 대신 그 행을 읽어 자리 번호를 덮어쓴다(동시 배정 재시도가 돌지 않는다).
@@ -40,6 +40,9 @@ public class LeagueMemberEntity implements Persistable<LeagueMemberId> {
     @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "final_rate")
     private @Nullable Integer finalRate;
+
+    @Column(name = "final_score")
+    private @Nullable Double finalScore;
 
     @JdbcTypeCode(SqlTypes.SMALLINT)
     @Column(name = "final_rank")
@@ -90,6 +93,10 @@ public class LeagueMemberEntity implements Persistable<LeagueMemberId> {
 
     public @Nullable Integer getFinalRate() {
         return finalRate;
+    }
+
+    public @Nullable Double getFinalScore() {
+        return finalScore;
     }
 
     public @Nullable Integer getFinalRank() {

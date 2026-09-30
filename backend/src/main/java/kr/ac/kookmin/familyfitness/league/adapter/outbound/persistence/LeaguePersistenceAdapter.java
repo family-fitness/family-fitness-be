@@ -119,8 +119,13 @@ public class LeaguePersistenceAdapter implements LeagueRepository {
     @Override
     @Transactional
     public void saveResult(
-            UUID roundId, UUID familyId, @Nullable Integer finalRate, @Nullable Integer finalRank, LeagueMove moved) {
-        if (members.saveResult(roundId, familyId, finalRate, finalRank, moved.name()) != 1) {
+            UUID roundId,
+            UUID familyId,
+            @Nullable Integer finalRate,
+            @Nullable Double finalScore,
+            @Nullable Integer finalRank,
+            LeagueMove moved) {
+        if (members.saveResult(roundId, familyId, finalRate, finalScore, finalRank, moved.name()) != 1) {
             throw new IllegalStateException("정산 결과를 적을 자리가 없습니다: " + roundId + " / " + familyId);
         }
     }
@@ -144,6 +149,7 @@ public class LeaguePersistenceAdapter implements LeagueRepository {
                 entity.getSeatNo(),
                 entity.getJoinedAt(),
                 entity.getFinalRate(),
+                entity.getFinalScore(),
                 entity.getFinalRank(),
                 moved == null ? null : LeagueMove.valueOf(moved));
     }

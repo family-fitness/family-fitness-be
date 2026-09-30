@@ -161,11 +161,20 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
 | `coaching` | 하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
-| `league` | 가족 리그(월 단위 달성률 · 다섯 티어 · 월초 정산) | `families/{id}/league` |
+| `league` | 가족 리그(월 단위 달성률 · 순위 점수 · 다섯 티어 · 월초 정산) | `families/{id}/league` |
 | `notification` | 알림함(응원 · 새 운동 · 업적 · 다시 재기) | `notifications` · `notifications/read` |
 
 경로 46개(메서드까지 53개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
 FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
+
+리그 순위는 달성률이 아니라 순위 점수로 매긴다(월초 정산의 오르내림도 같다).
+
+- 점수 = 달성률(반올림 전 값) × ln(1 + 운동한 날) ÷ ln(1 + 지난 날). 0~1 이고, 지난 날마다 다 해내면 1 이다.
+- 운동한 날은 쉬는 날이 아닌 날 가운데 셀 아이 누구든 해낸 날이다.
+- 지난 날은 그달 1일부터 오늘(지난달은 말일)까지 쉬는 날을 뺀 날이다. 오늘은 해냈을 때만 센다.
+- 미션을 만들기 전 날 · 가입하기 전 날은 달성률에서는 빼지만 지난 날에서는 빼지 않는다 — 빼면 늦게 시작해 하루 해낸 가족이 다시 1등이 된다.
+
+응답의 `rate` 는 그대로 두고 `score` 를 더했다. 자세한 셈은 [api-contract.md 6장](../docs/api-contract.md), 코드는 `league.domain.AchievementRate`.
 
 ## AI 서비스
 
