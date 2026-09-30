@@ -215,7 +215,8 @@ public class LabelBasedProposalPlanner {
      * 요인보다 앞에 두면 어르신은 어르신 영상만 보다가 요인을 놓친다). 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
      * 날마다 같은 묶음이 나오지 않게(AI 요청 recent_video_ids 와 같은 규칙): 같은 점수 · 연령대 안에서 최근 받은 영상의 클립은 뒤로
-     * 미루고(최근일수록 더 뒤), 순위가 모두 같으면 편성 날짜를 시드로 삼아 섞는다. 본운동은 요인이 같은 클립이 앞이라 첫 본운동 칸
+     * 미루고(최근일수록 더 뒤라, 최근 영상끼리는 오래전에 받은 것부터 앞이다), 순위가 모두 같으면 편성 날짜를 시드로 삼아 섞는다.
+     * 한 회 안에서는 같은 영상을 두 번 쓰지 않는다(다른 영상이 있으면, {@link #take}). 본운동은 요인이 같은 클립이 앞이라 첫 본운동 칸
      * (= 미션 대표 영상, {@link ProposalConverter})이 키울 요인의 클립이다.
      * 보호자가 키워 주고 싶은 역량(focusFactor)을 골랐으면 본운동 칸의 4분의 3 이상(올림, {@link #focusShare})을 그 역량 클립으로
      * 먼저 채운다. 최근 받은 영상의 클립이라도 그 역량이면 다른 요인보다 앞이고, 그래도 모자라면 남은 칸을 다른 요인이 채운다.
@@ -237,6 +238,8 @@ public class LabelBasedProposalPlanner {
                 .thenComparingInt(it -> Math.abs(it.endSec() - it.startSec() - SET_SECONDS))
                 .thenComparingLong(it -> recent.shuffleKey(it.clipId()));
         Set<String> used = new HashSet<>();
+        // 이번 회에 이미 쓴 영상. 단계를 넘어 한 회 전체에서 센다(준비운동에 쓴 영상을 정리운동에서 다시 쓰지 않게)
+        Set<String> usedVideos = new HashSet<>();
         List<ExerciseClip> picked = new ArrayList<>();
         FitnessFactor focus = conditions.focusFactor();
         for (SessionPhase phase : PHASE_NAME.keySet()) {
@@ -249,15 +252,19 @@ public class LabelBasedProposalPlanner {
                 // 이미 쓴 이름을 다시 허용할지는 그 단계 후보 전체로 한 번만 정한다(역량 · 나머지를 따로 정하면 같은 동작이 두 번 들 수 있다)
                 allowAgainIfAllUsed(candidates, used);
                 List<ExerciseClip> focusFirst = take(
-                        candidates.stream().filter(it -> it.factor() == focus).toList(), focusShare(wanted), used);
+                        candidates.stream().filter(it -> it.factor() == focus).toList(),
+                        focusShare(wanted),
+                        used,
+                        usedVideos,
+                        focus);
                 picked.addAll(focusFirst);
                 List<ExerciseClip> rest = candidates.stream()
                         .filter(it -> !focusFirst.contains(it))
                         .toList();
-                picked.addAll(take(rest, wanted - focusFirst.size(), used));
+                picked.addAll(take(rest, wanted - focusFirst.size(), used, usedVideos, focus));
                 continue;
             }
-            picked.addAll(pick(candidates, wanted, used));
+            picked.addAll(pick(candidates, wanted, used, usedVideos, factor));
         }
         return picked.stream().anyMatch(it -> it.phase() == SessionPhase.MAIN) ? List.copyOf(picked) : List.of();
     }
@@ -267,10 +274,15 @@ public class LabelBasedProposalPlanner {
         return (3 * mainCount + 3) / 4;
     }
 
-    /** 순위대로 앞에서 wanted 개, 이미 쓴 이름은 건너뛴다. 후보가 모두 쓴 이름이면 그 단계만 다시 허용한다(AI 와 같다). */
-    private static List<ExerciseClip> pick(List<ExerciseClip> ranked, int wanted, Set<String> used) {
+    /** 순위대로 앞에서 wanted 개({@link #take}). 후보가 모두 쓴 이름이면 그 단계만 다시 허용한다(AI 와 같다). */
+    private static List<ExerciseClip> pick(
+            List<ExerciseClip> ranked,
+            int wanted,
+            Set<String> used,
+            Set<String> usedVideos,
+            @Nullable FitnessFactor factor) {
         allowAgainIfAllUsed(ranked, used);
-        return take(ranked, wanted, used);
+        return take(ranked, wanted, used, usedVideos, factor);
     }
 
     /** 후보가 모두 앞 단계에서 쓴 이름이면 그 이름들을 다시 쓸 수 있게 한다. */
@@ -280,12 +292,35 @@ public class LabelBasedProposalPlanner {
         }
     }
 
-    /** 순위대로 앞에서 wanted 개, 이미 쓴 이름은 건너뛰고 고른 이름은 used 에 더한다. */
-    private static List<ExerciseClip> take(List<ExerciseClip> ranked, int wanted, Set<String> used) {
+    /**
+     * 순위대로 앞에서 wanted 개. 이미 쓴 이름은 건너뛰고, 고른 이름 · 영상은 used · usedVideos 에 더한다.
+     * 한 회 안에서 같은 영상은 한 번만 쓴다. 이번 회에 쓴 영상의 클립은 순위가 앞서도 다른 영상의 클립 뒤로 미루고, 다른 영상이
+     * 없을 때만 다시 쓴다(칸을 비우지 않는다). 다만 키울 요인(factor)이 맞는지가 먼저다. 그 요인 클립이 모두 쓴 영상이어도
+     * 다른 요인의 새 영상보다 앞이다. 처방 어휘 가산점 · 연령대 · 최근 받은 영상 · 세트 길이는 같은 영상 피하기보다 뒤다.
+     */
+    private static List<ExerciseClip> take(
+            List<ExerciseClip> ranked,
+            int wanted,
+            Set<String> used,
+            Set<String> usedVideos,
+            @Nullable FitnessFactor factor) {
         List<ExerciseClip> picked = new ArrayList<>();
-        for (ExerciseClip clip : ranked) {
-            if (picked.size() >= wanted) break;
-            if (used.add(clip.title())) picked.add(clip);
+        while (picked.size() < wanted) {
+            ExerciseClip best = null;
+            int bestKey = Integer.MAX_VALUE;
+            for (ExerciseClip clip : ranked) {
+                if (used.contains(clip.title())) continue;
+                int key = (factor != null && clip.factor() != factor ? 2 : 0)
+                        + (usedVideos.contains(clip.videoId()) ? 1 : 0);
+                if (key < bestKey) {
+                    best = clip;
+                    bestKey = key;
+                }
+            }
+            if (best == null) break;
+            used.add(best.title());
+            usedVideos.add(best.videoId());
+            picked.add(best);
         }
         return picked;
     }

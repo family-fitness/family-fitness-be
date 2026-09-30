@@ -55,10 +55,13 @@ public class CoachRunPipeline {
     private final ExerciseVideoRepository videos;
     private final MissionRepository missions;
 
-    /** 최근 받은 영상을 모으는 기간(편성 날 앞 14일)과 최대 개수 — AI 요청 recent_video_ids 약속. */
+    /**
+     * 최근 받은 영상을 모으는 기간(편성 날 앞 14일)과 최대 개수 — AI 요청 recent_video_ids 약속. 20분 편성(하루 7칸)을 14일 받아도
+     * 98개라 잘리지 않는다. 60개일 때는 9일쯤에 넘쳐, 목록에서 빠진 오래된 영상이 새 영상처럼 먼저 뽑혔다.
+     */
     static final int RECENT_DAYS = 14;
 
-    static final int RECENT_LIMIT = 60;
+    static final int RECENT_LIMIT = 150;
 
     public CoachRunPipeline(
             CoachRunRepository runs,
@@ -97,7 +100,7 @@ public class CoachRunPipeline {
     }
 
     /**
-     * 대상이 편성 날 앞 14일(runDate−14 ~ runDate−1) 동안 시작한 미션의 칸 영상 id, 최근 것부터 최대 60개(AI 요청 recent_video_ids).
+     * 대상이 편성 날 앞 14일(runDate−14 ~ runDate−1) 동안 시작한 미션의 칸 영상 id, 최근 것부터 최대 150개(AI 요청 recent_video_ids).
      * 승인해 미션이 된 칸만 센다 — 승인을 기다리는 제안은 아직 받은 영상이 아니다.
      */
     private List<String> recentVideoIds(UUID profileId, LocalDate runDate) {
@@ -112,7 +115,7 @@ public class CoachRunPipeline {
      * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
      * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(보호자가 키워 주고 싶은 역량 — AI develop 은 아직 이 칸을 몰라
      * 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다) ·
-     * with_companion(AI 계약에 아직 없어 AI 가 무시한다) · recent_video_ids(대상이 앞 14일 동안 받은 영상 id, 최근 것부터 최대 60개 —
+     * with_companion(AI 계약에 아직 없어 AI 가 무시한다) · recent_video_ids(대상이 앞 14일 동안 받은 영상 id, 최근 것부터 최대 150개 —
      * AI 는 이 영상들을 뒤로 미뤄 날마다 같은 영상이 나오지 않게 한다).
      * 대기열에서 기다리는 사이 정리 작업이 끝낸 실행이면 null — 호출자는 AI 를 부르지 않는다.
      */

@@ -268,6 +268,96 @@ class LabelBasedProposalPlannerTest {
     }
 
     @Test
+    @DisplayName("그 역량 클립이 모두 최근 영상이면 오래전에 받은 것부터 쓴다 — 순위대로 두면 날마다 같은 상위 클립이 앞에 섰다")
+    void 최근_영상끼리는_오래전에_받은_것부터_쓴다() {
+        // 최근 것부터: s1 이 어제, s6 이 가장 오래전에 받은 영상
+        CoachRunResult result =
+                clipPlanner(6).plan(child(), TODAY, STRENGTH, TODAY, "시험", List.of("s1", "s2", "s3", "s4", "s5", "s6"));
+
+        assertThat(mainSessions(result).stream().map(it -> it.video().videoId()))
+                .containsExactly("s6", "s5", "s4", "s3");
+    }
+
+    @Test
+    @DisplayName("최근에 받지 않은 영상이 먼저이고, 최근 영상끼리는 오래전에 받은 것부터다")
+    void 새_영상_다음에_오래된_최근_영상이다() {
+        CoachRunResult result =
+                clipPlanner(6).plan(child(), TODAY, STRENGTH, TODAY, "시험", List.of("s1", "s2", "s3", "s4"));
+
+        List<String> main =
+                mainSessions(result).stream().map(it -> it.video().videoId()).toList();
+        assertThat(main.subList(0, 2)).containsExactlyInAnyOrder("s5", "s6");
+        assertThat(main.subList(2, 4)).containsExactly("s4", "s3");
+    }
+
+    /** 본운동 근력 후보: 한 영상(same)에서 나온 클립 둘이 세트 길이(60초)에 맞아 순위가 가장 앞이고, 다른 영상 셋은 90초라 뒤다. */
+    private static InMemoryExerciseClipRepository sameVideoClips(boolean withOthers) {
+        InMemoryExerciseClipRepository clips = new InMemoryExerciseClipRepository(
+                clip("w1", "팔 돌리기", SessionPhase.WARMUP, FitnessFactor.FLEXIBILITY, null),
+                clip("w2", "목 돌리기", SessionPhase.WARMUP, FitnessFactor.FLEXIBILITY, null),
+                clip("c1", "숨 고르기", SessionPhase.COOLDOWN, FitnessFactor.FLEXIBILITY, null),
+                InMemoryExerciseClipRepository.clip(
+                        "same", 0, 60, "스쿼트", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                InMemoryExerciseClipRepository.clip(
+                        "same", 60, 120, "런지", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                InMemoryExerciseClipRepository.clip(
+                        "same", 120, 180, "벽 밀기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                InMemoryExerciseClipRepository.clip(
+                        "same", 180, 240, "팔굽혀펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH));
+        if (withOthers) {
+            for (int i = 1; i <= 3; i++) {
+                ExerciseClip it = InMemoryExerciseClipRepository.clip(
+                        "o" + i, 0, 90, "다른 근력 " + i, SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH);
+                clips.clips.put(it.clipId(), it);
+            }
+        }
+        return clips;
+    }
+
+    private LabelBasedProposalPlanner planner(InMemoryExerciseClipRepository clips) {
+        return new LabelBasedProposalPlanner(fitness, videos, clips);
+    }
+
+    @Test
+    @DisplayName("한 회 안에서 같은 영상을 두 번 쓰지 않는다 — 같은 영상의 다른 클립이 순위가 앞서도 다른 영상이 있으면 그것을 쓴다")
+    void 한_회_안에서_같은_영상을_두_번_쓰지_않는다() {
+        CoachRunResult result = planner(sameVideoClips(true)).plan(child(), TODAY, STRENGTH, TODAY, "시험", List.of());
+
+        List<String> main =
+                mainSessions(result).stream().map(it -> it.video().videoId()).toList();
+        assertThat(main.getFirst()).isEqualTo("same");
+        assertThat(main.subList(1, 4)).containsExactlyInAnyOrder("o1", "o2", "o3");
+    }
+
+    @Test
+    @DisplayName("다른 영상이 없으면 한 회 안에서 같은 영상의 다른 클립을 다시 쓴다 — 칸을 비우지 않는다")
+    void 다른_영상이_없으면_같은_영상을_다시_쓴다() {
+        CoachRunResult result = planner(sameVideoClips(false)).plan(child(), TODAY, STRENGTH, TODAY, "시험", List.of());
+
+        List<CoachRunResult.Session> main = mainSessions(result);
+        assertThat(main).hasSize(4);
+        assertThat(main.stream().map(it -> it.video().videoId())).containsOnly("same");
+    }
+
+    @Test
+    @DisplayName("같은 영상을 피해도 키울 요인이 먼저다 — 다른 요인 클립이 새 영상이어도 같은 영상의 그 요인 클립보다 뒤다")
+    void 같은_영상을_피해도_요인이_먼저다() {
+        InMemoryExerciseClipRepository clips = sameVideoClips(false);
+        for (int i = 1; i <= 3; i++) {
+            ExerciseClip it = InMemoryExerciseClipRepository.clip(
+                    "k" + i, 0, 60, "심폐 동작 " + i, SessionPhase.MAIN, FitnessFactor.CARDIO, AgeGroup.YOUTH);
+            clips.clips.put(it.clipId(), it);
+        }
+        // 측정에서 가장 낮은 요인은 근력 — 근력 후보는 모두 same 한 영상에서 나왔다
+        fitness.measured(CHILD_ID, new FactorPoint(FitnessFactor.STRENGTH, "012", 10), null);
+
+        CoachRunResult result = planner(clips)
+                .plan(child(), TODAY, new CoachRunConditions(20, false, null, null, false), TODAY, "시험", List.of());
+
+        assertThat(factorCount(mainSessions(result), FitnessFactor.STRENGTH)).isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("보호자가 고르지 않았으면 지금처럼 측정에서 가장 낮은 요인으로 본운동을 채운다")
     void 보호자가_고르지_않으면_가장_낮은_요인이다() {
         CoachRunResult result = clipPlanner(4)

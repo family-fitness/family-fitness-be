@@ -208,7 +208,7 @@ final class AiWire {
         /**
          * focus_factor(보호자가 키워 주고 싶은 역량)와 with_companion 은 AI develop 의 ConstraintsIn 에 아직 없어 AI 가 받아서 버린다.
          * focus_factor 는 AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다.
-         * 버려져도 요청이 깨지지 않으므로 먼저 보낸다(CO-07). recent_video_ids(최근 14일 동안 받은 영상 id, 최근 것부터 최대 60개)도
+         * 버려져도 요청이 깨지지 않으므로 먼저 보낸다(CO-07). recent_video_ids(최근 14일 동안 받은 영상 id, 최근 것부터 최대 150개)도
          * 같다 — 이 칸을 받는 AI 는 그 영상들을 뒤로 미룬다.
          */
         record Constraints(

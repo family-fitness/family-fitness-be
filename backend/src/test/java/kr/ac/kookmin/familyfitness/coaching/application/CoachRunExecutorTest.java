@@ -196,6 +196,26 @@ class CoachRunExecutorTest {
     }
 
     @Test
+    @DisplayName("14일 동안 날마다 칸 7개(20분 편성)를 모두 다른 영상으로 받았어도 98개를 잘리지 않고 다 보낸다 — 60개에서 잘려 9일 전 영상이 새 영상으로 보였다")
+    void 최근_14일_하루_7칸이면_목록이_잘리지_않는다() {
+        UUID child = family.child.profileId();
+        int perDay =
+                kr.ac.kookmin.familyfitness.shared.ai.SessionClipCounts.of(20).total();
+        for (int day = 1; day <= 14; day++) {
+            String[] ids = new String[perDay];
+            for (int i = 0; i < perDay; i++) ids[i] = "d" + day + "-" + i;
+            missionOn(Fixed.TODAY.minusDays(day), child, ids);
+        }
+
+        executor.execute(runningRun().getId());
+
+        List<String> sent = gateway.startRequests.getFirst().constraints().recentVideoIds();
+        assertThat(perDay).isEqualTo(7);
+        assertThat(sent).hasSize(14 * 7).startsWith("d1-0").endsWith("d14-6");
+        assertThat(CoachRunPipeline.RECENT_LIMIT).isEqualTo(150);
+    }
+
+    @Test
     @DisplayName("succeeded 면 하루짜리 제안이 되고, 참여자는 대상 아이 + withParent 면 요청한 보호자(동반자)다")
     void succeeded_면_하루짜리_제안이_되고_참여자는_대상과_요청한_보호자다() {
         CoachRun run = runningRun();
