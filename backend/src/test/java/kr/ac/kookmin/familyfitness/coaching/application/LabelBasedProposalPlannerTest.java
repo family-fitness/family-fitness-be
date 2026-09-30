@@ -68,8 +68,8 @@ class LabelBasedProposalPlannerTest {
     }
 
     @Test
-    @DisplayName("측정으로 고른 요인의 보호자 문구는 「… 영역입니다」 로 띄어 쓰지 않는다 — 「꾸준히 하고 있는 영역 입니다」 가 나갔다")
-    void 보호자_문구는_영역입니다_로_붙여_쓴다() {
+    @DisplayName("측정으로 고른 요인은 「지금 키우기 좋은 영역」 이라 부르고 백분위 구간 문구를 쓰지 않는다 — 가장 낮은 요인인데 「꾸준히 하고 있는 영역」 이라 불렀다")
+    void 측정으로_고른_요인은_지금_키우기_좋은_영역이다() {
         ProfileDetails child = new ProfileDetails(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -90,8 +90,20 @@ class LabelBasedProposalPlannerTest {
         assertThat(result).isNotNull();
         String parentCopy = result.proposal().missions().getFirst().copyParent();
         assertThat(parentCopy)
-                .isEqualTo("근력은 " + Band.ofPercentile(50).getCopy() + "입니다. 오늘 20분이면 충분합니다")
-                .doesNotContain(" 입니다");
+                .isEqualTo("지금 키우기 좋은 영역인 근력을 기르는 동작으로 20분을 짰습니다")
+                .doesNotContain(Band.ofPercentile(50).getCopy());
+        assertThat(result.steps().getFirst().summary()).endsWith("대상 요인 = 근력(지금 키우기 좋은 영역)");
+    }
+
+    @Test
+    @DisplayName("보호자가 고른 요인은 「보호자가 키워 주고 싶은 역량」 이라 부른다 — 「고르신 …」 은 누가 골랐는지 흐렸다")
+    void 보호자가_고른_요인은_보호자가_키워_주고_싶은_역량이다() {
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험");
+
+        assertThat(result).isNotNull();
+        assertThat(result.proposal().missions().getFirst().copyParent())
+                .isEqualTo("보호자가 키워 주고 싶은 역량인 근력을 기르는 동작으로 20분을 짰습니다");
+        assertThat(result.steps().getFirst().summary()).endsWith("대상 요인 = 근력(보호자가 키워 주고 싶은 역량)");
     }
 
     @Test

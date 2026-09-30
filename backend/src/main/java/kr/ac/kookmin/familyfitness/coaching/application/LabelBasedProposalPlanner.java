@@ -28,7 +28,6 @@ import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
 import kr.ac.kookmin.familyfitness.shared.ai.SessionClipCounts;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
-import kr.ac.kookmin.familyfitness.shared.domain.Band;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import org.jspecify.annotations.Nullable;
@@ -53,6 +52,11 @@ public class LabelBasedProposalPlanner {
 
     /** AI 를 부르지 않고 짤 때의 까닭(심사용 계정 모두의 오늘 AI 몫이 끝남, {@link ReviewRunQuota}). 장애가 아니라 단계 요약을 달리 적는다. */
     public static final String AI_LIMIT_REACHED = "심사용 계정의 오늘 AI 편성 몫이 끝남";
+
+    /** 편성이 키울 요인을 부르는 말. 가장 낮은 요인을 골랐을 때(FE 결과 화면과 같은 말)와 보호자가 골랐을 때. */
+    static final String WEAKEST_FACTOR = "지금 키우기 좋은 영역";
+
+    static final String FOCUS_FACTOR = "보호자가 키워 주고 싶은 역량";
 
     /** 한 세트로 삼기 좋은 클립 길이(ai:video/catalog.py SET_SECONDS). 같은 순위면 이 길이에 가까운 것부터 고른다. */
     static final int SET_SECONDS = 60;
@@ -127,10 +131,8 @@ public class LabelBasedProposalPlanner {
                 minutes,
                 factor.getLabel() + " 키우기 " + minutes + "분",
                 "오늘은 " + factor.getLabel() + "을 키우는 동작을 해볼까요",
-                point == null
-                        ? "고르신 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다"
-                        : factor.getLabel() + "은 "
-                                + Band.ofPercentile(point.percentile()).getCopy() + "입니다. 오늘 " + minutes + "분이면 충분합니다",
+                // 키울 요인은 고른 까닭으로 부른다. 백분위 구간 문구(「꾸준히 하고 있는 영역」 등)는 수준을 말할 때만 쓴다
+                whyFactor(conditions) + "인 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다",
                 plan,
                 steps(latest, factor, conditions, failureSummary, routine, plan));
     }
@@ -368,8 +370,7 @@ public class LabelBasedProposalPlanner {
                         "측정 " + (latest == null ? "없음" : "있음")
                                 + (factor == null
                                         ? " · 짚을 요인 없음 → " + WHOLE_BODY
-                                        : " · 대상 요인 = " + factor.getLabel()
-                                                + (conditions.focusFactor() == null ? "" : "(보호자가 고름)"))),
+                                        : " · 대상 요인 = " + factor.getLabel() + "(" + whyFactor(conditions) + ")")),
                 new CoachRunResult.Step(
                         2,
                         "retrieve",
@@ -381,6 +382,11 @@ public class LabelBasedProposalPlanner {
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
                         4, "verify", "ok", "인용 " + plan.citations().size() + "건 · 연령 필터 확인"));
+    }
+
+    /** 키울 요인을 고른 까닭: 보호자가 골랐으면 {@link #FOCUS_FACTOR}, 아니면(측정에서 가장 낮은 요인) {@link #WEAKEST_FACTOR}. */
+    private static String whyFactor(CoachRunConditions conditions) {
+        return conditions.focusFactor() == null ? WEAKEST_FACTOR : FOCUS_FACTOR;
     }
 
     /** AI 요청과 같은 조건(CoachRunPipeline.prepare): 조용히면 조용한 것, 집이면 좁은 곳에서 되는 것, 늘 도구 없는 것. */
