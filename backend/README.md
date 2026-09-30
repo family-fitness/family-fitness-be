@@ -178,6 +178,10 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 경로 46개(메서드까지 53개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
 FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
 
+운동 찾기(`GET exercises`)는 실린 운동 구간을 모두 보여 준다. 한 항목은 구간 하나다(공단 영상은 한 편, 유튜브는 동작마다 자른 구간).
+`ageGroup=ALL` 이면 모든 나이, 주지 않으면 보는 프로필의 나이대다. 쪽은 `cursor`, `size`(기본 40, 최대 100)로 넘기고, 응답의 `nextCursor` 가 null 이면 마지막 쪽이다.
+켜진 구간은 1,103개(유튜브 651, 공단 452)이고, 나이대마다 유아기 180, 유소년 234, 청소년 508, 성인과 어르신 378개를 받는다. 자세한 규칙은 [api-contract.md](../docs/api-contract.md) 의 `GET /api/v1/exercises`.
+
 리그 순위는 달성률이 아니라 순위 점수로 매긴다(월초 정산의 오르내림도 같다).
 
 - 점수 = 달성률(반올림 전 값) × ln(1 + 운동한 날) ÷ ln(1 + 지난 날). 0~1 이고, 지난 날마다 다 해내면 1 이다.

@@ -17,6 +17,9 @@ import org.jspecify.annotations.Nullable;
 public class InMemoryExerciseClipRepository implements ExerciseClipRepository {
     public final Map<String, ExerciseClip> clips = new LinkedHashMap<>();
 
+    /** 공단 영상처럼 연령대, 요인, 단계 줄이 여럿인 구간. 켜진 목록은 이 구간을 줄마다 하나씩 낸다(DB 어댑터와 같다). */
+    public final Map<String, List<ExerciseClip>> labelRows = new LinkedHashMap<>();
+
     public InMemoryExerciseClipRepository(ExerciseClip... clips) {
         for (ExerciseClip clip : clips) this.clips.put(clip.clipId(), clip);
     }
@@ -55,6 +58,7 @@ public class InMemoryExerciseClipRepository implements ExerciseClipRepository {
         return clips.values().stream()
                 .filter(ExerciseClip::active)
                 .sorted(Comparator.comparing(ExerciseClip::videoId).thenComparingInt(ExerciseClip::startSec))
+                .flatMap(it -> labelRows.getOrDefault(it.clipId(), List.of(it)).stream())
                 .toList();
     }
 

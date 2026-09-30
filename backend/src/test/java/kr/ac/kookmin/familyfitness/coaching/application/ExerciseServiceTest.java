@@ -5,13 +5,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import kr.ac.kookmin.familyfitness.coaching.domain.ClipNotFoundException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.InvalidInputException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProfileRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
@@ -86,8 +89,8 @@ class ExerciseServiceTest {
     }
 
     @Test
-    @DisplayName("보는 프로필과 같은 연령대 구간만 주고, 같은 제목은 연령대를 거른 뒤 처음 것 하나만 싣는다")
-    void 보는_프로필과_같은_연령대_구간만_주고_같은_제목은_연령대를_거른_뒤_처음_것_하나만_싣는다() {
+    @DisplayName("보는 프로필과 같은 연령대 구간만 주고, 제목이 같아도 다른 구간이면 따로 싣는다")
+    void 보는_프로필과_같은_연령대_구간만_주고_제목이_같아도_다른_구간이면_따로_싣는다() {
         add(
                 clip("aaa", 10, 70, "엎드려 버티기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
                 youth("bbb", 10, "엎드려 버티기"),
@@ -96,10 +99,123 @@ class ExerciseServiceTest {
                 clip("ddd", 0, 40, "거북이 스트레칭", SessionPhase.WARMUP, null, AgeGroup.TODDLER));
 
         ExerciseListView child = list(family.parentUser, childId);
-        assertThat(ids(child)).containsExactly("bbb-10", "ccc-5");
-        assertThat(child.total()).isEqualTo(2);
+        assertThat(ids(child)).containsExactly("bbb-10", "bbb-50", "ccc-5");
+        assertThat(child.total()).isEqualTo(3);
+        assertThat(child.nextCursor()).isNull();
 
         assertThat(ids(list(family.parentUser, parentId))).containsExactly("aaa-10");
+    }
+
+    @Test
+    @DisplayName("공단 영상 한 편이 연령대, 요인, 단계 줄마다 여러 번 들어와도 목록에는 한 번만 선다")
+    void 같은_구간이_줄마다_여러_번_들어와도_한_번만_선다() {
+        ExerciseClip kspo = kspo("kspo1", AgeGroup.YOUTH);
+        add(kspo);
+        clips.labelRows.put(
+                kspo.clipId(),
+                List.of(
+                        kspo,
+                        kspo.withLabel(AgeGroup.YOUTH, FitnessFactor.MUSCULAR_ENDURANCE, SessionPhase.MAIN),
+                        kspo.withLabel(AgeGroup.ADULT, FitnessFactor.STRENGTH, SessionPhase.MAIN)));
+
+        ExerciseListView child = list(family.parentUser, childId);
+        assertThat(ids(child)).containsExactly("kspo1-0");
+        assertThat(child.clips().getFirst().factor()).isEqualTo(FitnessFactor.STRENGTH);
+        assertThat(listBy(family.parentUser, allAges(null, 40)).total()).isEqualTo(1);
+        // 요인으로 거르면 맞은 줄의 요인이 실린다
+        ExerciseListQuery endurance = new ExerciseListQuery(
+                FitnessFactor.MUSCULAR_ENDURANCE, null, false, null, ExerciseListType.ALL, childId);
+        assertThat(listBy(family.parentUser, endurance).clips())
+                .extracting(ExerciseView::factor)
+                .containsExactly(FitnessFactor.MUSCULAR_ENDURANCE);
+    }
+
+    private static ExerciseListQuery allAges(@Nullable String cursor, int size) {
+        return new ExerciseListQuery(null, null, false, null, ExerciseListType.ALL, null, null, true, cursor, size);
+    }
+
+    private static ExerciseListQuery ofAge(AgeGroup ageGroup) {
+        return new ExerciseListQuery(
+                null, null, false, null, ExerciseListType.ALL, null, ageGroup, false, null, ExerciseService.PAGE);
+    }
+
+    private static ExerciseClip kspo(String videoId, AgeGroup ageGroup) {
+        ExerciseClip base = clip(videoId, 0, 60, "공단 " + videoId, SessionPhase.MAIN, FitnessFactor.STRENGTH, ageGroup);
+        return new ExerciseClip(
+                base.clipId(),
+                base.videoId(),
+                base.seq(),
+                base.nameOnVideo(),
+                base.exerciseName(),
+                base.title(),
+                base.factor(),
+                base.phase(),
+                base.startSec(),
+                base.endSec(),
+                base.homeOk(),
+                base.quiet(),
+                base.needsProps(),
+                base.isExercise(),
+                base.ageGroup(),
+                "kspo",
+                true,
+                new VideoMedia("https://example.com/" + videoId + ".mp4", null));
+    }
+
+    @Test
+    @DisplayName("ageGroup 이 ALL 이면 모든 나이 구간을 주고, 보는 사람 나이대 구간이 먼저 선다")
+    void ageGroup_이_ALL_이면_모든_나이_구간을_주고_보는_사람_나이대가_먼저_선다() {
+        add(
+                clip("aaa", 10, 70, "팔 굽혀 펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
+                clip("bbb", 0, 40, "거북이 스트레칭", SessionPhase.WARMUP, null, AgeGroup.TODDLER),
+                youth("ccc", 5, "버피"),
+                clip("ddd", 0, 40, "줄넘기", SessionPhase.MAIN, FitnessFactor.CARDIO, AgeGroup.ADOLESCENT));
+
+        assertThat(ids(listBy(family.childUser, allAges(null, 40))))
+                .containsExactly("ccc-5", "aaa-10", "bbb-0", "ddd-0");
+        assertThat(ids(listBy(family.parentUser, allAges(null, 40))))
+                .containsExactly("aaa-10", "bbb-0", "ccc-5", "ddd-0");
+        // 프로필이 없는 계정도 모든 나이를 고르면 목록을 받는다
+        assertThat(listBy(family.outsiderUser, allAges(null, 40)).total()).isEqualTo(4);
+        // 나이대를 골라 주면 그 나이대만 준다. 어르신을 고르면 성인 구간을 받는다
+        assertThat(ids(listBy(family.parentUser, ofAge(AgeGroup.TODDLER)))).containsExactly("bbb-0");
+        assertThat(ids(listBy(family.childUser, ofAge(AgeGroup.SENIOR)))).containsExactly("aaa-10");
+    }
+
+    @Test
+    @DisplayName("쪽을 끝까지 넘기면 total 만큼 받고 겹치는 구간이 없으며, 마지막 쪽의 nextCursor 는 null 이다")
+    void 쪽을_끝까지_넘기면_total_만큼_받고_겹치지_않는다() {
+        IntStream.range(0, 23).forEach(i -> add(youth("yt" + (i % 3), i * 60, "동작 " + (i % 4))));
+        IntStream.range(0, 30).forEach(i -> add(kspo("k" + i, i % 2 == 0 ? AgeGroup.YOUTH : AgeGroup.ADULT)));
+
+        List<String> seen = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            ExerciseListView page = listBy(family.childUser, allAges(cursor, 7));
+            assertThat(page.total()).isEqualTo(53);
+            assertThat(page.clips()).hasSizeLessThanOrEqualTo(7);
+            seen.addAll(ids(page));
+            cursor = page.nextCursor();
+            pages++;
+        } while (cursor != null);
+
+        assertThat(pages).isEqualTo(8);
+        assertThat(seen).hasSize(53).doesNotHaveDuplicates();
+    }
+
+    @Test
+    @DisplayName("size 는 1~100 이고, 목록에 없는 cursor 는 400 이다")
+    void size_는_1_에서_100_이고_목록에_없는_cursor_는_400_이다() {
+        add(youth("bbb", 10, "버피"));
+
+        for (int size : List.of(0, 101)) {
+            assertThat(assertThrows(InvalidInputException.class, () -> listBy(family.childUser, allAges(null, size)))
+                            .getCode())
+                    .isEqualTo("BAD_REQUEST");
+        }
+        assertThat(listBy(family.childUser, allAges(null, 100)).total()).isEqualTo(1);
+        assertThrows(InvalidInputException.class, () -> listBy(family.childUser, allAges("nope-0", 40)));
     }
 
     @Test
@@ -172,7 +288,7 @@ class ExerciseServiceTest {
     }
 
     @Test
-    @DisplayName("앞 40개만 싣고 total 은 자르기 전 수다")
+    @DisplayName("size 를 주지 않으면 앞 40개를 싣고, total 은 자르기 전 수, nextCursor 는 마지막 구간 id 다")
     void 앞_40개만_싣고_total_은_자르기_전_수다() {
         IntStream.range(0, 45).forEach(i -> add(youth("vid", i * 60, "동작 " + i)));
 
@@ -181,6 +297,15 @@ class ExerciseServiceTest {
         assertThat(view.clips()).hasSize(ExerciseService.PAGE);
         assertThat(view.total()).isEqualTo(45);
         assertThat(view.clips().getLast().clipId()).isEqualTo("vid-2340");
+        assertThat(view.nextCursor()).isEqualTo("vid-2340");
+
+        ExerciseListView next = listBy(
+                family.childUser,
+                new ExerciseListQuery(
+                        null, null, false, null, ExerciseListType.ALL, null, null, false, "vid-2340", 40));
+        assertThat(ids(next)).containsExactly("vid-2400", "vid-2460", "vid-2520", "vid-2580", "vid-2640");
+        assertThat(next.total()).isEqualTo(45);
+        assertThat(next.nextCursor()).isNull();
     }
 
     @Test
@@ -261,8 +386,8 @@ class ExerciseServiceTest {
     }
 
     @Test
-    @DisplayName("어르신은 어르신 구간과 성인 구간을 함께 받고, 같은 제목이면 어르신 구간을 남기고, 어르신 구간이 영상 id 차례와 상관없이 먼저 선다")
-    void 어르신은_어르신_구간과_성인_구간을_함께_받고_같은_제목이면_어르신_구간을_남긴다() {
+    @DisplayName("어르신은 어르신 구간과 성인 구간을 함께 받고, 어르신 구간이 영상 id 차례와 상관없이 먼저 선다")
+    void 어르신은_어르신_구간과_성인_구간을_함께_받고_어르신_구간이_먼저_선다() {
         add(
                 clip("aaa", 10, 70, "팔 굽혀 펴기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
                 clip("aaa", 80, 120, "앉았다 일어서기", SessionPhase.MAIN, FitnessFactor.STRENGTH, AgeGroup.ADULT),
@@ -271,8 +396,8 @@ class ExerciseServiceTest {
         UUID grandma = family.addChild("할머니", LocalDate.of(1950, 1, 1)).profileId();
 
         ExerciseListView view = list(family.parentUser, grandma);
-        assertThat(ids(view)).containsExactly("zzz-0", "aaa-10");
-        assertThat(view.total()).isEqualTo(2);
+        assertThat(ids(view)).containsExactly("zzz-0", "aaa-10", "aaa-80");
+        assertThat(view.total()).isEqualTo(3);
         // 성인은 어르신 구간을 받지 않는다
         assertThat(ids(list(family.parentUser, parentId))).containsExactly("aaa-10", "aaa-80");
     }
