@@ -287,7 +287,9 @@ class CoachingFlowWebTest {
                 .andExpect(jsonPath("$.proposals[0].targetValue").value(20))
                 .andExpect(jsonPath("$.proposals[0].video.videoId").value("Eg3GpTv7z8s"))
                 .andExpect(jsonPath("$.proposals[0].video.title").value("[👦🏻유소년] 성장기 학생들을 위한 근력 운동 프로그램 (30min)"))
-                .andExpect(jsonPath("$.proposals[0].video.startSec").value(144))
+                // 대표 영상은 첫 본운동 칸(3번 칸 「앉아서 상체숙여 양팔 등 뒤로 펴기」 500초)이다 — 준비운동 첫 칸(144초)이 아니다
+                .andExpect(jsonPath("$.proposals[0].video.startSec").value(500))
+                .andExpect(jsonPath("$.proposals[0].sessions[2].clip.startSec").value(500))
                 .andExpect(jsonPath("$.proposals[0].participants", hasSize(2)))
                 .andExpect(jsonPath("$.proposals[0].participants[0].profileId")
                         .value(childId().toString()))
