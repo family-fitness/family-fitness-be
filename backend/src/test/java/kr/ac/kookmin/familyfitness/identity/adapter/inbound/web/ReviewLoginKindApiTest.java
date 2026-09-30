@@ -226,6 +226,10 @@ class ReviewLoginKindApiTest {
         JsonNode me = read(as(login, get("/api/v1/me")).andExpect(status().isOk()));
         assertThat(me.get("profiles").get(0).get("name").asString()).isEqualTo("아빠");
         assertThat(me.get("profiles").get(0).get("role").asString()).isEqualTo("PARENT");
+        assertThat(jdbc.queryForObject(
+                        "select count(*) from missions where family_id = ?", Integer.class, UUID.fromString(familyId)))
+                .as("가짜 보호자가 꾸민 체험 가족에도 지난 2주 기록이 있다")
+                .isPositive();
         assertTrialLeague(login, familyId);
     }
 
