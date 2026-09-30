@@ -2,7 +2,7 @@ package kr.ac.kookmin.familyfitness.fitness.domain;
 
 import java.util.Arrays;
 
-/** 규준 구간의 나이 단위. 유아기 규준은 개월(48~83개월) 단위다. */
+/** 등급 기준표 한 줄의 나이 단위. 유아기 줄은 개월(48~83개월) 단위다. */
 public enum NormAgeUnit {
     YEARS("세"),
     MONTHS("개월");

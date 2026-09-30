@@ -180,8 +180,8 @@ class NotificationWriterTest {
                     .extracting(
                             Notification::kind, Notification::title, Notification::body, Notification::fromProfileId)
                     .containsExactly(
-                            tuple(NotificationKind.PRAISE, "엄마가 스티커를 붙여 줬어요", null, mom),
-                            tuple(NotificationKind.PRAISE, "아빠가 칭찬을 보냈어요", "멋지다", dad));
+                            tuple(NotificationKind.PRAISE, "은영이 스티커를 붙여 줬어요", null, mom),
+                            tuple(NotificationKind.PRAISE, "철수가 칭찬을 보냈어요", "멋지다", dad));
             assertThat(repository.of(mom)).isEmpty();
         }
 
@@ -206,7 +206,7 @@ class NotificationWriterTest {
 
         assertThat(repository.rows)
                 .extracting(Notification::profileId, Notification::title, Notification::body, Notification::date)
-                .containsExactly(tuple(kid, "새 업적 — 사흘 이어서", "3일 이어서 움직였어요", today));
+                .containsExactly(tuple(kid, "새 업적: 사흘 이어서", "3일 이어서 움직였어요", today));
     }
 
     @Nested
@@ -308,8 +308,8 @@ class NotificationWriterTest {
                             Notification::body,
                             Notification::aboutProfileId)
                     .containsExactlyInAnyOrder(
-                            tuple(mom, "서준 키 · 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid),
-                            tuple(dad, "서준 키 · 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid));
+                            tuple(mom, "서준 키와 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid),
+                            tuple(dad, "서준 키와 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid));
         }
 
         @Test

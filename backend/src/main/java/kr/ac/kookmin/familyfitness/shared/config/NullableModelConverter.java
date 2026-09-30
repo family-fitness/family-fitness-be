@@ -84,7 +84,7 @@ public class NullableModelConverter implements ModelConverter {
         }
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private static boolean allowsNull(Schema property) {
         if (property.getTypes() != null && property.getTypes().contains(NULL_TYPE)) return true;
         List<Schema> oneOf = property.getOneOf();

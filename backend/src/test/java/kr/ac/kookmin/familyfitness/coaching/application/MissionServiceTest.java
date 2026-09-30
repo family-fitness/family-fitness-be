@@ -476,6 +476,61 @@ class MissionServiceTest {
     }
 
     @Test
+    @DisplayName("공단 영상 칸과 대표 영상은 mp4 주소 · 첫 장면 이미지를 싣고, 유튜브 칸은 두 칸이 null 이다")
+    void 공단_영상_칸과_대표_영상은_mp4_주소와_첫_장면_이미지를_싣는다() {
+        videos.videos.put("0AUDLJ08S_00351", Videos.kspo("0AUDLJ08S_00351", "팔굽혀펴기", 91, 7, 12));
+        UUID missionId = service.create(
+                        family.parentUser,
+                        family.familyId,
+                        new CreateMissionCommand(
+                                "팔굽혀펴기",
+                                Fixed.TODAY,
+                                Fixed.TODAY,
+                                TargetMetric.TIMER_MINUTES,
+                                5,
+                                "0AUDLJ08S_00351",
+                                List.of(family.child.profileId()),
+                                List.of(
+                                        new MissionSession(
+                                                1,
+                                                SessionPhase.MAIN,
+                                                "팔굽혀펴기",
+                                                FitnessFactor.STRENGTH,
+                                                3,
+                                                new SessionClip("0AUDLJ08S_00351", 0, 91, "팔굽혀펴기")),
+                                        new MissionSession(
+                                                2,
+                                                SessionPhase.COOLDOWN,
+                                                "제자리 걷기",
+                                                null,
+                                                2,
+                                                new SessionClip("IdpXx2gm90o", 96, 150, null)))))
+                .missionId();
+
+        MissionView one = service.get(family.childUser, missionId);
+        assertThat(one.video())
+                .isEqualTo(new MissionVideoView(
+                        "0AUDLJ08S_00351",
+                        "팔굽혀펴기",
+                        Videos.kspoMp4("0AUDLJ08S_00351"),
+                        91,
+                        null,
+                        Videos.kspoMp4("0AUDLJ08S_00351"),
+                        Videos.kspoThumbnail("0AUDLJ08S_00351")));
+        assertThat(one.sessions())
+                .extracting(MissionSessionView::clip)
+                .containsExactly(
+                        new SessionClipView(
+                                "0AUDLJ08S_00351",
+                                0,
+                                91,
+                                "팔굽혀펴기",
+                                Videos.kspoMp4("0AUDLJ08S_00351"),
+                                Videos.kspoThumbnail("0AUDLJ08S_00351")),
+                        new SessionClipView("IdpXx2gm90o", 96, 150, null, null, null));
+    }
+
+    @Test
     @DisplayName("동의가 필요한데 없는 참여자가 끼면 CONSENT_REQUIRED 로 막고 미션을 만들지 않는다")
     void 동의가_필요한데_없는_참여자가_끼면_CONSENT_REQUIRED_로_막는다() {
         FakeIdentity withdrawn = new FakeIdentity(family) {

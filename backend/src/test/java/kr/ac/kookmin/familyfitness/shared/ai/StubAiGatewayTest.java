@@ -26,7 +26,7 @@ class StubAiGatewayTest {
                 List.of(participants),
                 "2026-09-09",
                 1,
-                new CoachRunRequest.Constraints(1, 20, null, true, true, true, focusFactor, false));
+                new CoachRunRequest.Constraints(1, 20, null, true, true, true, focusFactor, false, List.of()));
     }
 
     @Test
@@ -91,7 +91,7 @@ class StubAiGatewayTest {
                     List.of(new Participant(child, "주행자")),
                     "2026-09-09",
                     1,
-                    new CoachRunRequest.Constraints(1, expected[0], null, true, true, true, null, false));
+                    new CoachRunRequest.Constraints(1, expected[0], null, true, true, true, null, false, List.of()));
             List<String> phases = gateway
                     .getCoachRun(gateway.startCoachRun(request).runId())
                     .proposal()
@@ -109,7 +109,7 @@ class StubAiGatewayTest {
     }
 
     @Test
-    @DisplayName("고른 힘은 미션 요인이 되고, 시드 영상 연령(7~12세) 밖의 주행자에게는 영상을 붙이지 않는다")
+    @DisplayName("보호자가 키워 주고 싶은 역량은 미션 요인이 되고, 시드 영상 연령(7~12세) 밖의 주행자에게는 영상을 붙이지 않는다")
     void 고른_힘은_미션_요인이_되고_연령_밖이면_영상을_붙이지_않는다() {
         CoachRunResult result =
                 gateway.getCoachRun(gateway.startCoachRun(request("민첩성", new Participant(toddler, "주행자")))
@@ -123,6 +123,28 @@ class StubAiGatewayTest {
                 .containsOnly("민첩성");
         assertThat(mission.sessions().stream().map(CoachRunResult.Session::video))
                 .containsOnlyNulls();
+    }
+
+    @Test
+    @DisplayName("성인 · 어르신 주행자에게는 성인 영상 구간을 붙이고, 그 영상 인용을 뒤에 더한다")
+    void 성인_어르신_주행자에게는_성인_영상_구간을_붙인다() {
+        AiProfile grandma = new AiProfile("p_grandma", 70, "세", "F", null, null, Map.of());
+
+        CoachRunResult result = gateway.getCoachRun(
+                gateway.startCoachRun(request(new Participant(child, "주행자"), new Participant(grandma, "주행자")))
+                        .runId());
+
+        CoachRunResult.Mission senior = result.proposal().missions().get(1);
+        assertThat(senior.participants()).containsExactly(new CoachRunResult.ParticipantRef("p_grandma", "주행자"));
+        assertThat(senior.sessions().getFirst().exerciseName()).isEqualTo("손목, 발목 돌리기");
+        assertThat(senior.sessions().getFirst().video()).isEqualTo(new CoachRunResult.Video("IhShIA-WJNE", 20, 50));
+        assertThat(senior.sessions().stream().map(CoachRunResult.Session::video))
+                .allMatch(it -> it != null && it.videoId().equals("IhShIA-WJNE"));
+        assertThat(senior.sessions().getFirst().evidence()).containsExactly(1, 3);
+        assertThat(result.proposal().missions().getFirst().sessions().getFirst().evidence())
+                .containsExactly(1, 2);
+        assertThat(result.proposal().citations().stream().map(Citation::chunkId).toList())
+                .containsExactly("prescription:유소년-11-F-0142", "video:Eg3GpTv7z8s", "video:IhShIA-WJNE");
     }
 
     @Test
@@ -159,33 +181,6 @@ class StubAiGatewayTest {
         assertThat(refused.refused()).isTrue();
         assertThat(refused.refusalReason()).isEqualTo("medical_query");
         assertThat(refused.citations()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("trajectory 는 현재·+4·+8·+10 세 구간을 고정 notice 와 함께 돌려준다")
-    void trajectory_는_현재_4_8_10_세_구간을_고정_notice_와_함께_돌려준다() {
-        AiProfile measured = new AiProfile(
-                child.profileRef(),
-                child.age(),
-                child.ageUnit(),
-                child.sex(),
-                child.heightCm(),
-                child.weightKg(),
-                Map.of("028", 40.0));
-        TrajectoryResponse response = gateway.trajectory(new TrajectoryRequest(measured, "028", 10));
-
-        assertThat(response.basis()).isEqualTo("cross_sectional_group_distribution");
-        assertThat(response.itemCode()).isEqualTo("028");
-        assertThat(response.notice()).isEqualTo(Copy.TRAJECTORY_NOTICE);
-        assertThat(response.bands().stream().map(TrajectoryResponse.Band::age).toList())
-                .containsExactly(11, 15, 19, 21);
-        assertThat(response.bands().getFirst().p50()).isEqualTo(40.0);
-        assertThat(response.bands().stream().allMatch(it -> it.p10() < it.p50() && it.p50() < it.p90()))
-                .isTrue();
-        assertThat(gateway.trajectory(new TrajectoryRequest(parent, "028", 5)).bands().stream()
-                        .map(TrajectoryResponse.Band::age)
-                        .toList())
-                .containsExactly(41, 45);
     }
 
     @Test

@@ -36,8 +36,7 @@ public class FitnessTestController {
         RegisterFitnessTestCommand command = new RegisterFitnessTestCommand(
                 Objects.requireNonNull(request.testedOn()),
                 Objects.requireNonNull(request.source()),
-                request.heightCm(),
-                request.weightKg(),
+                request.body(),
                 request.measurements());
         return FitnessTestResponse.of(service.register(user.userId(), profileId, command));
     }

@@ -32,6 +32,8 @@ public class FakeFitness implements FitnessQuery {
                         Fixed.TODAY.minusDays(3),
                         new BigDecimal("140.5"),
                         new BigDecimal("35.0"),
+                        null,
+                        null,
                         measurements,
                         weakest,
                         strongest));

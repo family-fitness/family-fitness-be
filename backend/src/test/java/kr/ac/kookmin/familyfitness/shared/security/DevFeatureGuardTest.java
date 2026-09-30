@@ -38,6 +38,30 @@ class DevFeatureGuardTest {
     }
 
     @Test
+    @DisplayName(
+            "prod 가 활성이면 local · compose · test 가 함께 있어도 개발용 기능이 켜지면 기동을 멈춘다 — prod,compose 로 띄우면 시간 이동 · 자동 로그인이 운영에서 켜졌다")
+    void prod_가_있으면_개발_프로필이_함께_있어도_멈춘다() {
+        for (String dev : new String[] {"local", "compose", "test"}) {
+            MockEnvironment mixed = allDevFeaturesOn(env("prod", dev));
+            assertThatThrownBy(() -> DevFeatureGuard.check(mixed))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("prod")
+                    .hasMessageContaining("app.dev.time-travel.enabled");
+        }
+        // 개발용 기능이 모두 꺼져 있으면 prod 와 개발 프로필이 함께 있어도 뜬다
+        assertThatCode(() -> DevFeatureGuard.check(env("prod", "compose"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("prod 에서 시간 이동을 켜면 기동을 멈춘다")
+    void prod_에서_시간_이동을_켜면_기동을_멈춘다() {
+        MockEnvironment prod = env("prod").withProperty("app.dev.time-travel.enabled", "true");
+        assertThatThrownBy(() -> DevFeatureGuard.check(prod))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("app.dev.time-travel.enabled");
+    }
+
+    @Test
     @DisplayName("프로필 없이 자동 로그인만 켜도 기동을 멈춘다")
     void 프로필_없이_자동_로그인만_켜도_기동을_멈춘다() {
         MockEnvironment none = env().withProperty("app.auth.dev-auto-login.enabled", "true");
@@ -84,6 +108,13 @@ class DevFeatureGuardTest {
         MockEnvironment explicitOff = env();
         DevFeatureGuard.DEV_FEATURES.forEach(key -> explicitOff.setProperty(key, "false"));
         assertThatCode(() -> DevFeatureGuard.check(explicitOff)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("심사용 계정 로그인은 개발용 기능이 아니라 prod 에서 켜도 뜬다")
+    void 심사용_계정_로그인은_prod_에서_켜도_뜬다() {
+        MockEnvironment prod = env("prod").withProperty("app.auth.review-login.enabled", "true");
+        assertThatCode(() -> DevFeatureGuard.check(prod)).doesNotThrowAnyException();
     }
 
     @Test

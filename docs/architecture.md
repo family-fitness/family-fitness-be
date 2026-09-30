@@ -1,20 +1,21 @@
 # 아키텍처
 
 Spring Boot 하나의 모듈러 모놀리스(Spring Modulith). 업무 모듈은 일곱 개다. 모듈 = 패키지 = ERD 묶음이며, 각 모듈은
-`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 develop `a880ad4`(2026-09-29)다.
+`domain` · `application` · `adapter` 세 계층으로 나뉜다. 기준은 `feature/BE-35-launch-readiness`(2026-09-29)다 — develop `56421ae` 위에 출시 준비
+커밋을 얹은 것이고 아직 develop 에 병합하지 않았다.
 
 ## 모듈과 의존
 
 ```mermaid
 flowchart LR
     identity["identity\n계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간"]
-    fitness["fitness\n측정 항목 · 측정 회차 · 백분위 · 이력 · 체력 지도 · 예측"]
+    fitness["fitness\n측정 항목 · 측정 회차 · 백분위 · 등급 · 이력 · 체력 지도"]
     activity["activity\n일별 활동(초) · 쉬는 날 카드"]
     progress["progress\n경험치 원장 · 레벨 · 업적 · 이어서 한 날"]
     coaching["coaching\n하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약"]
     league["league\n가족 리그(월 단위 달성률 · 티어)"]
     notification["notification\n알림함"]
-    ai["AI 서비스 (FastAPI)\n평가 · 추이 · 영상 검색 · 편성 · 대화"]
+    ai["AI 서비스 (FastAPI)\n평가 · 영상 검색 · 편성 · 대화"]
     fitness --> identity
     activity --> identity
     progress --> identity
@@ -33,14 +34,13 @@ flowchart LR
     notification --> progress
     notification --> coaching
     coaching -. AiGateway .-> ai
-    fitness -. AiGateway .-> ai
 ```
 
 화살표는 「이 모듈이 저 모듈의 `api` 패키지를 부른다」 는 뜻이다.
 
 | 모듈 | 부르는 모듈(`api` 만) | 밖으로 여는 `api` |
 |---|---|---|
-| `identity` | 없음 | `ProfileSummary` · `ProfileDetails` · `ProfileQuery` · `FamilyAccess` · `CheerQuery` · `CheerView` · `CheerKind` · `CheerSent` · `AvailabilityQuery` · `AvailabilitySlot` · `InviteStatus` · `MissionLookup`(SPI) 와 예외들 |
+| `identity` | 없음 | `ProfileSummary` · `ProfileDetails` · `ProfileQuery` · `FamilyAccess` · `CheerQuery` · `CheerView` · `CheerKind` · `CheerSent` · `AvailabilityQuery` · `AvailabilitySlot` · `InviteStatus` · `ReviewFamilyCreated` · `MissionLookup`(SPI) 와 예외들 |
 | `fitness` | identity | `FitnessQuery` · `LatestFitness` · `FactorPoint` · `FitnessTestRegistered` |
 | `activity` | identity | `ActivityRecorder` · `ActivityQuery` · `RestDayQuery` · `ActivitySource` 와 조회 값 |
 | `progress` | identity · activity · fitness | `ProgressRecorder` · `SessionDone` · `AchievementEarned` · `PlannedDays`(SPI) · `PlannedDaysSinceCreated`(SPI) |
@@ -69,11 +69,13 @@ flowchart LR
 ## 도메인 이벤트
 
 이벤트는 발행한 쪽의 트랜잭션 안에서 낸다. 이벤트 발행 기록 저장소(spring-modulith event publication registry)는 쓰지 않는다.
-그래서 커밋 뒤에 받는 쪽이 실패하면 다시 보내지 않는다. 받는 쪽은 이것을 보고 두 가지로 나눴다.
+그래서 커밋 뒤에 받는 쪽이 실패하면 다시 보내지 않는다. 받는 쪽은 이것을 보고 같은 트랜잭션에서 동기로 듣는 것과 커밋 뒤에 듣는 것으로 나눴다.
 
 - **경험치(progress)는 같은 트랜잭션에서 동기로 듣는다**(`@EventListener`). 원장은 줄지 않는 값이라 빠진 적립을 되살릴 길이 없다.
   같은 트랜잭션이면 적립과 원래 일(응원 · 측정)이 함께 저장되거나 함께 되돌려진다. FE 가 곧바로 다시 읽는 레벨에도 이미 반영돼 있다.
   원장 · 업적 넣기는 `ON CONFLICT DO NOTHING` 이다. 두 요청이 같은 적립을 동시에 넣어도 늦은 쪽은 건너뛸 뿐, 원래 요청이 되돌려지지 않는다.
+- **심사용 체험 가족의 측정(fitness)도 같은 트랜잭션에서 동기로 듣는다.** 로그인 응답이 나가기 전에 두 아이의 측정과 등급이 서 있어야
+  심사위원이 홈에서 바로 결과를 본다. 측정을 넣다 실패하면 계정 · 가족까지 함께 되돌린다.
 - **알림(notification)은 커밋 뒤에 듣는다**(`@TransactionalEventListener(AFTER_COMMIT, fallbackExecution = true)`). 알림이 실패해도
   원래 일은 되돌아가지 않는다. 실패는 로그만 남긴다.
   - 리스너는 일을 알림 전용 스레드 풀(`notificationTaskExecutor`, 스레드 2 · 대기열 1000)에 넘기기만 한다. 쓰기는 그 스레드가
@@ -89,6 +91,7 @@ flowchart LR
 |---|---|---|---|
 | `identity.api.CheerSent` | `CheerService.cheer` — 응원을 저장한 뒤 | progress: 스티커 붙은 `PRAISE` 면 `STICKER` +10(같은 미션에 한 번) · 업적 판정 | 같은 트랜잭션, 동기 |
 | | | notification: `KID_DONE` · `KID_THANKS` · `PRAISE` | 커밋 뒤 |
+| `identity.api.ReviewFamilyCreated` | `ReviewLoginService` — 심사용 계정의 체험 가족을 만든 뒤 | fitness `ReviewFamilyFitness`: 두 아이(하윤 · 서준)의 측정 회차를 사흘 전 날짜로 넣는다. 보호자가 화면에서 넣는 `FitnessTestService.register` 를 그대로 거친다 | 같은 트랜잭션, 동기 |
 | `fitness.api.FitnessTestRegistered` | `FitnessTestService.register` — 측정 회차를 저장한 뒤 | progress: 다시 잰 회차가 생기면 `REMEASURE` +20 · 업적 판정 | 같은 트랜잭션, 동기 |
 | | | notification: 그 아이의 지난 측정 회차로 만든 `REMEASURE` 를 부모 알림함에서 지운다 | 커밋 뒤 |
 | `coaching.api.SessionCompleted` | `SessionCompletionService` — 칸 끝을 새로 적은 사람마다(번진 보호자 포함) | 지금 듣는 곳이 없다 | — |
@@ -123,7 +126,7 @@ flowchart LR
   - `requireParent` · `requireParentOfProfile`: 그 가족의 보호자. 아이 계정이면 403 `NOT_A_PARENT`.
   - `requireActingAs`: 그 프로필 이름으로 행동할 수 있는가(`Family.canActAs`). 본인 계정의 프로필이거나, 같은 가족 보호자가 계정 없는 아이
     프로필을 대신할 때만 된다. 아니면 403 `FORBIDDEN`. 응원 보내기 · 칸 끝 · 운동 느낌 · 알림함, 그리고 FE 가 부르지 않는 옛 주소
-    (타이머 · 걸음수 · 영상 진행 · 코치 대화 · 예측)가 쓴다.
+    (타이머 · 걸음수 · 영상 진행 · 코치 대화)가 쓴다.
 - 보호자 동의가 필요한데 없거나 거둔 프로필(`ProfileSummary` 의 `consentRequired && !consentGiven`)은 새 기록(측정 · 편성 · 승인 ·
   미션 · 칸 끝 · 느낌 · 활동)에서 422 `CONSENT_REQUIRED` 다. 거둔 동의는 만 14세가 지나도 풀리지 않는다.
 - 가족 쓰기는 프로필 행 낙관적 잠금(`profiles.version`)을 건다. 겹친 쓰기의 늦은 쪽은 409 `CONFLICT` 다. 그 밖에도 읽은 행을 다른
@@ -144,6 +147,7 @@ flowchart LR
 - 호출 계약은 `shared.ai.AiGateway` 하나다. `app.ai.mode=http` 면 `{base-url}/v1` 의 FastAPI 를 부르고,
   `stub` 이면 AI 서비스 없이 결정적 가짜 응답을 낸다(local · compose 기본, prod 는 http).
   AI 서비스는 `/v1` 아래 다섯 주소(assessment · trajectory · videos/search · coach/runs · coach/messages)와 `/health` 를 연다.
+  서버는 trajectory 를 부르지 않는다 — 10년 예측을 걷었다(`V153`).
 - AI 가 돌려준 제안은 보호자가 승인하기 전에는 미션이 아니다. `CoachRun` 이 `AWAITING_APPROVAL` 에서 멈추고,
   미션 INSERT 는 승인 트랜잭션과 직접 만들기에서만 일어난다.
 - 편성 한 번은 아이 한 명의 하루다. AI 에는 편성 대상 한 명만 보낸다. 같은 (대상, 날짜)의 동시 실행은
@@ -153,18 +157,21 @@ flowchart LR
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나, 실행 단위로 실패(`failed` · 폴링 만료 · 폴링 404)하면 라벨 기반 대체 편성(`LabelBasedProposalPlanner`)으로
   넘어간다. 폴링 한 번의 일시 오류는 다음 폴링으로 넘긴다. AI 가 근거가 없다고 거부하면 FAILED(`NO_CITATIONS`), AI 400 · 409 는 FAILED(`ERROR`)다.
 - AI 가 200 을 줬어도 본문을 읽지 못하거나(깨진 JSON · text/html) 서버 모양으로 바꾸지 못하면(칸 누락) `HttpAiGateway` 가
-  `AiUnavailableException` 으로 바꾼다. 그래서 연결 실패와 같게 대체 편성으로 가고, 예측 · 대화는 503 `TEMPORARILY_UNAVAILABLE` 이다.
+  `AiUnavailableException` 으로 바꾼다. 그래서 연결 실패와 같게 대체 편성으로 가고, 대화는 503 `TEMPORARILY_UNAVAILABLE` 이다.
 - 실패 까닭은 `CoachRunView.failureCode` 로 알린다. 코드 목록과 결과 처리 표는 [api-contract.md](./api-contract.md) 8장.
 
 ## 데이터베이스
 
-- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V152`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
-  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 33개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
+- Flyway 마이그레이션(`backend/src/main/resources/db/migration`, 지금 `V1` ~ `V165`)이 정본이다. PostgreSQL 과 H2(PostgreSQL 모드)
+  양쪽에서 같은 SQL 이 돌도록 DB 전용 문법을 쓰지 않는다. ID · 시각은 애플리케이션이 채운다. 표는 34개이고 ERD 는 [erd.dbml](./erd.dbml) 이다.
 - 로컬은 H2 인메모리 + 시드(`db/seed`: 데모 가족 · 데모 가족의 운동할 수 있는 시간 · 시험용 가짜 영상 4편)로 외부 의존성 없이 뜬다.
   시드는 local · compose · test 프로필에서만 적용된다.
-- 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 규준표는 국민체력100 공공데이터 산출물(V3, `kspo_norms_to_sql.py`),
-  운동 영상 48편과 구간 695개는 AI 클립 릴리스(V132, `ai_clips_to_sql.py`)다. AI 새 판은 새 V 파일로 넣고, 판에서 빠진 구간은 `active=false` 로 남긴다.
-- 영상은 유튜브 videoId 로만 가리킨다. 제안 · 미션의 `video_id` 에는 `exercise_videos` FK 가 없고(V134),
+- 공공 · AI 자료는 버전 마이그레이션으로 모든 프로필에 적재한다. 또래 분포 표는 AI 가 국민체력100 공공데이터로 만든 표(V156, `value_quantiles_to_sql.py`), 등급 기준표는 AI 의 공식 기준표(V154, `grade_thresholds_to_sql.py`), 또래 등급 비율은 AI 가 센 인증 결과(V159, `grade_distribution_to_sql.py`),
+  운동 영상 48편과 구간 695개는 AI 클립 릴리스(V132, `ai_clips_to_sql.py`)다. 공단 「국민체력100 동영상 정보」 오픈API 영상 452편은 한 편이 곧 구간 하나로
+  V161 ~ V165(`kspo_videos_to_sql.py`)이 더한다(어르신 영상은 싣지 않고 65세 이상은 성인 영상을 받는다). V165 부터 AI 표의 연령대 · 요인 · 단계 줄을
+  `video_exercise_labels` 에 두고, 켜진 구간 목록을 읽을 때 줄마다 후보 하나로 펼친다(「공통」 영상은 청소년 · 성인 둘 다). AI 표가 새로 나오면 새 V 파일로 넣고, 새 표에서 빠진 구간은 `active=false` 로 남긴다(두 스크립트는 제 출처 구간만 끈다).
+- 영상은 videoId 로만 가리킨다. 유튜브 영상은 유튜브 id, 공단 영상은 파일 이름(예 `0AUDLJ08S_00351`)이고, 공단 영상은 `exercise_videos.media_url`(mp4) ·
+  `thumbnail_url` 로 튼다. 이 두 주소는 제안 · 미션 칸에 사본으로 두지 않고 조회 때 영상 표에서 붙인다. 제안 · 미션의 `video_id` 에는 `exercise_videos` FK 가 없고(V134),
   제안 칸(`coach_run_proposal_sessions`) · 미션 칸(`mission_sessions`)은 영상 구간의 사본(videoId · startSec · endSec · 제목)을 든다.
   그래서 영상 · 구간 표를 다시 적재해도 지난 제안 · 미션이 바뀌지 않는다.
 - 모듈마다 표
@@ -172,7 +179,7 @@ flowchart LR
 | 모듈 | 표 |
 |---|---|
 | identity | `users` · `families` · `profiles` · `consent_events` · `cheers` · `profile_availability_slots` · `refresh_tokens` |
-| fitness | `fitness_norms` · `fitness_tests` · `fitness_test_items` · `predictions` · `prediction_points` |
+| fitness | `fitness_value_quantiles` · `fitness_grade_thresholds` · `fitness_grade_distribution` · `fitness_tests` · `fitness_test_items` |
 | activity | `activity_daily` · `rest_cards` |
 | progress | `progress_xp_events` · `progress_achievements` |
 | coaching | `exercise_videos` · `video_exercises` · `video_interactions` · `exercise_favorites` · `coach_runs` · `coach_run_proposal_items` · `coach_run_proposal_sessions` · `missions` · `mission_participants` · `mission_sessions` · `mission_session_completions` · `mission_feedback` · `coach_messages` · `coach_message_citations` |

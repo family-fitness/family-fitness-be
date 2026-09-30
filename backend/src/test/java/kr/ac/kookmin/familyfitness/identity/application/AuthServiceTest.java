@@ -55,6 +55,7 @@ class AuthServiceTest {
                             Duration.ofDays(30)),
                     new AppProperties.DevLogin(),
                     new AppProperties.DevAutoLogin(),
+                    new AppProperties.ReviewLogin(),
                     new AppProperties.Google()),
             new AppProperties.Ai());
     private final SecretKeySpec key =
@@ -216,6 +217,28 @@ class AuthServiceTest {
                         .session()
                         .userId())
                 .isEqualTo(user.id());
+    }
+
+    @Test
+    @DisplayName("개발용 로그인에 demo-fresh 를 보내면 부를 때마다 가족 없는 새 계정이다 — FE 「새 계정」 단추를 몇 번이고 누를 수 있게")
+    void 개발용_로그인_demo_fresh_는_부를_때마다_새_계정이다() {
+        AuthResult first = service.devLogin(AuthService.FRESH_DEV_USER, null, null);
+        AuthResult second = service.devLogin(AuthService.FRESH_DEV_USER, null, null);
+
+        assertThat(AuthService.FRESH_DEV_USER).isEqualTo("demo-fresh");
+        assertThat(second.session().userId()).isNotEqualTo(first.session().userId());
+        assertThat(List.of(first, second))
+                .allSatisfy(it -> assertThat(it.session().nextStep()).isEqualTo(NextStep.CREATE_FAMILY));
+        assertThat(users.users.values()).hasSize(2).allSatisfy(it -> {
+            assertThat(it.provider()).isEqualTo(User.PROVIDER_DEV);
+            assertThat(it.providerUserId()).startsWith("demo-fresh-");
+        });
+
+        // 딱 그 값일 때만이다 — 비슷한 값은 여느 개발용 계정처럼 같은 계정으로 돌아온다
+        UUID similar = service.devLogin("demo-fresh-x", null, null).session().userId();
+        assertThat(service.devLogin("demo-fresh-x", null, null).session().userId())
+                .isEqualTo(similar);
+        assertThat(users.users).hasSize(3);
     }
 
     @Test

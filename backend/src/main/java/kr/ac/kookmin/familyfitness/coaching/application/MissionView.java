@@ -20,5 +20,5 @@ public record MissionView(
         @Nullable String rationale,
         @Nullable MissionVideoView video,
         List<MissionParticipantView> participants,
-        /** position 차례. 칸 없는 미션은 [] */
+        /* position 차례. 칸 없는 미션은 [] */
         List<MissionSessionView> sessions) {}

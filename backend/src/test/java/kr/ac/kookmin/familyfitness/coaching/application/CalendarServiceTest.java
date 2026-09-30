@@ -25,6 +25,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.FakeActivity;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemorySessionCompletionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryVideoInteractionRepository;
@@ -59,8 +60,15 @@ class CalendarServiceTest {
     private final FakeRestDays restDays = new FakeRestDays();
     private final MissionCompletionPolicy policy =
             new MissionCompletionPolicy(activity, new InMemoryVideoInteractionRepository(), missions, completions);
-    private final CalendarService service =
-            new CalendarService(missions, completions, identity, activity, cheers, restDays, Fixed.time());
+    private final CalendarService service = new CalendarService(
+            missions,
+            completions,
+            identity,
+            activity,
+            cheers,
+            restDays,
+            new InMemoryExerciseVideoRepository(),
+            Fixed.time());
 
     private final UUID child = family.child.profileId();
     private final UUID parent = family.parent.profileId();

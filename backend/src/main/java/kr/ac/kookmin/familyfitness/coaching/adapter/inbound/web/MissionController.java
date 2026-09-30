@@ -136,8 +136,11 @@ public class MissionController {
      * 오면(예: 다른 미션의 칸 끝과 같은 날 활동 행을 동시에 처음 넣음) 먼저 온 쪽이 커밋했으니 한 번 더 부른다(409 로 떨어뜨리지 않는다).
      * 다시 부르는 것은 한 번뿐이다. FK · NOT NULL · check 위반은 동시 요청이 아니라
      * 서버 버그라 그대로 던져 {@code ApiErrorHandler} 가 500 으로 남긴다. 두 번째도 유니크 위반이면 그대로 409 가 된다.
+     *
+     * <p>{@code /done} 은 전환기 별칭이다 — 지금 FE(fe:src/lib/api/queries.ts useCompleteSession)가 부르는 이름이라 같은
+     * 핸들러로 받는다. 문서에는 deprecated 로 싣고(OpenApiConfig.TRANSITIONAL_ALIASES), FE 가 {@code /complete} 로 옮기면 걷는다.
      */
-    @PostMapping("/missions/{missionId}/sessions/{seq}/complete")
+    @PostMapping({"/missions/{missionId}/sessions/{seq}/complete", "/missions/{missionId}/sessions/{seq}/done"})
     public SessionCompletedView completeSession(
             CurrentUser user,
             @PathVariable UUID missionId,
@@ -194,7 +197,7 @@ public class MissionController {
         LocalDate endDate = body.endDate();
         if (dates != null) {
             if (startDate != null || endDate != null) {
-                throw new InvalidInputException("dates 와 startDate · endDate 는 같이 보낼 수 없습니다");
+                throw new InvalidInputException("dates 는 startDate, endDate 와 같이 보낼 수 없습니다");
             }
             return dates.stream()
                     .distinct()
@@ -203,7 +206,7 @@ public class MissionController {
                     .toList();
         }
         if (startDate == null || endDate == null) {
-            throw new InvalidInputException("startDate · endDate 또는 dates 가 필요합니다");
+            throw new InvalidInputException("startDate 와 endDate, 또는 dates 가 필요합니다");
         }
         if (endDate.isBefore(startDate)) throw new InvalidInputException("endDate 는 startDate 이후여야 합니다");
         return List.of(new Period(startDate, endDate));

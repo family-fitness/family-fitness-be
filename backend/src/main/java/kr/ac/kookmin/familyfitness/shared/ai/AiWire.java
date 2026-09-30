@@ -140,71 +140,6 @@ final class AiWire {
         }
     }
 
-    // ---- trajectory ----
-
-    record TrajectoryRequestBody(
-            @JsonProperty("profile_ref") String profileRef,
-            int age,
-            @JsonProperty("age_unit") String ageUnit,
-            String sex,
-            @JsonProperty("height_cm") @Nullable Double heightCm,
-            @JsonProperty("weight_kg") @Nullable Double weightKg,
-            Map<String, Double> measurements,
-            @JsonProperty("item_code") String itemCode,
-            @JsonProperty("horizon_years") int horizonYears) {
-        static TrajectoryRequestBody of(TrajectoryRequest r) {
-            AiProfile it = r.profile();
-            return new TrajectoryRequestBody(
-                    it.profileRef(),
-                    it.age(),
-                    it.ageUnit(),
-                    it.sex(),
-                    it.heightCm(),
-                    it.weightKg(),
-                    it.measurements(),
-                    r.itemCode(),
-                    r.horizonYears());
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    record TrajectoryBody(
-            String basis,
-            @JsonProperty("item_code") String itemCode,
-            @JsonProperty("item_name") String itemName,
-            String unit,
-            List<BandBody> bands,
-            String notice,
-            @JsonProperty("low_sample") boolean lowSample) {
-        TrajectoryBody {
-            itemName = itemName == null ? "" : itemName;
-            unit = unit == null ? "" : unit;
-            bands = bands == null ? List.of() : bands;
-            notice = notice == null ? "" : notice;
-        }
-
-        @JsonIgnoreProperties(ignoreUnknown = true)
-        record BandBody(
-                int age,
-                @Nullable Double p10,
-                @Nullable Double p50,
-                @Nullable Double p90,
-                int n) {}
-
-        TrajectoryResponse toDomain() {
-            return new TrajectoryResponse(
-                    basis,
-                    itemCode,
-                    itemName,
-                    unit,
-                    bands.stream()
-                            .map(it -> new TrajectoryResponse.Band(it.age(), it.p10(), it.p50(), it.p90(), it.n()))
-                            .toList(),
-                    notice,
-                    lowSample);
-        }
-    }
-
     // ---- videos/search ----
 
     record VideoSearchRequestBody(
@@ -270,7 +205,12 @@ final class AiWire {
 
         record Period(@JsonProperty("start_date") String startDate, int weeks) {}
 
-        /** focus_factor · with_companion 은 AI ConstraintsIn 에 아직 없다. AI 가 무시하므로 먼저 보낸다(CO-07). */
+        /**
+         * focus_factor(보호자가 키워 주고 싶은 역량)와 with_companion 은 AI develop 의 ConstraintsIn 에 아직 없어 AI 가 받아서 버린다.
+         * focus_factor 는 AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다.
+         * 버려져도 요청이 깨지지 않으므로 먼저 보낸다(CO-07). recent_video_ids(최근 14일 동안 받은 영상 id, 최근 것부터 최대 150개)도
+         * 같다 — 이 칸을 받는 AI 는 그 영상들을 뒤로 미룬다.
+         */
         record Constraints(
                 @JsonProperty("days_per_week") int daysPerWeek,
                 @JsonProperty("minutes_per_session") int minutesPerSession,
@@ -279,7 +219,8 @@ final class AiWire {
                 @JsonProperty("small_space") boolean smallSpace,
                 @JsonProperty("no_props") boolean noProps,
                 @JsonProperty("focus_factor") @Nullable String focusFactor,
-                @JsonProperty("with_companion") boolean withCompanion) {
+                @JsonProperty("with_companion") boolean withCompanion,
+                @JsonProperty("recent_video_ids") List<String> recentVideoIds) {
             static Constraints of(CoachRunRequest.Constraints c) {
                 return new Constraints(
                         c.daysPerWeek(),
@@ -289,7 +230,8 @@ final class AiWire {
                         c.smallSpace(),
                         c.noProps(),
                         c.focusFactor(),
-                        c.withCompanion());
+                        c.withCompanion(),
+                        c.recentVideoIds());
             }
         }
 
@@ -462,15 +404,29 @@ final class AiWire {
         /**
          * video_id 가 빠졌거나 null · 빈칸이면 영상이 없는 세션으로 읽는다. 도메인 {@link CoachRunResult.Video#videoId} 는
          * null 이 아니어야 한다 — 칸 변환과 구간 제목 조회가 그 값을 바로 쓴다. 영상 하나 때문에 제안 전체를 버리지 않는다.
+         * source(youtube · kspo) · url 은 없어도 읽힌다. 빈칸은 null 로 읽는다.
+         * url 은 AI 가 트는 주소다(ai:video/catalog.py Clip.as_video). 공단 영상(source=kspo)이면 mp4 주소라 도메인 mediaUrl 로 쓰고,
+         * 유튜브면 watch?v=&lt;id&gt;&amp;t=&lt;초&gt;s 라 버린다 — 유튜브는 videoId · 구간으로 튼다.
+         * url 이 없으면 옛 응답의 media_url(공단 영상의 mp4 주소)을 쓴다.
          */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record VideoBody(
                 @JsonProperty("video_id") @Nullable String videoId,
                 @JsonProperty("start_sec") @Nullable Integer startSec,
-                @JsonProperty("end_sec") @Nullable Integer endSec) {
+                @JsonProperty("end_sec") @Nullable Integer endSec,
+                @JsonProperty("source") @Nullable String source,
+                @JsonProperty("url") @Nullable String url,
+                @JsonProperty("media_url") @Nullable String mediaUrl) {
             CoachRunResult.@Nullable Video toDomain() {
                 if (videoId == null || videoId.isBlank()) return null;
-                return new CoachRunResult.Video(videoId, startSec, endSec);
+                String kind = blankToNull(source);
+                String played = CoachRunResult.Video.SOURCE_KSPO.equals(kind) ? blankToNull(url) : null;
+                return new CoachRunResult.Video(
+                        videoId, startSec, endSec, kind, played != null ? played : blankToNull(mediaUrl));
+            }
+
+            private static @Nullable String blankToNull(@Nullable String value) {
+                return value == null || value.isBlank() ? null : value.strip();
             }
         }
 

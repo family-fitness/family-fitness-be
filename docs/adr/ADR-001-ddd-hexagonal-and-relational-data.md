@@ -1,11 +1,24 @@
 # ADR-001: 모듈러 모놀리스, 헥사고날 계층, 외부 AI 경계
 
-상태: 채택 (2026-09-09 갱신)
+상태: 채택 (2026-09-29 갱신 — 모듈을 넷에서 일곱으로 고쳐 적음)
 
 ## 결정
 
-1. Spring Boot 애플리케이션 하나를 `identity` · `fitness` · `activity` · `coaching` 네 Spring Modulith 모듈로 나눈다.
-   모듈 밖으로는 `api` 패키지만 연다. `fitness` · `activity` 는 `identity` 만, `coaching` 은 `identity` · `fitness` · `activity` 를 참조한다.
+1. Spring Boot 애플리케이션 하나를 `identity` · `fitness` · `activity` · `progress` · `coaching` · `league` · `notification`
+   일곱 Spring Modulith 모듈로 나눈다. 모듈 밖으로는 `api` 패키지만 연다. 모듈마다 부를 수 있는 모듈은 아래와 같다.
+
+   | 모듈 | 부를 수 있는 모듈 |
+   |---|---|
+   | `identity` | 없음 |
+   | `fitness` | `identity` |
+   | `activity` | `identity` |
+   | `progress` | `identity` · `activity` · `fitness` |
+   | `coaching` | `identity` · `fitness` · `activity` · `progress` |
+   | `league` | `identity` · `activity` · `progress` |
+   | `notification` | `identity` · `fitness` · `activity` · `progress` · `coaching` |
+
+   아무도 `notification` · `league` 를 부르지 않는다. 이 표는 `ModularityTests` 의 허용 표와 같고, 모듈마다 무엇을 맡는지는
+   [architecture.md](../architecture.md) 「모듈과 의존」에 있다.
 2. 각 모듈은 `domain` · `application` · `adapter` 계층을 둔다. 규칙이 있는 애그리게잇(`Family`, `CoachRun`, `Mission`, `FitnessTest`)은
    도메인 모델과 JPA 엔티티를 분리한다.
 3. 데이터는 관계형(PostgreSQL)이고 Flyway 가 스키마의 정본이다. AI 제안 원문·실행 단계처럼 통째로만 읽는 것은 `text` 컬럼에 JSON 으로 둔다.
@@ -17,6 +30,9 @@
 - 팀이 셋(백엔드·AI·프론트)이고 5주 출품 범위라 서비스 분리보다 모듈 경계를 테스트로 지키는 편이 싸다.
 - 미션 완료 판정이 활동과 측정 두 컨텍스트에 걸쳐서 `coaching → activity/fitness` 의존을 허용했다. 대신 방향은 한쪽뿐이며
   `ModularityTests` 가 순환을 막는다.
+- 경험치 · 레벨(`progress`), 가족 리그(`league`), 알림함(`notification`)은 처음 네 모듈 뒤에 붙은 기능이라 각자 모듈로 두었다.
+  `coaching` 은 칸 끝 경험치를 적으려고 `progress` 만 부르고, `league` · `notification` 은 이벤트를 받거나 `api` 로 물을 뿐
+  아무도 부르지 않는다. 아래쪽 모듈이 위쪽 데이터를 물어야 하면 아래쪽 `api` 에 인터페이스를 두고 위쪽이 구현한다(`PlannedDays` 등).
 - Docker 가 없는 개발 환경도 있어, 마이그레이션을 PostgreSQL 과 H2 양쪽에서 도는 이식 가능한 SQL 로 유지한다.
 
 ## 결과

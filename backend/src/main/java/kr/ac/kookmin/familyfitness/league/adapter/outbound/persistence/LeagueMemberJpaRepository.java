@@ -22,8 +22,14 @@ public interface LeagueMemberJpaRepository extends JpaRepository<LeagueMemberEnt
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update LeagueMemberEntity m
-            set m.finalRate = :finalRate, m.finalRank = :finalRank, m.moved = :moved
+            set m.finalRate = :finalRate, m.finalScore = :finalScore, m.finalRank = :finalRank, m.moved = :moved
             where m.id.roundId = :roundId and m.id.familyId = :familyId
             """)
-    int saveResult(UUID roundId, UUID familyId, @Nullable Integer finalRate, @Nullable Integer finalRank, String moved);
+    int saveResult(
+            UUID roundId,
+            UUID familyId,
+            @Nullable Integer finalRate,
+            @Nullable Double finalScore,
+            @Nullable Integer finalRank,
+            String moved);
 }

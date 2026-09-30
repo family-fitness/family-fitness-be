@@ -9,9 +9,6 @@ public interface AiGateway {
     /** POST /v1/fitness/assessment — 3s · 재시도 2회 */
     AssessmentResponse assess(AssessmentRequest request);
 
-    /** POST /v1/fitness/trajectory — 3s · 재시도 2회 */
-    TrajectoryResponse trajectory(TrajectoryRequest request);
-
     /** POST /v1/videos/search — 4s · 재시도 2회 */
     VideoSearchResponse searchVideos(VideoSearchRequest request);
 

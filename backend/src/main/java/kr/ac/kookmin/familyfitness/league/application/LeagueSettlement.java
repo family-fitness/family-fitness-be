@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.league.application.port.LeagueRepository;
+import kr.ac.kookmin.familyfitness.league.domain.AchievementRate.Result;
 import kr.ac.kookmin.familyfitness.league.domain.LeagueMember;
 import kr.ac.kookmin.familyfitness.league.domain.LeagueRound;
 import kr.ac.kookmin.familyfitness.league.domain.LeagueTable;
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 방 하나의 정산 — 끝난 달의 달성률을 말일까지 세어 굳히고, 순위와 가는 곳({@link LeagueTable#moveOf})을 적는다.
+ * 방 하나의 정산 — 끝난 달의 달성률 · 순위 점수를 말일까지 세어 굳히고, 순위와 가는 곳({@link LeagueTable#moveOf})을 적는다.
  * 방마다 한 번뿐이다. 먼저 {@code settled_at} 을 조건부 UPDATE 로 채운 실행만 결과를 적으므로, 스케줄러가 두 번 돌거나
  * 서버 여러 대 · 조회가 동시에 불러도 결과가 두 번 적히지 않는다(늦은 쪽은 0 행을 받고 아무것도 적지 않는다).
  */
@@ -54,17 +55,23 @@ public class LeagueSettlement {
         Boolean settledHere = tx.execute(status -> {
             List<LeagueMember> members = repository.membersOf(roundId);
             List<UUID> familyIds = members.stream().map(LeagueMember::familyId).toList();
-            Map<UUID, @Nullable Integer> finalRates = rates.of(familyIds, round.month(), today);
+            Map<UUID, @Nullable Result> finalRates = rates.of(familyIds, round.month(), today);
             LeagueTable table = new LeagueTable(
                     round.tier(),
                     members.stream()
-                            .map(it -> new LeagueTable.Seat(it.familyId(), it.seatNo(), finalRates.get(it.familyId())))
+                            .map(it -> LeagueService.seat(it, finalRates.get(it.familyId())))
                             .toList());
             // 다른 실행이 먼저 끝냈다 — 여기까지는 읽기만 했으니 적을 것 없이 나간다
             if (!repository.markSettled(roundId, Instant.now(clock))) return false;
             for (UUID familyId : familyIds) {
+                Result result = finalRates.get(familyId);
                 repository.saveResult(
-                        roundId, familyId, finalRates.get(familyId), table.rankOf(familyId), table.moveOf(familyId));
+                        roundId,
+                        familyId,
+                        result != null ? result.rate() : null,
+                        result != null ? result.score() : null,
+                        table.rankOf(familyId),
+                        table.moveOf(familyId));
             }
             return true;
         });

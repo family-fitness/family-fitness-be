@@ -14,9 +14,14 @@ import kr.ac.kookmin.familyfitness.shared.domain.Ages;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import org.jspecify.annotations.Nullable;
 
-/** AI 로 보낼 프로필. 이름·생년월일·계정 식별자는 싣지 않고 {@link ProfileRef} 로만 가리킨다. */
+/**
+ * AI 로 보낼 프로필. 이름·생년월일·계정 식별자는 싣지 않고 {@link ProfileRef} 로만 가리킨다.
+ * 체지방률(003) · 허리둘레(004)는 적은 것만 measurements 에 싣는다 — AI 가 인증 3등급의 신체조성 관문에 쓴다.
+ */
 public final class AiProfileFactory {
     private static final Set<String> NOT_ALLOWED_ITEMS = Set.of("005", "006");
+    private static final String BODY_FAT = "003";
+    private static final String WAIST = "004";
 
     private AiProfileFactory() {}
 
@@ -25,6 +30,8 @@ public final class AiProfileFactory {
             Map<String, BigDecimal> measurements,
             @Nullable BigDecimal heightCm,
             @Nullable BigDecimal weightKg,
+            @Nullable BigDecimal bodyFatPct,
+            @Nullable BigDecimal waistCm,
             LocalDate on) {
         AgeGroup ageGroup = AgeGroup.of(details.birthDate(), on);
         BigDecimal height = heightCm != null ? heightCm : details.heightCm();
@@ -33,6 +40,8 @@ public final class AiProfileFactory {
         measurements.forEach((code, value) -> {
             if (!NOT_ALLOWED_ITEMS.contains(code)) values.put(code, value.doubleValue());
         });
+        if (bodyFatPct != null) values.put(BODY_FAT, bodyFatPct.doubleValue());
+        if (waistCm != null) values.put(WAIST, waistCm.doubleValue());
         return new AiProfile(
                 ProfileRef.of(details.profileId()),
                 ageGroup == AgeGroup.TODDLER

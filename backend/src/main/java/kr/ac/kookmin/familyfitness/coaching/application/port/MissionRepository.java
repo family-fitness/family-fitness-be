@@ -45,6 +45,12 @@ public interface MissionRepository {
     /** 이 프로필이 참여자이고 기간이 {@code from}~{@code to}(양끝 포함)와 겹치는 미션을, 그 사람의 진행과 함께. */
     List<MissionSpan> spansOf(UUID profileId, LocalDate from, LocalDate to);
 
+    /**
+     * 이 프로필이 참여자인 미션 중 시작일이 {@code from}~{@code to}(양끝 포함)인 것의 칸 영상 id(유튜브 id · 공단 파일 이름).
+     * 최근 미션부터(시작일 → 만든 시각 늦은 차례, 한 미션 안은 칸 차례), 같은 id 는 한 번만, 앞에서 {@code limit} 개.
+     */
+    List<String> recentVideoIds(UUID profileId, LocalDate from, LocalDate to, int limit);
+
     /** {@link #spansOf} 를 여러 프로필에 한 번에 — 누구의 줄인지와 미션을 만든 시각을 같이. 쿼리 한 번이다. */
     List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to);
 }

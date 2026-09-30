@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """family-fitness-ai 의 클립 릴리스 → Flyway 버전 마이그레이션(운동 영상 · 클립 적재).
 
-입력(AI 저장소 안):
+입력(AI 저장소 안. --ref 를 주면 작업 트리가 아니라 그 커밋에서 읽는다):
 - data/release/video_clips.csv  클립 한 줄 = 영상 안의 한 동작 구간(video_id, seq, name_on_video, phase_on_video, start_sec, end_sec)
 - data/release/clip_labels.csv  동작 이름(name_on_video)마다 붙인 라벨(exercise_name, fitness_factor, phase, is_exercise, home_ok, quiet, needs_props, source)
 - data/index/corpus_meta.csv    영상 제목 · 연령대 · 영상 단위 요인은 source=video 청크에만 있다(BOM 이 있어 utf-8-sig 로 읽는다)
@@ -21,26 +21,30 @@ exercise_videos 에는 자료에 있는 칸만 채운다. 영상 길이 · 강�
 낸 SQL 은 이미 적재된 DB 위에 다시 돌려도 된다(첫 적재와 다음 릴리스가 같은 문장을 쓴다).
 - 클립: 같은 clip_id 가 있으면 이번 판 값으로 고치고 active=true 로 켠다. 없으면 넣는다.
 - 이번 판에 없는 클립은 지우지 않고 active=false 로 끈다. 찜처럼 clip_id 를 가리키는 행을 살리려는 것이다.
+  공단 영상 클립(kspo_videos_to_sql.py 가 싣는다)은 여기서 끄지 않는다 — 이 스크립트는 유튜브 클립만 다룬다.
 - 영상: 이 스크립트가 넣은 행(labeled_by='AI')만 이번 판 값으로 고친다. 없으면 넣는다. 시드 같은 다른 출처 행은 건드리지 않는다.
 문장은 PostgreSQL 과 H2 양쪽에서 도는 update … where 와 insert … select … where not exists 만 쓴다.
 
-사용(backend 폴더에서):
+사용(backend 폴더에서. AI 작업 트리가 다른 브랜치여도 되게 --ref <AI 커밋 · 브랜치> 로 커밋에서 읽는 것을 권한다):
   첫 적재(표 만들기 포함):
     python3 scripts/ai_clips_to_sql.py --create-table ../../family-fitness-ai \
         > src/main/resources/db/migration/V132__coaching_video_exercises.sql
   다음 릴리스(표는 이미 있다):
-    python3 scripts/ai_clips_to_sql.py ../../family-fitness-ai \
+    python3 scripts/ai_clips_to_sql.py --ref <AI 커밋> ../../family-fitness-ai \
         > src/main/resources/db/migration/V<다음 번호>__coaching_clip_release_<AI 커밋>.sql
 적용된 버전 마이그레이션은 고칠 수 없으니 V132 는 그대로 두고 새 V 파일을 만든다.
 """
 import argparse
 import csv
+import io
+import re
 import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 
-VIDEO_TITLE_PREFIX = "국민체력100 운동영상 · "
+# AI 코퍼스의 유튜브 영상 인용 이름 앞머리. 떼고 남은 것이 영상 제목이다. AI 가 앞머리를 쉼표로 이어도 뗀다.
+VIDEO_TITLE_PREFIXES = ("국민체력100 운동영상 · ", "국민체력100 운동영상, ")
 CHANNEL_NAME = "국민체력100"
 CHANNEL_TYPE = "PUBLIC"
 YOUTUBE_WATCH = "https://www.youtube.com/watch?v="
@@ -83,25 +87,79 @@ def sql_text(value: str | None) -> str:
     return "null" if value is None else "'" + value.replace("'", "''") + "'"
 
 
+# 사이트에 보이는 글에는 가운데 점과 긴 대시를 쓰지 않는다. AI 는 원자료를 그대로 두고 내보낼 때 common/copy.py plain() 으로
+# 바꾼다. 여기서도 같은 규칙으로 바꿔 싣는다. 숫자 사이의 대시는 범위라 물결(7~10세)로, 나머지는 쉼표로 바꾼다.
+DOTS = "·ㆍ・‧∙"
+DASHES = "—–―‒"
+_RANGE = re.compile(rf"(\d)\s*[{DASHES}]\s*(?=\d)")
+_MARK = re.compile(rf"\s*[{DOTS}{DASHES}]+\s*")
+_LOOSE_COMMA = re.compile(r",\s*(?=[,.!?)\]」』]|$)")
+_LEADING_COMMA = re.compile(r"(^|[(\[「『])\s*,\s*")
+_COMMA_BEFORE_MARK = re.compile(r"\s*,\s*(?=\[\d+\])")
+# 동작 이름에서 쉼표로 이으면 어색한 것. 운동 이름과 제목은 이 표를 먼저 쓴다(V168 과 같다).
+# 인용 이름은 AI 가 내보내는 모양과 같아야 해서 이 표를 쓰지 않는다.
+NAME_FIXES = {
+    "가슴·어깨": "가슴과 어깨",
+    "오른쪽·왼쪽": "오른쪽과 왼쪽",
+    "앞·옆으로": "앞과 옆으로",
+    "앞·뒤로": "앞뒤로",
+    "좌·우로": "좌우로",
+    "가슴·몸통": "가슴과 몸통",
+}
+
+
+def plain(text: str | None) -> str | None:
+    """가운데 점과 긴 대시를 걷어 낸 글. AI common/copy.py plain() 과 같다(인용 이름에 쓴다)."""
+    if not text or not any(mark in text for mark in DOTS + DASHES):
+        return text
+    text = _RANGE.sub(r"\1~", text)
+    text = _MARK.sub(", ", text)
+    text = _COMMA_BEFORE_MARK.sub(" ", text)
+    text = _LOOSE_COMMA.sub("", text)
+    text = _LEADING_COMMA.sub(r"\1", text)
+    return text.strip()
+
+
+def plain_name(text: str | None) -> str | None:
+    """동작 이름과 영상 제목. 어색한 몇 가지는 문맥에 맞춰 먼저 고치고, 남은 것은 plain() 으로 바꾼다."""
+    if not text:
+        return text
+    for before, after in NAME_FIXES.items():
+        text = text.replace(before, after)
+    return plain(text)
+
+
 def sql_bool(value: bool) -> str:
     return "true" if value else "false"
 
 
-def read_labels(path: Path) -> dict[str, dict[str, str]]:
+def read_text(ai_root: Path, ref: str | None, path: str) -> str:
+    """ref 가 있으면 그 커밋의 파일, 없으면 작업 트리 파일. BOM 은 뗀다(corpus_meta.csv 에 있다)."""
+    if ref:
+        text = subprocess.run(
+            ["git", "-C", str(ai_root), "show", f"{ref}:{path}"],
+            check=True, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+    else:
+        text = (ai_root / path).read_text(encoding="utf-8")
+    return text.removeprefix("\ufeff")
+
+
+def read_labels(text: str) -> dict[str, dict[str, str]]:
     labels: dict[str, dict[str, str]] = {}
-    with path.open(encoding="utf-8", newline="") as fh:
-        for row in csv.DictReader(fh):
-            labels[row["name_on_video"]] = row
+    for row in csv.DictReader(io.StringIO(text, newline="")):
+        labels[row["name_on_video"]] = row
     return labels
 
 
-def read_videos(path: Path) -> dict[str, dict[str, str]]:
+def read_videos(text: str) -> dict[str, dict[str, str]]:
     # 청크 본문이 기본 한도(128KB)를 넘을 수 있다. Windows 는 C long 이 32비트라 sys.maxsize 를 못 받는다.
     csv.field_size_limit(2**31 - 1)
-    with path.open(encoding="utf-8-sig", newline="") as fh:
-        return {
-            row["chunk_id"].split(":", 1)[1]: row for row in csv.DictReader(fh) if row["source"] == "video"
-        }
+    return {
+        row["chunk_id"].split(":", 1)[1]: row
+        for row in csv.DictReader(io.StringIO(text, newline=""))
+        if row["source"] == "video"
+    }
 
 
 def phase_of(row: dict[str, str], label: dict[str, str]) -> str:
@@ -143,9 +201,9 @@ def build_clips(clip_rows: list[dict[str, str]], labels: dict, videos: dict) -> 
             "clip_id": f"{row['video_id']}-{start}",
             "video_id": row["video_id"],
             "seq": int(row["seq"]),
-            "name_on_video": row["name_on_video"],
-            "exercise_name": exercise_name,
-            "title": exercise_name or row["name_on_video"],
+            "name_on_video": plain_name(row["name_on_video"]),
+            "exercise_name": plain_name(exercise_name),
+            "title": plain_name(exercise_name or row["name_on_video"]),
             "fitness_factor": factor_of(label.get("fitness_factor") or ""),
             "phase": phase_of(row, label),
             "start_sec": start,
@@ -170,7 +228,8 @@ def assignments(fields: dict[str, str]) -> str:
 def video_statements(video_id: str, chunk: dict[str, str], collected_at: str) -> str:
     """이 스크립트가 넣은 영상(labeled_by='AI')은 이번 판 값으로 고치고, 없으면 넣는다."""
     label = chunk["citation_label"]
-    title = label[len(VIDEO_TITLE_PREFIX):] if label.startswith(VIDEO_TITLE_PREFIX) else label
+    prefix = next((p for p in VIDEO_TITLE_PREFIXES if label.startswith(p)), "")
+    title = plain_name(label[len(prefix):])
     if chunk.get("citation_url") != YOUTUBE_WATCH + video_id:
         fail(f"코퍼스 주소가 YouTube watch 주소가 아니다: {video_id} {chunk.get('citation_url')}")
     age = age_of(chunk.get("age_group") or "")
@@ -240,16 +299,20 @@ def clip_statements(clip: dict) -> str:
 
 
 def deactivate_statement(clip_ids: list[str]) -> str:
-    """이번 판에 없는 클립은 지우지 않고 끈다."""
+    """이번 판에 없는 유튜브 클립은 지우지 않고 끈다.
+
+    공단 영상 클립(kspo_videos_to_sql.py 가 싣는다, media_url 이 있는 영상)은 이 판에 없어도 끄지 않는다.
+    media_url 칸은 V161 이 더했으니 그 뒤에 만드는 마이그레이션에서만 이 문장이 돈다(V132 는 이 조건 없이 만들었다).
+    """
     per_line = 6
     lines = [
         "    " + ", ".join(sql_text(i) for i in clip_ids[start:start + per_line])
         for start in range(0, len(clip_ids), per_line)
     ]
     return (
-        "update video_exercises set active = false where active = true and clip_id not in (\n"
-        + ",\n".join(lines)
-        + "\n);"
+        "update video_exercises set active = false where active = true\n"
+        "  and video_id in (select video_id from exercise_videos where media_url is null)\n"
+        "  and clip_id not in (\n" + ",\n".join(lines) + "\n);"
     )
 
 
@@ -283,19 +346,19 @@ CREATE_TABLE = """create table video_exercises (
 );"""
 
 
-def main(ai_root: Path, create_table: bool) -> None:
-    dirty = git(ai_root, "status", "--porcelain", "--", *INPUTS)
-    if dirty:
-        fail(f"AI 입력 파일에 커밋하지 않은 변경이 있다 — 커밋된 판으로만 만든다:\n{dirty}")
-    head = git(ai_root, "rev-parse", "HEAD")
-    release_commit, committed_at = git(ai_root, "log", "-1", "--format=%h %cI", "--", *INPUTS).split(" ", 1)
+def main(ai_root: Path, create_table: bool, ref: str | None) -> None:
+    if ref is None:
+        dirty = git(ai_root, "status", "--porcelain", "--", *INPUTS)
+        if dirty:
+            fail(f"AI 입력 파일에 커밋하지 않은 변경이 있다 — 커밋된 표로만 만든다(--ref 로 커밋을 주어도 된다):\n{dirty}")
+    head = git(ai_root, "rev-parse", ref or "HEAD")
+    release_commit, committed_at = git(ai_root, "log", "-1", "--format=%h %cI", head, "--", *INPUTS).split(" ", 1)
     # 영상의 collected_at = AI 가 이 자료를 커밋한 시각. seed 와 같은 'YYYY-MM-DD HH:MM:SS+09:00' 모양으로 쓴다.
     collected_at = committed_at.replace("T", " ")
 
-    labels = read_labels(ai_root / INPUTS[1])
-    videos = read_videos(ai_root / INPUTS[2])
-    with (ai_root / INPUTS[0]).open(encoding="utf-8", newline="") as fh:
-        clip_rows = list(csv.DictReader(fh))
+    labels = read_labels(read_text(ai_root, ref, INPUTS[1]))
+    videos = read_videos(read_text(ai_root, ref, INPUTS[2]))
+    clip_rows = list(csv.DictReader(io.StringIO(read_text(ai_root, ref, INPUTS[0]), newline="")))
     clips = build_clips(clip_rows, labels, videos)
     video_ids = list(dict.fromkeys(c["video_id"] for c in clips))
     exercises = sum(1 for c in clips if c["is_exercise"])
@@ -305,7 +368,7 @@ def main(ai_root: Path, create_table: bool) -> None:
     command = "scripts/ai_clips_to_sql.py" + (" --create-table" if create_table else "")
     print("-- coaching: AI 운동 영상과 그 클립(한 동작 구간)을 이번 판으로 맞춘다.", file=out)
     print(f"-- {command} 가 생성한다. 손으로 고치지 말고, AI 릴리스가 바뀌면 새 V 파일로 다시 만든다.", file=out)
-    print(f"-- 출처: family-fitness-ai HEAD {head} (입력 파일 마지막 변경 {release_commit}, {collected_at})", file=out)
+    print(f"-- 출처: family-fitness-ai 커밋 {head} (입력 파일 마지막 변경 {release_commit}, {collected_at})", file=out)
     print(f"--   {INPUTS[0]} {len(clip_rows)}행 · {INPUTS[1]} {len(labels)}행 · {INPUTS[2]} 영상 청크 {len(videos)}행", file=out)
     print(f"-- 이번 판: 영상 {len(video_ids)}편 · 클립 {len(clips)}개(그중 운동 {exercises}개, 운동 아님 {len(clips) - exercises}개).", file=out)
     print("-- 규칙은 AI video/catalog.py 와 같다: name_on_video 로 라벨 조인, 단계 = 화면 표시 → 라벨 → 본운동,", file=out)
@@ -329,5 +392,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--create-table", action="store_true", help="video_exercises 표 정의도 낸다. 첫 적재(V132)에만 쓴다."
     )
+    parser.add_argument(
+        "--ref", default=None, help="읽을 AI 커밋(브랜치 이름도 된다). 주지 않으면 작업 트리 파일을 읽는다."
+    )
     args = parser.parse_args()
-    main(args.ai_root, args.create_table)
+    main(args.ai_root, args.create_table, args.ref)

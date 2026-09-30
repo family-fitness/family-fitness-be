@@ -3,7 +3,9 @@ package kr.ac.kookmin.familyfitness.identity.adapter.outbound.persistence;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -104,10 +106,18 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
         }
         Map<UUID, ProfileEntity> existing = profileJpa.findByFamilyIdOrderByCreatedAtAscIdAsc(family.getId()).stream()
                 .collect(Collectors.toMap(ProfileEntity::getId, Function.identity(), (a, b) -> b));
+        // 식구 차례는 만든 시각 · id 다. 시계가 같은 시각을 두 번 주면 id(무작위)로 갈려 차례가 바뀌므로,
+        // 새 식구의 만든 시각은 그 가족의 마지막 식구보다 늘 1µs 이상 뒤로 둔다.
+        Instant last = existing.values().stream()
+                .map(ProfileEntity::getCreatedAt)
+                .max(Comparator.naturalOrder())
+                .orElse(Instant.MIN);
         for (Profile profile : family.getProfiles()) {
             ProfileEntity entity = existing.get(profile.getId());
             if (entity == null) {
-                em.persist(toNewEntity(profile, now));
+                Instant createdAt = now.isAfter(last) ? now : last.plus(1, ChronoUnit.MICROS);
+                last = createdAt;
+                em.persist(toNewEntity(profile, createdAt, now));
             } else {
                 applyChanges(entity, profile, now);
             }
@@ -193,7 +203,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                         entity.getConsentRevokedAt()));
     }
 
-    private static ProfileEntity toNewEntity(Profile profile, Instant now) {
+    private static ProfileEntity toNewEntity(Profile profile, Instant createdAt, Instant now) {
         ClaimCode claimCode = profile.getClaimCode();
         return new ProfileEntity(
                 profile.getId(),
@@ -217,7 +227,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
                 profile.getConsent().healthAt(),
                 profile.getConsent().byUserId(),
                 profile.getConsent().revokedAt(),
-                now,
+                createdAt,
                 now);
     }
 

@@ -10,18 +10,26 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Profiles;
 
 /**
- * 개발용 기능(dev-login · 자동 로그인 · H2 콘솔)은 local · compose · test 프로필에서만 켤 수 있다.
- * 다른 프로필(prod, 프로필 없음 등)에서 하나라도 켜져 있으면 컨텍스트를 올리기 전에 기동을 멈춘다.
- * 자동 로그인이 켜지면 토큰 없는 요청이 시드 데모 부모가 되고, X-Dev-User-Id 헤더로 아무 계정이나 될 수 있다.
+ * 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)은 local · compose · test 프로필에서만 켤 수 있다.
+ * 다른 프로필(prod, 프로필 없음 등)에서 하나라도 켜져 있으면 컨텍스트를 올리기 전에 기동을 멈춘다. prod 가 활성이면 local · compose ·
+ * test 가 함께 있어도 멈춘다 — SPRING_PROFILES_ACTIVE=prod,compose 처럼 주면 compose 파일이 켠 기능이 운영에서 켜진다.
+ * 자동 로그인이 켜지면 X-Dev-User-Id 헤더로 아무 계정이나 될 수 있고, 시간 이동이 켜지면 서버 시계를 앞으로 옮길 수 있다.
+ *
+ * <p>심사용 계정 로그인({@code app.auth.review-login.enabled})은 목록에 넣지 않는다. 심사위원이 운영 서버에서 둘러보라고 운영에서
+ * 켜는 기능이다. 늘 새 계정 · 새 체험 가족을 만들 뿐 남의 계정이 될 수 없고, IP 마다 한 시간에 30번으로 막아 둔다.
  *
  * <p>`META-INF/spring.factories` 로 등록한다. 프로필 파일을 읽는 ConfigDataEnvironmentPostProcessor 뒤에 돌도록
  * 가장 낮은 우선순위를 준다. DataSource · Flyway 보다 먼저 돌아서, 멈출 때는 DB 에 아무것도 쓰지 않는다.
  */
 public class DevFeatureGuard implements EnvironmentPostProcessor, Ordered {
     static final Profiles DEV_PROFILES = Profiles.of("local", "compose", "test");
+    static final Profiles PROD = Profiles.of("prod");
 
-    static final List<String> DEV_FEATURES =
-            List.of("app.auth.dev-login.enabled", "app.auth.dev-auto-login.enabled", "spring.h2.console.enabled");
+    static final List<String> DEV_FEATURES = List.of(
+            "app.auth.dev-login.enabled",
+            "app.auth.dev-auto-login.enabled",
+            "spring.h2.console.enabled",
+            "app.dev.time-travel.enabled");
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
@@ -33,14 +41,23 @@ public class DevFeatureGuard implements EnvironmentPostProcessor, Ordered {
         return Ordered.LOWEST_PRECEDENCE;
     }
 
-    /** 켜진 개발용 기능이 없거나 개발 프로필이면 통과한다. 기본 프로필(spring.profiles.default)도 활성으로 본다. */
+    /**
+     * 켜진 개발용 기능이 없으면 통과한다. 켜져 있으면 prod 가 활성이 아니고 개발 프로필이 있어야 통과한다. 기본
+     * 프로필(spring.profiles.default)도 활성으로 본다.
+     */
     static void check(ConfigurableEnvironment environment) {
         Binder binder = Binder.get(environment);
         List<String> enabled = DEV_FEATURES.stream()
                 .filter(key -> binder.bind(key, Boolean.class).orElse(false))
                 .toList();
-        if (enabled.isEmpty() || environment.acceptsProfiles(DEV_PROFILES)) return;
-        throw new IllegalStateException("개발용 기능은 local · compose · test 프로필에서만 켤 수 있다. 켜진 설정: " + enabled + ", 활성 프로필: "
-                + Arrays.toString(environment.getActiveProfiles()));
+        if (enabled.isEmpty()) return;
+        String profiles = Arrays.toString(environment.getActiveProfiles());
+        if (environment.acceptsProfiles(PROD)) {
+            throw new IllegalStateException(
+                    "prod 프로필에서는 개발 프로필이 함께 있어도 개발용 기능을 켤 수 없다. 켜진 설정: " + enabled + ", 활성 프로필: " + profiles);
+        }
+        if (environment.acceptsProfiles(DEV_PROFILES)) return;
+        throw new IllegalStateException(
+                "개발용 기능은 local · compose · test 프로필에서만 켤 수 있다. 켜진 설정: " + enabled + ", 활성 프로필: " + profiles);
     }
 }
