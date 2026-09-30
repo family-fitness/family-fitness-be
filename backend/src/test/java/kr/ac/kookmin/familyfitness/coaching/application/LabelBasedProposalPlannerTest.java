@@ -62,7 +62,7 @@ class LabelBasedProposalPlannerTest {
     @Test
     @DisplayName("어르신은 성인 범위(19~64) 영상 한 편을 받는다 — 공단 어르신 영상을 싣지 않은 뒤로 영상도 인용도 없어 편성이 실패했다")
     void 어르신은_성인_범위_영상_한_편을_받는다() {
-        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험");
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험", List.of());
 
         assertThat(mainVideo(result).videoId()).isEqualTo("adult");
     }
@@ -84,8 +84,8 @@ class LabelBasedProposalPlannerTest {
                 true);
         fitness.measured(child.profileId(), new FactorPoint(FitnessFactor.STRENGTH, "012", 50), null);
 
-        CoachRunResult result =
-                planner.plan(child, TODAY, new CoachRunConditions(20, false, null, null, false), TODAY, "시험");
+        CoachRunResult result = planner.plan(
+                child, TODAY, new CoachRunConditions(20, false, null, null, false), TODAY, "시험", List.of());
 
         assertThat(result).isNotNull();
         String parentCopy = result.proposal().missions().getFirst().copyParent();
@@ -98,7 +98,7 @@ class LabelBasedProposalPlannerTest {
     @Test
     @DisplayName("보호자가 고른 요인은 「보호자가 키워 주고 싶은 역량」 이라 부른다 — 「고르신 …」 은 누가 골랐는지 흐렸다")
     void 보호자가_고른_요인은_보호자가_키워_주고_싶은_역량이다() {
-        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험");
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험", List.of());
 
         assertThat(result).isNotNull();
         assertThat(result.proposal().missions().getFirst().copyParent())
@@ -107,11 +107,21 @@ class LabelBasedProposalPlannerTest {
     }
 
     @Test
+    @DisplayName("통째 영상 편성도 최근 받은 영상은 뒤로 미룬다 — 다른 후보가 있으면 그것을 고른다")
+    void 통째_영상도_최근_받은_영상은_뒤로_미룬다() {
+        videos.videos.put("adult2", Videos.video("adult2", 19, 64, "근력", 400));
+
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험", List.of("adult"));
+
+        assertThat(mainVideo(result).videoId()).isEqualTo("adult2");
+    }
+
+    @Test
     @DisplayName("어르신을 겨냥한 영상이 있으면 연령 범위가 더 넓어도 성인 영상보다 먼저 받는다")
     void 어르신을_겨냥한_영상을_먼저_받는다() {
         videos.videos.put("senior", Videos.video("senior", 65, 120, "근력", 600));
 
-        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험");
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험", List.of());
 
         assertThat(mainVideo(result).videoId()).isEqualTo("senior");
     }

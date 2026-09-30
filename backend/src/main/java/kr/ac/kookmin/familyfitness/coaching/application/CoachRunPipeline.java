@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRoles;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
@@ -52,6 +53,12 @@ public class CoachRunPipeline {
     private final LabelBasedProposalPlanner fallbackPlanner;
     private final ExerciseClipRepository clips;
     private final ExerciseVideoRepository videos;
+    private final MissionRepository missions;
+
+    /** 최근 받은 영상을 모으는 기간(편성 날 앞 14일)과 최대 개수 — AI 요청 recent_video_ids 약속. */
+    static final int RECENT_DAYS = 14;
+
+    static final int RECENT_LIMIT = 60;
 
     public CoachRunPipeline(
             CoachRunRepository runs,
@@ -61,7 +68,8 @@ public class CoachRunPipeline {
             AppTime time,
             LabelBasedProposalPlanner fallbackPlanner,
             ExerciseClipRepository clips,
-            ExerciseVideoRepository videos) {
+            ExerciseVideoRepository videos,
+            MissionRepository missions) {
         this.runs = runs;
         this.profileQuery = profileQuery;
         this.fitnessQuery = fitnessQuery;
@@ -70,13 +78,30 @@ public class CoachRunPipeline {
         this.fallbackPlanner = fallbackPlanner;
         this.clips = clips;
         this.videos = videos;
+        this.missions = missions;
     }
 
-    /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓴다. */
+    /** AI 장애 시 라벨 기반 대체 편성. 대상 · 날짜 · 조건은 run 에 저장된 값을 쓰고, 최근 받은 영상은 AI 요청과 같게 모은다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public @Nullable CoachRunResult planFallback(UUID runId, String reason) {
         CoachRun run = load(runId);
-        return fallbackPlanner.plan(subjectOf(run), requireRunDate(run), requireConditions(run), time.today(), reason);
+        ProfileDetails subject = subjectOf(run);
+        LocalDate runDate = requireRunDate(run);
+        return fallbackPlanner.plan(
+                subject,
+                runDate,
+                requireConditions(run),
+                time.today(),
+                reason,
+                recentVideoIds(subject.profileId(), runDate));
+    }
+
+    /**
+     * 대상이 편성 날 앞 14일(runDate−14 ~ runDate−1) 동안 시작한 미션의 칸 영상 id, 최근 것부터 최대 60개(AI 요청 recent_video_ids).
+     * 승인해 미션이 된 칸만 센다 — 승인을 기다리는 제안은 아직 받은 영상이 아니다.
+     */
+    private List<String> recentVideoIds(UUID profileId, LocalDate runDate) {
+        return missions.recentVideoIds(profileId, runDate.minusDays(RECENT_DAYS), runDate.minusDays(1), RECENT_LIMIT);
     }
 
     /**
@@ -87,7 +112,8 @@ public class CoachRunPipeline {
      * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
      * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(보호자가 키워 주고 싶은 역량 — AI develop 은 아직 이 칸을 몰라
      * 받아서 버린다. AI 에서 이 칸을 받는 변경이 develop 에 들어간 뒤부터 AI 편성에 반영되고, 그 전에 배포한 AI 는 버린다) ·
-     * with_companion(AI 계약에 아직 없어 AI 가 무시한다).
+     * with_companion(AI 계약에 아직 없어 AI 가 무시한다) · recent_video_ids(대상이 앞 14일 동안 받은 영상 id, 최근 것부터 최대 60개 —
+     * AI 는 이 영상들을 뒤로 미뤄 날마다 같은 영상이 나오지 않게 한다).
      * 대기열에서 기다리는 사이 정리 작업이 끝낸 실행이면 null — 호출자는 AI 를 부르지 않는다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
@@ -108,9 +134,10 @@ public class CoachRunPipeline {
                 latest == null ? null : latest.bodyFatPct(),
                 latest == null ? null : latest.waistCm(),
                 time.today());
+        LocalDate runDate = requireRunDate(run);
         return new CoachRunRequest(
                 List.of(new CoachRunRequest.Participant(profile, CoachRoles.DRIVER)),
-                requireRunDate(run).toString(),
+                runDate.toString(),
                 1,
                 new CoachRunRequest.Constraints(
                         1,
@@ -122,7 +149,8 @@ public class CoachRunPipeline {
                         conditions.focusFactor() == null
                                 ? null
                                 : conditions.focusFactor().getLabel(),
-                        conditions.withParent()));
+                        conditions.withParent(),
+                        recentVideoIds(subject.profileId(), runDate)));
     }
 
     /** AI 접수 번호를 남긴다. 그 사이 정리 작업이 끝낸 실행이면 false — 호출자는 폴링하지 않는다. */

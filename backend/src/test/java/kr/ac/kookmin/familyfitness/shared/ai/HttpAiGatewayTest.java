@@ -45,7 +45,8 @@ class HttpAiGatewayTest {
                 List.of(new CoachRunRequest.Participant(child, "주행자")),
                 "2026-09-09",
                 1,
-                new CoachRunRequest.Constraints(1, 20, null, true, true, true, "민첩성", true));
+                new CoachRunRequest.Constraints(
+                        1, 20, null, true, true, true, "민첩성", true, List.of("0AUDLJ08S_00351", "abc123XYZ_-")));
     }
 
     @Test
@@ -72,6 +73,8 @@ class HttpAiGatewayTest {
                 .andExpect(jsonPath("$.constraints.no_props").value(true))
                 .andExpect(jsonPath("$.constraints.focus_factor").value("민첩성"))
                 .andExpect(jsonPath("$.constraints.with_companion").value(true))
+                .andExpect(jsonPath("$.constraints.recent_video_ids[0]").value("0AUDLJ08S_00351"))
+                .andExpect(jsonPath("$.constraints.recent_video_ids[1]").value("abc123XYZ_-"))
                 .andRespond(withStatus(HttpStatus.ACCEPTED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"run_id\":\"cr_1\",\"status\":\"running\",\"poll_after_ms\":1500}"));

@@ -146,6 +146,14 @@ public class MissionPersistenceAdapter implements MissionRepository {
                 .toList();
     }
 
+    @Override
+    public List<String> recentVideoIds(UUID profileId, LocalDate from, LocalDate to, int limit) {
+        return sessions.findVideoIdsOf(profileId, from, to).stream()
+                .distinct()
+                .limit(limit)
+                .toList();
+    }
+
     /** {@link #spansOf} 를 여러 프로필에 한 번에. 칸 끝낸 날도 (프로필 IN, 미션 IN) 한 번에 읽는다. */
     @Override
     public List<ParticipantSpan> participantSpansOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {

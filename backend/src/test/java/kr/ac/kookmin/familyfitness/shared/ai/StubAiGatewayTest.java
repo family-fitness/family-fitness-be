@@ -26,7 +26,7 @@ class StubAiGatewayTest {
                 List.of(participants),
                 "2026-09-09",
                 1,
-                new CoachRunRequest.Constraints(1, 20, null, true, true, true, focusFactor, false));
+                new CoachRunRequest.Constraints(1, 20, null, true, true, true, focusFactor, false, List.of()));
     }
 
     @Test
@@ -91,7 +91,7 @@ class StubAiGatewayTest {
                     List.of(new Participant(child, "주행자")),
                     "2026-09-09",
                     1,
-                    new CoachRunRequest.Constraints(1, expected[0], null, true, true, true, null, false));
+                    new CoachRunRequest.Constraints(1, expected[0], null, true, true, true, null, false, List.of()));
             List<String> phases = gateway
                     .getCoachRun(gateway.startCoachRun(request).runId())
                     .proposal()

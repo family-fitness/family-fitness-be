@@ -3,7 +3,11 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
@@ -81,7 +85,8 @@ class LabelBasedProposalPlannerDbTest {
                 TODAY,
                 new CoachRunConditions(20, false, null, FitnessFactor.BALANCE, false),
                 TODAY,
-                "시험");
+                "시험",
+                List.of());
 
         assertThat(result).isNotNull();
         List<CoachRunResult.Session> sessions = sessionsOf(result);
@@ -119,7 +124,8 @@ class LabelBasedProposalPlannerDbTest {
                 TODAY,
                 new CoachRunConditions(20, false, null, FitnessFactor.CARDIO, false),
                 TODAY,
-                "시험");
+                "시험",
+                List.of());
 
         assertThat(result).isNotNull();
         List<CoachRunResult.Session> main = sessionsOf(result).stream()
@@ -142,7 +148,8 @@ class LabelBasedProposalPlannerDbTest {
                 TODAY,
                 new CoachRunConditions(20, false, null, FitnessFactor.STRENGTH, false),
                 TODAY,
-                "시험");
+                "시험",
+                List.of());
 
         assertThat(result).isNotNull();
         assertThat(sessionsOf(result))
@@ -159,7 +166,8 @@ class LabelBasedProposalPlannerDbTest {
                 TODAY,
                 new CoachRunConditions(20, false, null, FitnessFactor.POWER, false),
                 TODAY,
-                "시험");
+                "시험",
+                List.of());
 
         assertThat(result).isNotNull();
         List<CoachRunResult.Session> sessions = sessionsOf(result);
@@ -174,5 +182,78 @@ class LabelBasedProposalPlannerDbTest {
                 .extracting(Citation::chunkId)
                 .anySatisfy(it -> assertThat(it).startsWith("kspo:"))
                 .anySatisfy(it -> assertThat(it).startsWith("video:"));
+    }
+
+    /** runDate 하루를 짜고 칸 영상 구간(videoId-startSec)을 차례대로 돌려준다. recent 는 최근 받은 영상 id(최근 것부터). */
+    private List<String> dayOf(ProfileDetails child, LocalDate runDate, FitnessFactor factor, List<String> recent) {
+        CoachRunResult result = planner.plan(
+                child, runDate, new CoachRunConditions(20, false, null, factor, false), TODAY, "시험", recent);
+        assertThat(result).isNotNull();
+        return sessionsOf(result).stream()
+                .map(it -> it.video().videoId() + "-" + it.video().startSec())
+                .toList();
+    }
+
+    /** 2주 동안 날마다 짠다. withRecent 면 앞 14일 동안 받은 영상 id 를 최근 것부터 넘긴다(BE 가 AI 에 보내는 recent_video_ids 와 같다). */
+    private List<List<String>> twoWeeks(ProfileDetails child, FitnessFactor factor, boolean withRecent) {
+        List<List<String>> days = new ArrayList<>();
+        for (int day = 0; day < 14; day++) {
+            List<String> recent = new ArrayList<>();
+            if (withRecent) {
+                Set<String> seen = new LinkedHashSet<>();
+                for (int back = days.size() - 1; back >= 0; back--) {
+                    days.get(back).forEach(it -> seen.add(it.substring(0, it.lastIndexOf('-'))));
+                }
+                recent.addAll(seen);
+            }
+            days.add(dayOf(child, TODAY.plusDays(day), factor, recent));
+        }
+        return days;
+    }
+
+    @Test
+    @DisplayName("2주 동안 날마다 짜도 이틀 연속 같은 칸 묶음이 아니고, 최근 받은 영상을 넘기면 서로 다른 클립이 늘어난다 — QA 에서 2주 49칸에 서로 다른 클립이 6개뿐이었다")
+    void 이주_동안_날마다_다른_묶음을_짠다() {
+        ProfileDetails child = subject(LocalDate.of(2016, 5, 1));
+
+        List<List<String>> before = twoWeeks(child, FitnessFactor.CARDIO, false);
+        List<List<String>> after = twoWeeks(child, FitnessFactor.CARDIO, true);
+
+        for (int day = 1; day < after.size(); day++) {
+            assertThat(after.get(day)).as("%d일째와 그 전날", day).isNotEqualTo(after.get(day - 1));
+        }
+        Set<String> distinctBefore = new HashSet<>();
+        before.forEach(distinctBefore::addAll);
+        Set<String> distinctAfter = new HashSet<>();
+        after.forEach(distinctAfter::addAll);
+        assertThat(distinctAfter).hasSizeGreaterThan(distinctBefore.size()).hasSizeGreaterThan(12);
+    }
+
+    @Test
+    @DisplayName("최근 받은 영상이 없어도 같은 순위끼리는 날짜를 시드로 삼아 섞어, 2주 동안 한 가지 묶음만 나오지는 않는다")
+    void 최근_영상이_없어도_날마다_섞는다() {
+        List<List<String>> days = twoWeeks(subject(LocalDate.of(2016, 5, 1)), FitnessFactor.CARDIO, false);
+
+        assertThat(new HashSet<>(days)).hasSizeGreaterThan(1);
+    }
+
+    @Test
+    @DisplayName("미션 제목의 요인과 첫 본운동 칸(대표 영상)의 요인이 같다 — 「심폐지구력 키우기」 인데 대표 영상이 근력 영상이었다")
+    void 첫_본운동_칸은_키울_요인_클립이다() {
+        for (FitnessFactor factor : List.of(FitnessFactor.CARDIO, FitnessFactor.STRENGTH, FitnessFactor.FLEXIBILITY)) {
+            CoachRunResult result = planner.plan(
+                    subject(LocalDate.of(2016, 5, 1)),
+                    TODAY,
+                    new CoachRunConditions(20, false, null, factor, false),
+                    TODAY,
+                    "시험",
+                    List.of());
+            assertThat(result).isNotNull();
+            assertThat(result.proposal().missions().getFirst().title()).startsWith(factor.getLabel() + " 키우기");
+            assertThat(sessionsOf(result))
+                    .filteredOn(it -> it.phase().equals("본운동"))
+                    .first()
+                    .satisfies(it -> assertThat(it.fitnessFactor()).isEqualTo(factor.getLabel()));
+        }
     }
 }

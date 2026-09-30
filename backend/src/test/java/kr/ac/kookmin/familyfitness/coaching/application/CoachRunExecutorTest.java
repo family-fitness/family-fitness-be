@@ -6,6 +6,7 @@ import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.WARMUP;
 import static kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository.clip;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,11 +18,13 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunStatus;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalCitation;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.TargetMetric;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeAiGateway;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
@@ -30,6 +33,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryCoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
+import kr.ac.kookmin.familyfitness.coaching.support.InMemoryMissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
@@ -62,6 +66,8 @@ class CoachRunExecutorTest {
     /** 기본은 비어 있다 — 대체 편성은 영상 한 편 통째로 짠다. 클립으로 짜는 시험만 채운다. */
     private final InMemoryExerciseClipRepository clips = new InMemoryExerciseClipRepository();
 
+    private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
+
     private final CoachRunPipeline pipeline = new CoachRunPipeline(
             runs,
             identity,
@@ -70,7 +76,8 @@ class CoachRunExecutorTest {
             Fixed.time(),
             new LabelBasedProposalPlanner(fitness, videos, clips),
             clips,
-            videos);
+            videos,
+            missions);
     private final CoachRunExecutor executor = new CoachRunExecutor(pipeline, gateway, new SyncTaskExecutor(), 0, 3);
 
     /** 측정은 있지만 요인 백분위(약점 · 강점)가 없다 — 대체 편성할 근거가 없는 기본 상태. */
@@ -141,8 +148,46 @@ class CoachRunExecutorTest {
             assertThat(it.profile().inputLevel()).isEqualTo("L2");
         });
         assertThat(request.constraints())
-                .isEqualTo(new CoachRunRequest.Constraints(1, 20, null, true, true, true, null, true));
+                .isEqualTo(new CoachRunRequest.Constraints(1, 20, null, true, true, true, null, true, List.of()));
         assertThat(request.toString()).doesNotContain("민준");
+    }
+
+    /** day 에 시작하는 하루짜리 직접 짜기 미션. 칸마다 영상 하나(videoIds 차례). */
+    private void missionOn(LocalDate day, UUID participant, String... videoIds) {
+        List<MissionSession> sessions = new java.util.ArrayList<>();
+        for (int i = 0; i < videoIds.length; i++) {
+            sessions.add(new MissionSession(
+                    i + 1, MAIN, "칸 " + (i + 1), null, 1, new SessionClip(videoIds[i], 0, 30, null)));
+        }
+        missions.save(Mission.manual(
+                UUID.randomUUID(),
+                family.familyId,
+                "미션",
+                TargetMetric.TIMER_MINUTES,
+                videoIds.length,
+                null,
+                day,
+                day,
+                List.of(participant),
+                sessions,
+                family.parent.profileId(),
+                Fixed.NOW));
+    }
+
+    @Test
+    @DisplayName("AI 에 대상이 앞 14일 동안 미션으로 받은 영상 id 를 최근 것부터 한 번씩 보낸다 — 날마다 같은 영상이 나왔다")
+    void AI_에_최근_14일_동안_받은_영상을_보낸다() {
+        UUID child = family.child.profileId();
+        missionOn(Fixed.TODAY.minusDays(3), child, "older", "shared");
+        missionOn(Fixed.TODAY.minusDays(1), child, "shared", "latest");
+        missionOn(Fixed.TODAY.minusDays(15), child, "tooOld");
+        missionOn(Fixed.TODAY, child, "today");
+        missionOn(Fixed.TODAY.minusDays(1), family.parent.profileId(), "parentOnly");
+
+        executor.execute(runningRun().getId());
+
+        assertThat(gateway.startRequests.getFirst().constraints().recentVideoIds())
+                .containsExactly("shared", "latest", "older");
     }
 
     @Test
@@ -195,7 +240,7 @@ class CoachRunExecutorTest {
         List.of(
                         clip("IdpXx2gm90o", 56, 116, "스트레칭", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
-                        clip(eg, 188, 226, "고양이자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 188, 220, "고양이자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 500, 534, "양팔 펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 536, 588, "가슴펴기", MAIN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
                         clip(eg, 614, 674, "팔꿈치 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),

@@ -98,17 +98,21 @@ public class LabelBasedProposalPlanner {
      * 준비 → 본 → 정리 차례로 고른다({@link #routine}). 본운동 클립이 하나도 없으면 예전처럼 영상 한 편을 본운동 한 칸에 넣는다.
      * 고를 요인이 없으면(측정 전이거나 백분위가 없는 만 7~10세이고, 보호자가 키워 주고 싶은 역량도 없음) {@link #wholeBody} 로 짠다.
      * 인용이 하나도 없으면 null (제안을 만들 근거가 없다 → FAILED).
+     * recentVideoIds 는 대상이 최근 14일 동안 미션으로 받은 영상 id(최근 것부터, AI 요청의 recent_video_ids 와 같다) — 클립 · 영상을
+     * 고를 때 뒤로 미룬다.
      */
     public @Nullable CoachRunResult plan(
             ProfileDetails subject,
             LocalDate runDate,
             CoachRunConditions conditions,
             LocalDate today,
-            String failureSummary) {
+            String failureSummary,
+            List<String> recentVideoIds) {
+        Recent recent = new Recent(recentVideoIds, runDate);
         LatestFitness latest = fitnessQuery.latestOf(subject.profileId());
         Target target = target(conditions.focusFactor(), latest);
         AgeGroup ageGroup = AgeGroup.of(subject.birthDate(), today);
-        if (target == null) return wholeBody(subject, runDate, conditions, latest, ageGroup, failureSummary);
+        if (target == null) return wholeBody(subject, runDate, conditions, latest, ageGroup, failureSummary, recent);
         FitnessFactor factor = target.factor();
 
         List<Citation> base = new ArrayList<>();
@@ -120,8 +124,9 @@ public class LabelBasedProposalPlanner {
                     "norm:" + ageGroup.getLabel() + "-" + point.itemCode(),
                     null));
         }
-        List<ExerciseClip> routine = routine(ageGroup, factor, conditions);
-        Plan plan = routine.isEmpty() ? wholeVideoPlan(base, ageGroup, factor) : clipPlan(base, routine, factor);
+        List<ExerciseClip> routine = routine(ageGroup, factor, conditions, recent);
+        Plan plan =
+                routine.isEmpty() ? wholeVideoPlan(base, ageGroup, factor, recent) : clipPlan(base, routine, factor);
         if (plan.citations().isEmpty()) return null;
 
         int minutes = conditions.minutes();
@@ -148,8 +153,9 @@ public class LabelBasedProposalPlanner {
             CoachRunConditions conditions,
             @Nullable LatestFitness latest,
             AgeGroup ageGroup,
-            String failureSummary) {
-        List<ExerciseClip> routine = routine(ageGroup, null, conditions);
+            String failureSummary,
+            Recent recent) {
+        List<ExerciseClip> routine = routine(ageGroup, null, conditions, recent);
         if (routine.isEmpty()) return null;
         Plan plan = clipPlan(List.of(), routine, null);
         int minutes = conditions.minutes();
@@ -205,18 +211,25 @@ public class LabelBasedProposalPlanner {
      * 같은 점수면 대상과 연령대가 같은 것 → 한 세트 길이(60초)에 가까운 것 차례로 가짓수만큼(AI {@code _age_rank} 와 같다 — 연령대를
      * 요인보다 앞에 두면 어르신은 어르신 영상만 보다가 요인을 놓친다). 같은 이름은 두 번 넣지 않는다
      * (그 단계 후보가 모두 앞에서 쓴 이름이면 그 단계만 다시 허용). 본운동이 하나도 없으면 빈 목록 — 준비 · 정리만으로는 짜지 않는다.
+     * 날마다 같은 묶음이 나오지 않게(AI 요청 recent_video_ids 와 같은 규칙): 같은 점수 · 연령대 안에서 최근 받은 영상의 클립은 뒤로
+     * 미루고(최근일수록 더 뒤), 순위가 모두 같으면 편성 날짜를 시드로 삼아 섞는다. 본운동은 요인이 같은 클립이 앞이라 첫 본운동 칸
+     * (= 미션 대표 영상, {@link ProposalConverter})이 키울 요인의 클립이다.
      */
-    List<ExerciseClip> routine(AgeGroup ageGroup, @Nullable FitnessFactor factor, CoachRunConditions conditions) {
+    List<ExerciseClip> routine(
+            AgeGroup ageGroup, @Nullable FitnessFactor factor, CoachRunConditions conditions, Recent recent) {
         List<ExerciseClip> pool = clips.findAllActive().stream()
                 .filter(ExerciseClip::isExercise)
                 .filter(it -> it.suits(ageGroup))
                 .filter(it -> fits(it, conditions))
                 .toList();
         SessionClipCounts want = SessionClipCounts.of(conditions.minutes());
-        // ai:video/catalog.py _age_rank 와 같은 차례: 점수(요인 · 처방 어휘) → 제 연령대 → 세트 길이. 연령대는 같은 점수 안에서만 가른다.
+        // ai:video/catalog.py _age_rank 와 같은 차례: 점수(요인 · 처방 어휘) → 제 연령대 → 최근 받은 영상 → 세트 길이 → 날짜 섞기.
+        // 연령대는 같은 점수 안에서만 가른다. 최근 받은 영상은 같은 요인 · 단계 · 연령대 후보가 모자랄 때만 다시 나온다.
         Comparator<ExerciseClip> rank = Comparator.comparingInt((ExerciseClip it) -> score(it, factor))
                 .thenComparing(it -> it.ageGroup() != ageGroup)
-                .thenComparingInt(it -> Math.abs(it.endSec() - it.startSec() - SET_SECONDS));
+                .thenComparingInt(it -> recent.rankOf(it.videoId()))
+                .thenComparingInt(it -> Math.abs(it.endSec() - it.startSec() - SET_SECONDS))
+                .thenComparingLong(it -> recent.shuffleKey(it.clipId()));
         Set<String> used = new HashSet<>();
         List<ExerciseClip> picked = new ArrayList<>();
         for (SessionPhase phase : PHASE_NAME.keySet()) {
@@ -285,13 +298,14 @@ public class LabelBasedProposalPlanner {
      * 제 연령대를 겨냥한 것(어르신이 받는 성인 영상은 뒤로), 연령 범위가 좁은 것, 같으면 짧은 것을 통째로 본운동 한 칸에 넣는다.
      * 그런 영상도 없으면 영상 없는 본운동 한 칸.
      */
-    private Plan wholeVideoPlan(List<Citation> base, AgeGroup ageGroup, FitnessFactor factor) {
+    private Plan wholeVideoPlan(List<Citation> base, AgeGroup ageGroup, FitnessFactor factor, Recent recent) {
         ExerciseVideo video = videos.findAllAfter(null).stream()
                 .filter(it ->
                         it.getLabel().suitableFor(ageGroup) && it.getLabel().hasFactor(factor.getLabel()))
-                // 제 연령대를 겨냥한 영상 → 연령 범위가 좁은 영상 → 짧은 영상
+                // 제 연령대를 겨냥한 영상 → 최근 받지 않은 영상 → 연령 범위가 좁은 영상 → 짧은 영상
                 .sorted(Comparator.comparing(
                                 (ExerciseVideo it) -> !it.getLabel().aimsAt(ageGroup))
+                        .thenComparingInt(it -> recent.rankOf(it.getVideoId()))
                         .thenComparingInt(LabelBasedProposalPlanner::ageSpan)
                         .thenComparingInt(LabelBasedProposalPlanner::durationOrMax))
                 .findFirst()
@@ -387,6 +401,28 @@ public class LabelBasedProposalPlanner {
     /** 키울 요인을 고른 까닭: 보호자가 골랐으면 {@link #FOCUS_FACTOR}, 아니면(측정에서 가장 낮은 요인) {@link #WEAKEST_FACTOR}. */
     private static String whyFactor(CoachRunConditions conditions) {
         return conditions.focusFactor() == null ? WEAKEST_FACTOR : FOCUS_FACTOR;
+    }
+
+    /**
+     * 최근 받은 영상과 섞을 때 쓰는 시드. rankOf 는 받은 적 없으면 0, 받았으면 최근일수록 크다(= 더 뒤로).
+     * shuffleKey 는 편성 날짜와 클립 id 로 만든 값이라 같은 날 다시 짜면 같고, 날이 바뀌면 같은 순위 안의 차례가 바뀐다.
+     */
+    record Recent(List<String> videoIds, LocalDate runDate) {
+        Recent {
+            videoIds = List.copyOf(videoIds);
+        }
+
+        int rankOf(String videoId) {
+            int index = videoIds.indexOf(videoId);
+            return index < 0 ? 0 : videoIds.size() - index;
+        }
+
+        long shuffleKey(String clipId) {
+            long z = runDate.toEpochDay() * 0x9E3779B97F4A7C15L + clipId.hashCode();
+            z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+            z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+            return z ^ (z >>> 31);
+        }
     }
 
     /** AI 요청과 같은 조건(CoachRunPipeline.prepare): 조용히면 조용한 것, 집이면 좁은 곳에서 되는 것, 늘 도구 없는 것. */
