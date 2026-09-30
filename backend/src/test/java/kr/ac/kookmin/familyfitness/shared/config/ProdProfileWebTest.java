@@ -1,0 +1,55 @@
+package kr.ac.kookmin.familyfitness.shared.config;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.UUID;
+import kr.ac.kookmin.familyfitness.support.TestAuth;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+
+/**
+ * 운영 프로필(application-prod.properties)을 실제로 읽어 띄운 서버에서 외부에 열린 엔드포인트(주소)를 확인한다. 운영이 환경변수로 받는 값(DB 주소 ·
+ * FE 주소 · JWT 비밀값)만 시험 값으로 채운다 — DB 는 이 시험만 쓰는 H2 이고 시드 없이 버전 마이그레이션만 돈다.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("prod")
+@TestPropertySource(
+        properties = {
+            "SPRING_DATASOURCE_URL=jdbc:h2:mem:familyfitness-prod;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1",
+            "SPRING_DATASOURCE_USERNAME=sa",
+            "SPRING_DATASOURCE_PASSWORD=",
+            "APP_FRONTEND_BASE_URL=https://fit.example.com",
+            "APP_JWT_SECRET=prod-test-secret-prod-test-secret-prod-test-secret-0123456789",
+            "APP_AI_MODE=stub"
+        })
+class ProdProfileWebTest {
+    @Autowired
+    MockMvc mvc;
+
+    @Autowired
+    TestAuth auth;
+
+    @Test
+    @DisplayName("운영에서 actuator 는 health 만 연다 — 로그인해도 /actuator/info · /actuator/modulith 는 404 다")
+    void 운영에서_actuator_는_health_만_연다() throws Exception {
+        String bearer = auth.bearer(UUID.randomUUID());
+
+        mvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+        mvc.perform(get("/actuator/modulith").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/actuator/info").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isNotFound());
+    }
+}

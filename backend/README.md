@@ -24,14 +24,15 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 
 ### 프로필
 
-| 프로필 | DB | 로그인 | AI | 시드 |
-|---|---|---|---|---|
-| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 | 있음 |
-| `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 |
-| `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 |
-| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬) | http (`APP_AI_BASE_URL`) | 없음 |
+| 프로필 | DB | 로그인 | AI | 시드 | actuator |
+|---|---|---|---|---|---|
+| `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 | 있음 | health · info · modulith |
+| `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 | health · info · modulith |
+| `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 | health · info · modulith |
+| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬) | http (`APP_AI_BASE_URL`) | 없음 | health 만 |
 
 - 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
+- actuator: `/actuator/health` 는 로그인 없이 부른다. info · modulith(모듈 · 패키지 구조와 모듈 사이 의존)는 로그인해야 보이는데, 운영에서는 심사용 로그인으로 누구나 토큰을 받으므로 prod 는 health 만 연다(`application-prod.properties` 의 `management.endpoints.web.exposure.include=health`, 시험 `ProdProfileWebTest`). 나머지 주소는 404 다.
 - **심사용 계정 로그인**(`POST /api/v1/auth/review-login`, `app.auth.review-login.enabled`)은 개발용 기능이 아니라 이 목록에 없다.
   심사위원이 운영 서버에서 구글 계정 없이 둘러보는 길이라 운영에서 켜 둔다(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 `true` — 심사가 끝나면 `false`).
   부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
