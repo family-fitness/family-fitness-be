@@ -13,3 +13,7 @@ where not exists (select 1 from exercise_videos where video_id = 'sample00004');
 insert into exercise_videos (video_id, title, channel_name, channel_type, duration_sec, age_from, age_to, factors, intensity, space, noise, equipment, labeled_by, label_model, collected_at)
 select 'sample00005', '유아 놀이 체육: 균형 잡기와 점프', '국민체력100', 'PUBLIC', 420, 4, 6, '평형성,순발력', 'LOW', 'SMALL_ROOM', 'NORMAL', null, 'SEED', null, timestamp with time zone '2026-09-01 00:00:00+09'
 where not exists (select 1 from exercise_videos where video_id = 'sample00005');
+-- 이미 넣은 DB 의 제목도 새 글로 맞춘다. 화면 글에는 긴 대시를 쓰지 않는다.
+update exercise_videos set title = '유소년 심폐지구력 키우기: 제자리 달리기 루틴' where video_id = 'sample00003' and labeled_by = 'SEED';
+update exercise_videos set title = '성인 근력 운동: 맨몸 스쿼트와 플랭크' where video_id = 'sample00004' and labeled_by = 'SEED';
+update exercise_videos set title = '유아 놀이 체육: 균형 잡기와 점프' where video_id = 'sample00005' and labeled_by = 'SEED';

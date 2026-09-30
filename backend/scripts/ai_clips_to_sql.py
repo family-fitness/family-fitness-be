@@ -37,12 +37,14 @@ exercise_videos 에는 자료에 있는 칸만 채운다. 영상 길이 · 강�
 import argparse
 import csv
 import io
+import re
 import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 
-VIDEO_TITLE_PREFIX = "국민체력100 운동영상 · "
+# AI 코퍼스의 유튜브 영상 인용 이름 앞머리. 떼고 남은 것이 영상 제목이다. AI 가 앞머리를 쉼표로 이어도 뗀다.
+VIDEO_TITLE_PREFIXES = ("국민체력100 운동영상 · ", "국민체력100 운동영상, ")
 CHANNEL_NAME = "국민체력100"
 CHANNEL_TYPE = "PUBLIC"
 YOUTUBE_WATCH = "https://www.youtube.com/watch?v="
@@ -83,6 +85,48 @@ def git(ai_root: Path, *args: str) -> str:
 
 def sql_text(value: str | None) -> str:
     return "null" if value is None else "'" + value.replace("'", "''") + "'"
+
+
+# 사이트에 보이는 글에는 가운데 점과 긴 대시를 쓰지 않는다. AI 는 원자료를 그대로 두고 내보낼 때 common/copy.py plain() 으로
+# 바꾼다. 여기서도 같은 규칙으로 바꿔 싣는다. 숫자 사이의 대시는 범위라 물결(7~10세)로, 나머지는 쉼표로 바꾼다.
+DOTS = "·ㆍ・‧∙"
+DASHES = "—–―‒"
+_RANGE = re.compile(rf"(\d)\s*[{DASHES}]\s*(?=\d)")
+_MARK = re.compile(rf"\s*[{DOTS}{DASHES}]+\s*")
+_LOOSE_COMMA = re.compile(r",\s*(?=[,.!?)\]」』]|$)")
+_LEADING_COMMA = re.compile(r"(^|[(\[「『])\s*,\s*")
+_COMMA_BEFORE_MARK = re.compile(r"\s*,\s*(?=\[\d+\])")
+# 동작 이름에서 쉼표로 이으면 어색한 것. 운동 이름과 제목은 이 표를 먼저 쓴다(V168 과 같다).
+# 인용 이름은 AI 가 내보내는 모양과 같아야 해서 이 표를 쓰지 않는다.
+NAME_FIXES = {
+    "가슴·어깨": "가슴과 어깨",
+    "오른쪽·왼쪽": "오른쪽과 왼쪽",
+    "앞·옆으로": "앞과 옆으로",
+    "앞·뒤로": "앞뒤로",
+    "좌·우로": "좌우로",
+    "가슴·몸통": "가슴과 몸통",
+}
+
+
+def plain(text: str | None) -> str | None:
+    """가운데 점과 긴 대시를 걷어 낸 글. AI common/copy.py plain() 과 같다(인용 이름에 쓴다)."""
+    if not text or not any(mark in text for mark in DOTS + DASHES):
+        return text
+    text = _RANGE.sub(r"\1~", text)
+    text = _MARK.sub(", ", text)
+    text = _COMMA_BEFORE_MARK.sub(" ", text)
+    text = _LOOSE_COMMA.sub("", text)
+    text = _LEADING_COMMA.sub(r"\1", text)
+    return text.strip()
+
+
+def plain_name(text: str | None) -> str | None:
+    """동작 이름과 영상 제목. 어색한 몇 가지는 문맥에 맞춰 먼저 고치고, 남은 것은 plain() 으로 바꾼다."""
+    if not text:
+        return text
+    for before, after in NAME_FIXES.items():
+        text = text.replace(before, after)
+    return plain(text)
 
 
 def sql_bool(value: bool) -> str:
@@ -157,9 +201,9 @@ def build_clips(clip_rows: list[dict[str, str]], labels: dict, videos: dict) -> 
             "clip_id": f"{row['video_id']}-{start}",
             "video_id": row["video_id"],
             "seq": int(row["seq"]),
-            "name_on_video": row["name_on_video"],
-            "exercise_name": exercise_name,
-            "title": exercise_name or row["name_on_video"],
+            "name_on_video": plain_name(row["name_on_video"]),
+            "exercise_name": plain_name(exercise_name),
+            "title": plain_name(exercise_name or row["name_on_video"]),
             "fitness_factor": factor_of(label.get("fitness_factor") or ""),
             "phase": phase_of(row, label),
             "start_sec": start,
@@ -184,7 +228,8 @@ def assignments(fields: dict[str, str]) -> str:
 def video_statements(video_id: str, chunk: dict[str, str], collected_at: str) -> str:
     """이 스크립트가 넣은 영상(labeled_by='AI')은 이번 판 값으로 고치고, 없으면 넣는다."""
     label = chunk["citation_label"]
-    title = label[len(VIDEO_TITLE_PREFIX):] if label.startswith(VIDEO_TITLE_PREFIX) else label
+    prefix = next((p for p in VIDEO_TITLE_PREFIXES if label.startswith(p)), "")
+    title = plain_name(label[len(prefix):])
     if chunk.get("citation_url") != YOUTUBE_WATCH + video_id:
         fail(f"코퍼스 주소가 YouTube watch 주소가 아니다: {video_id} {chunk.get('citation_url')}")
     age = age_of(chunk.get("age_group") or "")

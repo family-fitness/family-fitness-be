@@ -47,7 +47,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from ai_clips_to_sql import AGE_GROUPS, FACTORS, PHASES, assignments, fail, git, sql_bool, sql_text
+from ai_clips_to_sql import (
+    AGE_GROUPS, FACTORS, PHASES, assignments, fail, git, plain, plain_name, sql_bool, sql_text,
+)
 
 CHANNEL_NAME = "국민체력100 동영상 정보"
 CHANNEL_TYPE = "PUBLIC"
@@ -136,7 +138,8 @@ def build(rows: list[dict[str, str]]) -> list[dict]:
         ages = [age_of(row["age_group"], video_id) for row in group]
         factor_labels = list(dict.fromkeys(row["fitness_factor"] for row in group if row["fitness_factor"]))
         exercise_name = first["exercise_name"] or None
-        title = exercise_name or first["name_on_video"]
+        # 화면에 나가는 글은 가운데 점과 긴 대시를 걷어 싣는다. 인용 이름은 AI 가 내보내는 모양(plain)과 같게 한다.
+        title = plain_name(exercise_name or first["name_on_video"])
         out.append({
             "video_id": video_id,
             "duration_sec": duration,
@@ -144,10 +147,10 @@ def build(rows: list[dict[str, str]]) -> list[dict]:
             "age_to": max(age[2] for age in ages),
             "factors": ",".join(factor_labels) or None,
             "media_url": first["url"],
-            "citation_label": first["citation_label"] or None,
+            "citation_label": plain(first["citation_label"]) or None,
             "clip_id": f"{video_id}-0",
-            "name_on_video": first["name_on_video"],
-            "exercise_name": exercise_name,
+            "name_on_video": plain_name(first["name_on_video"]),
+            "exercise_name": plain_name(exercise_name),
             "title": title,
             "labels": labels,
             "home_ok": first["home_ok"] == "True",
