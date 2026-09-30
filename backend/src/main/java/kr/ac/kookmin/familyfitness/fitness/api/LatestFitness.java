@@ -13,11 +13,11 @@ public record LatestFitness(
         LocalDate testedOn,
         @Nullable BigDecimal heightCm,
         @Nullable BigDecimal weightKg,
-        /** 체지방률 %(AI 항목 003). 그 회차에 안 적었으면 null. */
+        /* 체지방률 %(AI 항목 003). 그 회차에 안 적었으면 null. */
         @Nullable BigDecimal bodyFatPct,
-        /** 허리둘레 cm(AI 항목 004). 그 회차에 안 적었으면 null. */
+        /* 허리둘레 cm(AI 항목 004). 그 회차에 안 적었으면 null. */
         @Nullable BigDecimal waistCm,
-        /** itemCode → 원시 측정값. 005·006 은 애초에 저장되지 않는다. */
+        /* itemCode → 원시 측정값. 005·006 은 애초에 저장되지 않는다. */
         Map<String, BigDecimal> measurements,
         @Nullable FactorPoint weakest,
         @Nullable FactorPoint strongest) {}

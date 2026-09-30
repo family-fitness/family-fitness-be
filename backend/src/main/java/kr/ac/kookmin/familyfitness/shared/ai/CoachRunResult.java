@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record CoachRunResult(
         String runId,
-        /** running · succeeded · failed · refused */
+        /* running · succeeded · failed · refused */
         String status,
         List<Step> steps,
         @Nullable Proposal proposal,

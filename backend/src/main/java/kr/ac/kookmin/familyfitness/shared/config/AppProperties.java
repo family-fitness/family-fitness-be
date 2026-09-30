@@ -97,7 +97,7 @@ public record AppProperties(
 
     public record Jwt(
             @DefaultValue("familyfitness") String issuer,
-            /** HS256 대칭키. 32바이트 이상. 운영에서는 APP_JWT_SECRET 환경변수로 주입한다. */
+            /* HS256 대칭키. 32바이트 이상. 운영에서는 APP_JWT_SECRET 환경변수로 주입한다. */
             @DefaultValue("") String secret,
             @DefaultValue("1h") Duration accessTtl,
             @DefaultValue("30d") Duration refreshTtl) {

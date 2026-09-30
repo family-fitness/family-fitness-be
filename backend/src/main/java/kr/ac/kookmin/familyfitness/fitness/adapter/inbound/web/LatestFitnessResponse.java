@@ -32,7 +32,7 @@ public record LatestFitnessResponse(
         @Nullable FactorPoint weakest,
         @Nullable FactorPoint strongest,
         @Nullable CoachDirection coachDirection,
-        /** 이 회차의 인증 등급(한 사람에게 하나). 보호자만 본다. */
+        /* 이 회차의 인증 등급(한 사람에게 하나). 보호자만 본다. */
         @Nullable CertificationResponse certification,
         String disclaimer) {
     public static LatestFitnessResponse of(LatestFitnessView view) {

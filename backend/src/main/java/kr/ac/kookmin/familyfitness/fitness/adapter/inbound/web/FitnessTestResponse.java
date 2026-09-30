@@ -13,13 +13,13 @@ import org.jspecify.annotations.Nullable;
 public record FitnessTestResponse(
         UUID fitnessTestId,
         LocalDate testedOn,
-        /** 그 회차에 같이 적은 체지방률 · 허리둘레. 안 적었으면 null. 등록은 보호자만 해서 늘 싣는다. */
+        /* 그 회차에 같이 적은 체지방률 · 허리둘레. 안 적었으면 null. 등록은 보호자만 해서 늘 싣는다. */
         @Nullable BigDecimal bodyFatPct,
         @Nullable BigDecimal waistCm,
         List<ItemResult> items,
         @Nullable FactorPoint weakest,
         @Nullable FactorPoint strongest,
-        /** 이 회차의 인증 등급(한 사람에게 하나). 등록은 보호자만 해서 늘 싣는다. */
+        /* 이 회차의 인증 등급(한 사람에게 하나). 등록은 보호자만 해서 늘 싣는다. */
         CertificationResponse certification,
         String disclaimer) {
     public static FitnessTestResponse of(RegisteredFitnessTest registered) {

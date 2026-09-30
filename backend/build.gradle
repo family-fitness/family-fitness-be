@@ -86,6 +86,6 @@ tasks.named('test') {
 	useJUnitPlatform()
 	testLogging {
 		events 'failed'
-		exceptionFormat 'full'
+		exceptionFormat = 'full'
 	}
 }

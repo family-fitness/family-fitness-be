@@ -18,8 +18,8 @@ public record AddMemberRequest(
         @NotNull @PastOrPresent @Nullable LocalDate birthDate,
         @NotNull @Nullable Sex sex,
         @NotNull @Nullable ProfileRole role,
-        /** 가입 때 적은 키. 범위는 측정 등록과 같다. 안 적었으면 null 이나 칸을 뺀다(0 은 범위 밖이라 400). */
+        /* 가입 때 적은 키. 범위는 측정 등록과 같다. 안 적었으면 null 이나 칸을 뺀다(0 은 범위 밖이라 400). */
         @DecimalMin("30") @DecimalMax("230") @Nullable BigDecimal heightCm,
-        /** 가입 때 적은 몸무게. 범위는 측정 등록과 같다. 응답에는 싣지 않는다. */
+        /* 가입 때 적은 몸무게. 범위는 측정 등록과 같다. 응답에는 싣지 않는다. */
         @DecimalMin("5") @DecimalMax("250") @Nullable BigDecimal weightKg,
         @Valid @Nullable GuardianConsentRequest guardianConsent) {}
