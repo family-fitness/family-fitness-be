@@ -1,0 +1,25 @@
+package kr.ac.kookmin.familyfitness.shared.ai;
+
+import java.util.List;
+import org.jspecify.annotations.Nullable;
+
+/** AI `POST /v1/coach/runs` 요청(AI 인터페이스-명세 4장). */
+public record CoachRunRequest(List<Participant> profiles, String startDate, int weeks, Constraints constraints) {
+    /** role: 주행자 · 동반자 · 응원 (응원은 편성 대상에서 빠지고 참여자로만 기록) */
+    public record Participant(AiProfile profile, String role) {}
+
+    /**
+     * daysPerWeek · minutesPerSession — 일간 미션. weeklyMinutes — 주간 미션(null 이면 만들지 않는다).
+     * quiet · smallSpace · noProps — 클립 조건(ai:video/catalog.py Conditions).
+     * focusFactor(한글 요인 라벨) · withCompanion — AI 계약에 아직 없는 칸이다. AI 는 모르는 칸을 무시한다(pydantic 기본값).
+     */
+    public record Constraints(
+            int daysPerWeek,
+            int minutesPerSession,
+            @Nullable Integer weeklyMinutes,
+            boolean quiet,
+            boolean smallSpace,
+            boolean noProps,
+            @Nullable String focusFactor,
+            boolean withCompanion) {}
+}

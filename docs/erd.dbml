@@ -1,0 +1,660 @@
+// 우리가족 체력키움 — ERD. backend/src/main/resources/db/migration 에서 생성한 것이라 손으로 고치지 않는다.
+// 재생성: python3 backend/scripts/ddl_to_dbml.py > docs/erd.dbml
+
+Table users {
+  id uuid [pk, not null]
+  provider varchar(20) [not null]
+  provider_user_id varchar(191) [not null]
+  email varchar(255)
+  status varchar(20) [not null]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  indexes {
+    (provider, provider_user_id) [unique, name: 'uq_users_provider']
+  }
+  Note: '''(status in ('ACTIVE', 'INACTIVE'))'''
+}
+
+Table families {
+  id uuid [pk, not null]
+  name varchar(60) [not null]
+  region_code varchar(20)
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table profiles {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  user_id uuid
+  display_name varchar(30) [not null]
+  birth_date date [not null]
+  sex varchar(1) [not null]
+  role varchar(10) [not null]
+  is_owner boolean [not null]
+  height_cm numeric(4,1)
+  weight_kg numeric(4,1)
+  support_mode varchar(20)
+  claim_code varchar(8)
+  claim_code_expires_at timestamptz
+  claim_code_claimed_at timestamptz
+  consent_personal_at timestamptz
+  consent_health_at timestamptz
+  consent_by_user_id uuid
+  consent_revoked_at timestamptz
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  claim_code_issued_by uuid
+  version bigint [not null]
+  indexes {
+    (claim_code) [unique, name: 'uq_profiles_claim_code']
+    (family_id) [name: 'ix_profiles_family']
+    (user_id) [name: 'ix_profiles_user']
+    (user_id) [unique, name: 'uq_profiles_user']
+  }
+  Note: '''(sex in ('M', 'F'))
+(role in ('PARENT', 'CHILD'))
+(support_mode is null or support_mode in ('CHEER_ONLY', 'WEEKEND', 'FULL'))
+((claim_code is null) = (claim_code_expires_at is null))'''
+}
+
+Table cheers {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  from_profile_id uuid [not null]
+  to_profile_id uuid [not null]
+  mission_id uuid
+  sticker_id varchar(20)
+  message varchar(200)
+  created_at timestamptz [not null]
+  kind varchar(10) [not null]
+  reply_to_cheer_id uuid
+  indexes {
+    (family_id, created_at) [name: 'ix_cheers_family_created']
+    (from_profile_id, to_profile_id, created_at) [name: 'ix_cheers_to_created']
+    (reply_to_cheer_id) [unique, name: 'ux_cheers_reply_to']
+    (to_profile_id, created_at) [name: 'ix_cheers_to_profile_created']
+  }
+  Note: '''(from_profile_id <> to_profile_id)
+(sticker_id is not null or message is not null)
+(kind in ('DONE', 'PRAISE', 'THANKS'))
+(reply_to_cheer_id is null or kind = 'THANKS')'''
+}
+
+Table fitness_norms {
+  id bigint [pk, increment]
+  item_code varchar(3) [not null]
+  sex varchar(1) [not null]
+  age_from smallint [not null]
+  age_to smallint [not null]
+  percentile smallint [not null]
+  norm_value numeric(8,3) [not null]
+  source_year smallint [not null]
+  age_unit varchar(4) [not null]
+  indexes {
+    (item_code, sex, age_unit, age_from, age_to, percentile, source_year) [unique, name: 'uq_fitness_norm']
+  }
+  Note: '''(sex in ('M', 'F'))
+(age_unit in ('세', '개월'))'''
+}
+
+Table fitness_tests {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  tested_on date [not null]
+  source varchar(20) [not null]
+  age_at_test smallint [not null]
+  height_cm numeric(4,1)
+  weight_kg numeric(4,1)
+  created_at timestamptz [not null]
+  indexes {
+    (profile_id, tested_on) [unique, name: 'uq_fitness_test_date']
+  }
+  Note: '''(source in ('SELF_INPUT', 'CENTER_SHEET'))'''
+}
+
+Table fitness_test_items {
+  fitness_test_id uuid [not null]
+  item_code varchar(3) [not null]
+  raw_value numeric(8,3) [not null]
+  percentile smallint
+  grade varchar(10)
+  band varchar(10)
+  indexes {
+    (fitness_test_id, item_code) [pk]
+  }
+  Note: '''(percentile is null or (percentile between 1 and 99))
+(band is null or band in ('strength', 'steady', 'growth'))'''
+}
+
+Table predictions {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  fitness_test_id uuid
+  item_code varchar(3) [not null]
+  horizon_years smallint [not null]
+  model_version varchar(40) [not null]
+  basis varchar(60) [not null]
+  notice varchar(300) [not null]
+  created_at timestamptz [not null]
+}
+
+Table prediction_points {
+  prediction_id uuid [not null]
+  scenario varchar(20) [not null]
+  item_code varchar(3) [not null]
+  years_from_now smallint [not null]
+  p10 numeric(8,3)
+  p50 numeric(8,3)
+  p90 numeric(8,3)
+  indexes {
+    (prediction_id, scenario, item_code, years_from_now) [pk]
+  }
+  Note: '''(scenario in ('MAINTAIN', 'IMPROVE'))'''
+}
+
+Table activity_daily {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  activity_date date [not null]
+  source varchar(10) [not null]
+  steps int [not null]
+  active_minutes smallint [not null]
+  recorded_at timestamptz [not null]
+  active_seconds int [not null]
+  indexes {
+    (profile_id, activity_date, source) [unique, name: 'uq_activity_daily']
+  }
+  Note: '''(source in ('MANUAL', 'TIMER', 'VIDEO'))
+(steps >= 0 and active_minutes >= 0)
+(active_seconds >= 0)'''
+}
+
+Table exercise_videos {
+  video_id varchar(32) [pk, not null]
+  title varchar(300) [not null]
+  channel_name varchar(120) [not null]
+  channel_type varchar(20) [not null]
+  duration_sec int
+  age_from smallint
+  age_to smallint
+  factors varchar(120)
+  intensity varchar(10)
+  space varchar(20)
+  noise varchar(10)
+  equipment varchar(60)
+  labeled_by varchar(20) [not null]
+  label_model varchar(40)
+  collected_at timestamptz [not null]
+}
+
+Table video_interactions {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  video_id varchar(32) [not null]
+  favorited boolean [not null]
+  favorited_at timestamptz
+  max_progress numeric(4,3) [not null]
+  watched_sec int [not null]
+  credited_at timestamptz
+  last_watched_at timestamptz
+  updated_at timestamptz [not null]
+  indexes {
+    (profile_id, video_id) [unique, name: 'uq_video_interaction']
+  }
+  Note: '''(max_progress between 0 and 1)'''
+}
+
+Table coach_runs {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  week_start date [not null]
+  trigger_type varchar(10) [not null]
+  status varchar(20) [not null]
+  summary text
+  steps_json text
+  proposal_json text
+  ai_run_id varchar(40)
+  model_name varchar(40)
+  days_per_week smallint [not null]
+  minutes_per_session smallint [not null]
+  requested_by_profile_id uuid
+  approved_by uuid
+  approved_at timestamptz
+  rejected_reason varchar(300)
+  rejected_at timestamptz
+  failure_reason varchar(300)
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  ai_refused boolean [not null]
+  ai_refusal_reason varchar(60)
+  subject_profile_id uuid
+  run_date date
+  quiet boolean
+  place varchar(10)
+  focus_factor varchar(20)
+  with_parent boolean
+  lock_key varchar(60)
+  failure_code varchar(20)
+  indexes {
+    (family_id, week_start) [name: 'ix_coach_runs_family_week']
+    (status, created_at) [name: 'ix_coach_runs_status_created']
+    (lock_key) [unique, name: 'ux_coach_runs_lock_key']
+    (subject_profile_id, run_date) [name: 'ix_coach_runs_subject_date']
+  }
+  Note: '''(trigger_type in ('SCHEDULE', 'MANUAL'))
+(status in ('RUNNING', 'AWAITING_APPROVAL', 'APPROVED', 'REJECTED', 'FAILED'))
+((approved_by is null) = (approved_at is null))
+(status <> 'APPROVED' or approved_at is not null)
+(place in ('HOME', 'OUTDOOR'))
+(failure_code in ('NO_CITATIONS', 'AI_FAILED', 'CONSENT_REQUIRED', 'BUSY', 'STALE', 'ERROR'))'''
+}
+
+Table coach_run_proposal_items {
+  coach_run_id uuid [not null]
+  position smallint [not null]
+  title varchar(120) [not null]
+  description varchar(400)
+  rationale varchar(400)
+  target_metric varchar(20) [not null]
+  target_value int [not null]
+  video_id varchar(32)
+  video_start_sec int
+  starts_on date [not null]
+  ends_on date [not null]
+  copy_child varchar(400)
+  copy_parent varchar(400)
+  participants_json text [not null]
+  citations_json text [not null]
+  indexes {
+    (coach_run_id, position) [pk]
+  }
+  Note: '''(target_metric in ('VIDEO_DONE', 'TIMER_MINUTES', 'STEPS'))'''
+}
+
+Table missions {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  coach_run_id uuid
+  title varchar(120) [not null]
+  description varchar(400)
+  origin varchar(10) [not null]
+  target_metric varchar(20) [not null]
+  target_value int [not null]
+  video_id varchar(32)
+  video_start_sec int
+  rationale varchar(400)
+  starts_on date [not null]
+  ends_on date [not null]
+  created_by uuid
+  created_at timestamptz [not null]
+  indexes {
+    (family_id, starts_on) [name: 'ix_missions_family']
+    (coach_run_id) [name: 'ix_missions_coach_run']
+  }
+  Note: '''(origin in ('COACH', 'MANUAL'))
+(target_metric in ('VIDEO_DONE', 'TIMER_MINUTES', 'STEPS'))
+((origin = 'COACH') = (coach_run_id is not null))
+(ends_on >= starts_on)
+(target_value > 0)'''
+}
+
+Table mission_participants {
+  mission_id uuid [not null]
+  profile_id uuid [not null]
+  status varchar(20) [not null]
+  progress numeric(4,3) [not null]
+  verified_by varchar(20)
+  verified_at timestamptz
+  confirmed_by_profile_id uuid
+  updated_at timestamptz [not null]
+  coach_role varchar(10)
+  indexes {
+    (mission_id, profile_id) [pk]
+    (profile_id) [name: 'ix_mission_participants_profile']
+  }
+  Note: '''(status in ('PENDING', 'COMPLETED'))
+(progress between 0 and 1)
+(verified_by is null or verified_by in ('VIDEO_PROGRESS', 'TIMER', 'SELF_REPORT'))'''
+}
+
+Table coach_messages {
+  id uuid [pk, not null]
+  conversation_id uuid [not null]
+  profile_id uuid [not null]
+  role varchar(10) [not null]
+  content text [not null]
+  refused boolean [not null]
+  refusal_reason varchar(40)
+  created_at timestamptz [not null]
+  indexes {
+    (conversation_id, created_at) [name: 'ix_coach_messages_conversation']
+  }
+  Note: '''(role in ('USER', 'ASSISTANT'))'''
+}
+
+Table coach_message_citations {
+  coach_message_id uuid [not null]
+  position smallint [not null]
+  chunk_id varchar(200)
+  source_label varchar(200) [not null]
+  excerpt varchar(500)
+  url varchar(500)
+  indexes {
+    (coach_message_id, position) [pk]
+  }
+}
+
+Table video_exercises {
+  clip_id varchar(48) [pk, not null]
+  video_id varchar(32) [not null]
+  seq smallint [not null]
+  name_on_video varchar(60) [not null]
+  exercise_name varchar(60)
+  title varchar(60) [not null]
+  fitness_factor varchar(20)
+  phase varchar(10) [not null]
+  start_sec int [not null]
+  end_sec int [not null]
+  home_ok boolean [not null]
+  quiet boolean [not null]
+  needs_props boolean [not null]
+  is_exercise boolean [not null]
+  age_group varchar(12)
+  source varchar(10)
+  active boolean [not null]
+  indexes {
+    (video_id, start_sec) [unique, name: 'uq_video_exercises_start']
+  }
+  Note: '''(start_sec >= 0 and end_sec > start_sec)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(fitness_factor is null or fitness_factor in ('CARDIO', 'STRENGTH', 'MUSCULAR_ENDURANCE', 'FLEXIBILITY', 'AGILITY', 'POWER', 'COORDINATION', 'BALANCE'))
+(age_group is null or age_group in ('TODDLER', 'YOUTH', 'ADOLESCENT', 'ADULT', 'SENIOR'))'''
+}
+
+Table mission_sessions {
+  mission_id uuid [not null]
+  position smallint [not null]
+  phase varchar(10) [not null]
+  title varchar(120) [not null]
+  factor varchar(20)
+  minutes smallint [not null]
+  video_id varchar(32)
+  start_sec int
+  end_sec int
+  clip_title varchar(120)
+  indexes {
+    (mission_id, position) [pk]
+  }
+  Note: '''(position >= 1)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(minutes >= 1)
+((video_id is null) = (start_sec is null))
+(video_id is not null or (end_sec is null and clip_title is null))
+(start_sec is null or start_sec >= 0)
+(end_sec is null or end_sec > start_sec)'''
+}
+
+Table coach_run_proposal_sessions {
+  coach_run_id uuid [not null]
+  item_position smallint [not null]
+  position smallint [not null]
+  phase varchar(10) [not null]
+  title varchar(120) [not null]
+  factor varchar(20)
+  minutes smallint [not null]
+  video_id varchar(32)
+  start_sec int
+  end_sec int
+  clip_title varchar(120)
+  indexes {
+    (coach_run_id, item_position, position) [pk]
+  }
+  Note: '''(position >= 1)
+(phase in ('WARMUP', 'MAIN', 'COOLDOWN'))
+(minutes >= 1)
+((video_id is null) = (start_sec is null))
+(video_id is not null or (end_sec is null and clip_title is null))
+(start_sec is null or start_sec >= 0)
+(end_sec is null or end_sec > start_sec)'''
+}
+
+Table rest_cards {
+  id uuid [pk, not null]
+  family_id uuid [not null]
+  rest_date date [not null]
+  rest_month date [not null]
+  card_no smallint [not null]
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (family_id, rest_date) [unique, name: 'ux_rest_cards_family_date']
+    (family_id, rest_month, card_no) [unique, name: 'ux_rest_cards_family_card']
+  }
+  Note: '''(extract(day from rest_month) = 1)
+(card_no >= 1)'''
+}
+
+Table refresh_tokens {
+  jti uuid [pk, not null]
+  user_id uuid [not null]
+  family_id uuid [not null]
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  replaced_by uuid
+  created_at timestamptz [not null]
+  indexes {
+    (family_id) [name: 'ix_refresh_tokens_family']
+    (user_id) [name: 'ix_refresh_tokens_user']
+  }
+}
+
+Table progress_xp_events {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  kind varchar(20) [not null]
+  source_key varchar(80) [not null]
+  amount int [not null]
+  from_profile_id uuid
+  mission_id uuid
+  phase varchar(10)
+  factor varchar(20)
+  occurred_on date [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (profile_id, kind, source_key) [unique, name: 'uq_progress_xp_events_source']
+    (profile_id, created_at) [name: 'ix_progress_xp_events_recent']
+    (profile_id, occurred_on) [name: 'ix_progress_xp_events_day']
+  }
+  Note: '''(kind in ('SESSION_DONE', 'MISSION_DONE', 'STICKER', 'REMEASURE'))
+(amount > 0)
+(phase is null or phase in ('WARMUP', 'MAIN', 'COOLDOWN'))'''
+}
+
+Table progress_achievements {
+  profile_id uuid [not null]
+  code varchar(20) [not null]
+  earned_at timestamptz [not null]
+  indexes {
+    (profile_id, code) [pk]
+  }
+}
+
+Table exercise_favorites {
+  profile_id uuid [not null]
+  clip_id varchar(48) [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (profile_id, clip_id) [pk]
+  }
+}
+
+Table profile_availability_slots {
+  profile_id uuid [not null]
+  day_of_week varchar(3) [not null]
+  start_time time [not null]
+  minutes smallint [not null]
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (profile_id, day_of_week) [pk]
+  }
+  Note: '''(day_of_week in ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'))
+(minutes between 5 and 120)'''
+}
+
+Table mission_session_completions {
+  mission_id uuid [not null]
+  position smallint [not null]
+  profile_id uuid [not null]
+  completed_at timestamptz [not null]
+  completed_on date [not null]
+  active_seconds int [not null]
+  verified_by varchar(20) [not null]
+  indexes {
+    (mission_id, position, profile_id) [pk]
+    (profile_id, mission_id) [name: 'ix_mission_session_completions_profile']
+  }
+  Note: '''(position >= 1)
+(active_seconds >= 0)
+(verified_by in ('VIDEO_PROGRESS', 'TIMER', 'SELF_REPORT'))'''
+}
+
+Table consent_events {
+  id bigint [pk, increment]
+  profile_id uuid [not null]
+  actor_user_id uuid
+  kind varchar(10) [not null]
+  personal_data boolean
+  health_data boolean
+  occurred_at timestamptz [not null]
+  indexes {
+    (profile_id, occurred_at) [name: 'ix_consent_events_profile']
+  }
+  Note: '''(kind <> 'GRANTED' or (personal_data = true and health_data = true))
+(kind in ('GRANTED', 'REVOKED', 'VOIDED'))'''
+}
+
+Table league_rounds {
+  id uuid [pk, not null]
+  round_month date [not null]
+  tier varchar(10) [not null]
+  group_no smallint [not null]
+  created_at timestamptz [not null]
+  settled_at timestamptz
+  indexes {
+    (round_month, tier, group_no) [unique, name: 'ux_league_rounds_month_tier_group']
+  }
+  Note: '''(extract(day from round_month) = 1)
+(tier in ('BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND'))
+(group_no >= 1)'''
+}
+
+Table league_members {
+  round_id uuid [not null]
+  family_id uuid [not null]
+  round_month date [not null]
+  seat_no smallint [not null]
+  joined_at timestamptz [not null]
+  final_rate smallint
+  final_rank smallint
+  moved varchar(4)
+  indexes {
+    (round_id, family_id) [pk]
+    (family_id, round_month) [unique, name: 'ux_league_members_family_month']
+    (round_id, seat_no) [unique, name: 'ux_league_members_round_seat']
+  }
+  Note: '''(extract(day from round_month) = 1)
+(seat_no >= 1)
+(final_rate is null or (final_rate >= 0 and final_rate <= 100))
+(final_rank is null or final_rank >= 1)
+(moved is null or moved in ('UP', 'STAY', 'DOWN'))'''
+}
+
+Table mission_feedback {
+  mission_id uuid [not null]
+  profile_id uuid [not null]
+  feel varchar(10) [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (mission_id, profile_id) [pk]
+  }
+  Note: '''(feel in ('EASY', 'GOOD', 'HARD'))'''
+}
+
+Table notifications {
+  id uuid [pk, not null]
+  profile_id uuid [not null]
+  kind varchar(20) [not null]
+  title varchar(150) [not null]
+  body varchar(200)
+  about_profile_id uuid
+  from_profile_id uuid
+  mission_id uuid
+  cheer_id uuid
+  sticker_id varchar(20)
+  event_date date
+  created_at timestamptz [not null]
+  read_at timestamptz
+  dedupe_key varchar(100) [not null]
+  indexes {
+    (profile_id, dedupe_key) [unique, name: 'ux_notifications_dedupe']
+    (profile_id, created_at desc) [name: 'ix_notifications_profile_created']
+    (mission_id) [name: 'ix_notifications_mission']
+    (about_profile_id) [name: 'ix_notifications_about']
+  }
+  Note: '''(kind in ('KID_DONE', 'KID_THANKS', 'PRAISE', 'MISSION_READY', 'ACHIEVEMENT', 'REMEASURE'))'''
+}
+
+Ref: profiles.family_id > families.id
+Ref: profiles.user_id > users.id
+Ref: profiles.consent_by_user_id > users.id
+Ref: cheers.family_id > families.id
+Ref: cheers.from_profile_id > profiles.id
+Ref: cheers.to_profile_id > profiles.id
+Ref: fitness_tests.profile_id > profiles.id
+Ref: fitness_test_items.fitness_test_id > fitness_tests.id
+Ref: predictions.profile_id > profiles.id
+Ref: predictions.fitness_test_id > fitness_tests.id
+Ref: prediction_points.prediction_id > predictions.id
+Ref: activity_daily.profile_id > profiles.id
+Ref: video_interactions.profile_id > profiles.id
+Ref: video_interactions.video_id > exercise_videos.video_id
+Ref: coach_runs.family_id > families.id
+Ref: coach_runs.approved_by > profiles.id
+Ref: coach_run_proposal_items.coach_run_id > coach_runs.id
+Ref: missions.family_id > families.id
+Ref: missions.coach_run_id > coach_runs.id
+Ref: missions.created_by > profiles.id
+Ref: mission_participants.mission_id > missions.id
+Ref: mission_participants.profile_id > profiles.id
+Ref: mission_participants.confirmed_by_profile_id > profiles.id
+Ref: coach_messages.profile_id > profiles.id
+Ref: coach_message_citations.coach_message_id > coach_messages.id
+Ref: video_exercises.video_id > exercise_videos.video_id
+Ref: mission_sessions.mission_id > missions.id
+Ref: coach_runs.subject_profile_id > profiles.id
+Ref: coach_run_proposal_sessions.(coach_run_id, item_position) > coach_run_proposal_items.(coach_run_id, position)
+Ref: cheers.reply_to_cheer_id > cheers.id
+Ref: rest_cards.family_id > families.id
+Ref: rest_cards.created_by > profiles.id
+Ref: refresh_tokens.user_id > users.id
+Ref: progress_xp_events.profile_id > profiles.id
+Ref: progress_xp_events.from_profile_id > profiles.id
+Ref: progress_achievements.profile_id > profiles.id
+Ref: exercise_favorites.profile_id > profiles.id
+Ref: exercise_favorites.clip_id > video_exercises.clip_id
+Ref: profile_availability_slots.profile_id > profiles.id
+Ref: profile_availability_slots.created_by > profiles.id
+Ref: profiles.claim_code_issued_by > profiles.id
+Ref: mission_session_completions.mission_id > missions.id
+Ref: mission_session_completions.profile_id > profiles.id
+Ref: consent_events.profile_id > profiles.id
+Ref: consent_events.actor_user_id > users.id
+Ref: league_members.round_id > league_rounds.id
+Ref: league_members.family_id > families.id
+Ref: mission_feedback.(mission_id, profile_id) > mission_participants.(mission_id, profile_id)
+Ref: notifications.profile_id > profiles.id
+Ref: notifications.about_profile_id > profiles.id
+Ref: notifications.from_profile_id > profiles.id
+Ref: notifications.cheer_id > cheers.id

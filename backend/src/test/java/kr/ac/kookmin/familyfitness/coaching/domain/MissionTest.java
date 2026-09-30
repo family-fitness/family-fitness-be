@@ -1,0 +1,503 @@
+package kr.ac.kookmin.familyfitness.coaching.domain;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
+import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
+import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
+import org.assertj.core.data.Offset;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+class MissionTest {
+    private final UUID familyId = UUID.randomUUID();
+    private final UUID parentId = UUID.randomUUID();
+    private final UUID childId = UUID.randomUUID();
+    private final Instant at = Instant.parse("2026-09-09T01:00:00Z");
+    private final LocalDate monday = LocalDate.of(2026, 9, 7);
+
+    private Mission mission(TargetMetric metric) {
+        return mission(metric, 45, List.of(childId));
+    }
+
+    private Mission mission(TargetMetric metric, int target) {
+        return mission(metric, target, List.of(childId));
+    }
+
+    private Mission mission(TargetMetric metric, int target, List<UUID> participants) {
+        return manual(metric, target, participants, List.of());
+    }
+
+    private Mission withSessions(TargetMetric metric, int target, List<MissionSession> sessions) {
+        return manual(metric, target, List.of(childId), sessions);
+    }
+
+    private Mission manual(TargetMetric metric, int target, List<UUID> participants, List<MissionSession> sessions) {
+        return Mission.manual(
+                UUID.randomUUID(),
+                familyId,
+                "함께 운동",
+                metric,
+                target,
+                null,
+                monday,
+                monday.plusDays(6),
+                participants,
+                sessions,
+                parentId,
+                at);
+    }
+
+    private static MissionSession session(int position, SessionPhase phase, int minutes) {
+        return new MissionSession(
+                position,
+                phase,
+                "동작" + position,
+                FitnessFactor.FLEXIBILITY,
+                minutes,
+                new SessionClip("-EATykJOvBQ", 6, 78, "거북이 스트레칭"));
+    }
+
+    @Test
+    @DisplayName("진행도는 저장 정밀도(소수 셋째 자리 버림)로 비교한다 — DB 에서 읽은 0.333 과 다시 센 1/3 은 같은 값이라 바뀌지 않는다")
+    void 진행도는_저장_정밀도로_비교한다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30);
+        m.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at);
+        MissionParticipant p = m.participantOf(childId);
+        assertThat(p.getProgress()).isEqualTo(0.333);
+
+        Mission reloaded = Mission.reconstitute(
+                m.getId(),
+                familyId,
+                null,
+                m.getTitle(),
+                null,
+                MissionOrigin.MANUAL,
+                TargetMetric.TIMER_MINUTES,
+                30,
+                null,
+                null,
+                monday,
+                monday.plusDays(6),
+                parentId,
+                at,
+                List.of(MissionParticipant.reconstitute(
+                        childId, null, 0.333, ParticipantStatus.PENDING, VerifiedBy.TIMER, null, null, at)),
+                List.of());
+
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isFalse();
+        assertThat(reloaded.participantOf(childId).getUpdatedAt()).isEqualTo(at);
+        assertThat(reloaded.recordProgress(childId, MissionProgress.of(11, 30, VerifiedBy.TIMER), at.plusSeconds(60)))
+                .isTrue();
+        assertThat(reloaded.participantOf(childId).getProgress()).isEqualTo(0.366);
+    }
+
+    @Test
+    @DisplayName("타이머 미션은 목표 분에 닿으면 즉시 완료되고 근거는 TIMER 다")
+    void 타이머_미션은_목표_분에_닿으면_즉시_완료되고_근거는_TIMER_다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 45);
+
+        m.recordProgress(childId, MissionProgress.of(30, 45, VerifiedBy.TIMER), at);
+        MissionParticipant p = m.participantOf(childId);
+        assertThat(p.getProgress()).isCloseTo(0.666, Offset.offset(0.001));
+        assertThat(p.isCompleted()).isFalse();
+
+        m.recordProgress(childId, MissionProgress.of(60, 45, VerifiedBy.TIMER), at.plusSeconds(1));
+        assertThat(p.getProgress()).isEqualTo(1.0);
+        assertThat(p.isCompleted()).isTrue();
+        assertThat(p.getVerifiedBy()).isEqualTo(VerifiedBy.TIMER);
+        assertThat(p.getVerifiedAt()).isEqualTo(at.plusSeconds(1));
+        assertThat(p.isNeedsGuardianCheck()).isFalse();
+    }
+
+    @Test
+    @DisplayName("조금이라도 진행하면 확인 방법을 싣고(첫 칸부터 「영상으로 확인됨」), 0 으로 돌아가면 지운다. 확인 시각은 완료 때만")
+    void 조금이라도_진행하면_확인_방법을_싣는다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 4);
+        MissionParticipant p = m.participantOf(childId);
+
+        assertThat(m.recordProgress(childId, MissionProgress.of(0, 4, VerifiedBy.VIDEO_PROGRESS), at))
+                .isFalse();
+        assertThat(p.getVerifiedBy()).isNull();
+        assertThat(m.recordProgress(childId, MissionProgress.of(1, 4, VerifiedBy.VIDEO_PROGRESS), at))
+                .isTrue();
+        assertThat(p.getVerifiedBy()).isEqualTo(VerifiedBy.VIDEO_PROGRESS);
+        assertThat(p.getVerifiedAt()).isNull();
+        assertThat(p.isCompleted()).isFalse();
+        m.recordProgress(childId, MissionProgress.of(0, 4, VerifiedBy.TIMER), at);
+        assertThat(p.getVerifiedBy()).isNull();
+    }
+
+    @Test
+    @DisplayName("걸음수 미션은 도달해도 보호자 확인 전에는 완료가 아니다")
+    void 걸음수_미션은_도달해도_보호자_확인_전에는_완료가_아니다() {
+        Mission m = mission(TargetMetric.STEPS, 1000);
+
+        m.recordProgress(childId, MissionProgress.of(1500, 1000, null), at);
+        MissionParticipant p = m.participantOf(childId);
+
+        assertThat(p.getProgress()).isEqualTo(1.0);
+        assertThat(p.isCompleted()).isFalse();
+        assertThat(p.isNeedsGuardianCheck()).isTrue();
+        assertThat(m.isServerVerifiable()).isFalse();
+
+        m.confirm(childId, parentId, at);
+        assertThat(p.isCompleted()).isTrue();
+        assertThat(p.getVerifiedBy()).isEqualTo(VerifiedBy.SELF_REPORT);
+        assertThat(p.getConfirmedBy()).isEqualTo(parentId);
+        assertThat(p.isNeedsGuardianCheck()).isFalse();
+    }
+
+    @Test
+    @DisplayName("서버가 재는 미션은 보호자 확인할 것이 없어 바꾸지 않는다 — 덜 했어도 422 가 아니다(FE 요청서 4장)")
+    void 서버가_재는_미션의_보호자_확인은_바꾸지_않는다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30);
+        m.recordProgress(childId, MissionProgress.of(10, 30, VerifiedBy.TIMER), at);
+
+        MissionParticipant p = m.confirm(childId, parentId, at);
+
+        assertThat(p.isCompleted()).isFalse();
+        assertThat(p.getVerifiedBy()).isEqualTo(VerifiedBy.TIMER);
+        assertThat(p.getConfirmedBy()).isNull();
+    }
+
+    @Test
+    @DisplayName("목표 도달 전 보호자 확인은 TARGET_NOT_REACHED 다")
+    void 목표_도달_전_보호자_확인은_TARGET_NOT_REACHED_다() {
+        Mission m = mission(TargetMetric.STEPS, 1000);
+        m.recordProgress(childId, MissionProgress.of(400, 1000, null), at);
+
+        TargetNotReachedException e =
+                assertThrows(TargetNotReachedException.class, () -> m.confirm(childId, parentId, at));
+        assertThat(e.getCode()).isEqualTo("TARGET_NOT_REACHED");
+        assertThat(m.participantOf(childId).isCompleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("완료된 참여자의 진행도는 되돌리지 않는다")
+    void 완료된_참여자의_진행도는_되돌리지_않는다() {
+        Mission m = mission(TargetMetric.STEPS, 1000);
+        m.recordProgress(childId, MissionProgress.of(1000, 1000, null), at);
+        m.confirm(childId, parentId, at);
+
+        boolean changed = m.recordProgress(childId, MissionProgress.of(200, 1000, null), at.plusSeconds(5));
+
+        assertThat(changed).isFalse();
+        assertThat(m.participantOf(childId).getProgress()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("참여자가 아니면 권한 없음(403) NOT_A_PARTICIPANT, 지표가 다르면 INVALID_METRIC")
+    void 참여자가_아니면_NOT_A_PARTICIPANT_지표가_다르면_INVALID_METRIC() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES);
+
+        NotParticipantException notParticipant =
+                assertThrows(NotParticipantException.class, () -> m.participantOf(parentId));
+        assertThat(notParticipant.getCode()).isEqualTo("NOT_A_PARTICIPANT");
+        assertThat(notParticipant.getKind()).isEqualTo(ErrorKind.FORBIDDEN);
+        assertThat(assertThrows(InvalidMetricException.class, () -> m.requireMetric(TargetMetric.STEPS))
+                        .getCode())
+                .isEqualTo("INVALID_METRIC");
+    }
+
+    @Test
+    @DisplayName("상태는 전원 완료면 DONE, 기간이 지나면 EXPIRED, 아니면 ACTIVE")
+    void 상태는_전원_완료면_DONE_기간이_지나면_EXPIRED_아니면_ACTIVE() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 10, List.of(childId, parentId));
+
+        assertThat(m.statusOn(monday.plusDays(2))).isEqualTo(MissionStatus.ACTIVE);
+        assertThat(m.statusOn(monday.plusDays(7))).isEqualTo(MissionStatus.EXPIRED);
+
+        m.recordProgress(childId, MissionProgress.of(10, 10, VerifiedBy.TIMER), at);
+        assertThat(m.statusOn(monday.plusDays(2))).isEqualTo(MissionStatus.ACTIVE);
+        m.recordProgress(parentId, MissionProgress.of(10, 10, VerifiedBy.TIMER), at);
+        assertThat(m.statusOn(monday.plusDays(7))).isEqualTo(MissionStatus.DONE);
+    }
+
+    @Test
+    @DisplayName("진행도는 1을 넘지 않고 목표가 0이면 0이다")
+    void 진행도는_1을_넘지_않고_목표가_0이면_0이다() {
+        assertThat(MissionProgress.of(120, 45, VerifiedBy.TIMER).progress()).isEqualTo(1.0);
+        assertThat(MissionProgress.of(5, 0, null).progress()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("직접 만든 칸은 position 차례로 들고 목표 분은 칸 시간의 합이다")
+    void 직접_만든_칸은_position_차례로_들고_목표_분은_칸_시간의_합이다() {
+        Mission m = withSessions(
+                TargetMetric.TIMER_MINUTES,
+                8,
+                List.of(
+                        session(2, SessionPhase.WARMUP, 1),
+                        session(1, SessionPhase.COOLDOWN, 2),
+                        session(3, SessionPhase.MAIN, 5)));
+
+        assertThat(m.getSessions()).extracting(MissionSession::position).containsExactly(1, 2, 3);
+        assertThat(m.getSessions())
+                .extracting(MissionSession::phase)
+                .containsExactly(SessionPhase.COOLDOWN, SessionPhase.WARMUP, SessionPhase.MAIN);
+        assertThat(m.getTargetValue()).isEqualTo(8);
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 45).getSessions()).isEmpty();
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 45).getTargetValue()).isEqualTo(45);
+    }
+
+    @Test
+    @DisplayName("칸 번호가 1..n 이 아니거나 칸이 있는데 지표가 분이 아니면 만들 수 없다 — 직접 만들기는 사용자 입력이라 400")
+    void 칸_번호가_1부터_n이_아니거나_칸이_있는데_지표가_분이_아니면_만들_수_없다() {
+        InvalidInputException duplicated = assertThrows(
+                InvalidInputException.class,
+                () -> withSessions(
+                        TargetMetric.TIMER_MINUTES,
+                        3,
+                        List.of(session(1, SessionPhase.MAIN, 1), session(1, SessionPhase.MAIN, 2))));
+        assertThat(duplicated.getKind()).isEqualTo(ErrorKind.BAD_REQUEST);
+        assertThrows(
+                InvalidInputException.class,
+                () -> withSessions(
+                        TargetMetric.TIMER_MINUTES,
+                        3,
+                        List.of(session(1, SessionPhase.MAIN, 1), session(3, SessionPhase.MAIN, 2))));
+        assertThrows(
+                InvalidInputException.class,
+                () -> withSessions(TargetMetric.STEPS, 3000, List.of(session(1, SessionPhase.MAIN, 1))));
+        assertThrows(IllegalArgumentException.class, () -> session(1, SessionPhase.MAIN, 0));
+    }
+
+    @Test
+    @DisplayName("칸이 있는데 목표 분이 칸 시간의 합과 다르면 고쳐 넣지 않고 만들 수 없다")
+    void 칸이_있는데_목표_분이_칸_시간의_합과_다르면_만들_수_없다() {
+        List<MissionSession> sessions = List.of(session(1, SessionPhase.WARMUP, 2), session(2, SessionPhase.MAIN, 3));
+
+        InvalidInputException larger = assertThrows(
+                InvalidInputException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 999, sessions));
+        assertThat(larger.getMessage()).contains("999").contains("5분");
+        assertThrows(InvalidInputException.class, () -> withSessions(TargetMetric.TIMER_MINUTES, 4, sessions));
+        assertThat(withSessions(TargetMetric.TIMER_MINUTES, 5, sessions).getTargetValue())
+                .isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("영상 구간은 끝이 시작보다 뒤여야 하고 끝이 없으면 영상 한 편이다")
+    void 영상_구간은_끝이_시작보다_뒤여야_하고_끝이_없으면_영상_한_편이다() {
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", 78, 78, null));
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", 78, 6, null));
+        assertThrows(IllegalArgumentException.class, () -> new SessionClip("-EATykJOvBQ", -1, 6, null));
+        assertThat(new SessionClip("-EATykJOvBQ", 0, null, null).endSec()).isNull();
+    }
+
+    @Test
+    @DisplayName("승인된 제안은 기간 없이도 실행의 주로 복사된다")
+    void 승인된_제안은_기간_없이도_실행의_주로_복사된다() {
+        CoachRun run = CoachRun.awaitingApproval(
+                UUID.randomUUID(),
+                familyId,
+                List.of(new CoachProposalItem(
+                        0,
+                        "같이 늘이는 한 주",
+                        "TIMER_MINUTES",
+                        45,
+                        "부모용 문구",
+                        null,
+                        null,
+                        null,
+                        List.of(new ProposalParticipant(childId, ProfileRole.CHILD, "주행자")),
+                        new ProposalVideo("IdpXx2gm90o", 96),
+                        List.of(),
+                        null,
+                        null)),
+                monday,
+                List.of(),
+                null,
+                3,
+                15,
+                Instant.EPOCH);
+        run.approve(new CoachApprover(parentId, familyId, true), at);
+
+        assertThat(run.proposalsForMissionCreation()).hasSize(1);
+        Mission mission = Mission.fromProposal(
+                UUID.randomUUID(), run, run.proposalsForMissionCreation().getFirst(), parentId, at);
+
+        assertThat(mission.getOrigin()).isEqualTo(MissionOrigin.COACH);
+        assertThat(mission.getCoachRunId()).isEqualTo(run.getId());
+        assertThat(mission.getStartsOn()).isEqualTo(monday);
+        assertThat(mission.getEndsOn()).isEqualTo(monday.plusDays(6));
+        assertThat(mission.getVideo()).isEqualTo(new MissionVideo("IdpXx2gm90o", 96));
+        assertThat(mission.getParticipants())
+                .singleElement()
+                .extracting(MissionParticipant::getCoachRole)
+                .isEqualTo("주행자");
+        assertThat(mission.getRationale()).isEqualTo("부모용 문구");
+        assertThat(mission.getSessions()).isEmpty();
+    }
+
+    private CoachProposalItem itemWithSessions(int targetValue, String targetMetric, List<MissionSession> sessions) {
+        return new CoachProposalItem(
+                0,
+                "유연성 키우기 7분",
+                targetMetric,
+                targetValue,
+                null,
+                null,
+                monday,
+                monday,
+                List.of(new ProposalParticipant(childId, ProfileRole.CHILD, "주행자")),
+                null,
+                List.of(),
+                null,
+                null,
+                sessions);
+    }
+
+    @Test
+    @DisplayName("승인된 제안의 칸은 차례 그대로 미션 칸이 된다")
+    void 승인된_제안의_칸은_차례_그대로_미션_칸이_된다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(
+                        1, SessionPhase.WARMUP, "나비자세", FitnessFactor.FLEXIBILITY, 1, new SessionClip("v", 1, 2, "나비")),
+                new MissionSession(2, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(3, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+        CoachRun run = CoachRun.awaitingApproval(
+                UUID.randomUUID(),
+                familyId,
+                List.of(itemWithSessions(7, "TIMER_MINUTES", sessions)),
+                monday,
+                List.of(),
+                null,
+                3,
+                15,
+                Instant.EPOCH);
+        run.approve(new CoachApprover(parentId, familyId, true), at);
+
+        Mission mission = Mission.fromProposal(
+                UUID.randomUUID(), run, run.proposalsForMissionCreation().getFirst(), parentId, at);
+
+        assertThat(mission.getSessions()).isEqualTo(sessions);
+        assertThat(mission.getTargetValue()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("칸이 있는 제안 항목은 목표가 분이고 칸 분의 합과 같아야 한다 — 직접 만들기와 같은 규칙")
+    void 칸이_있는_제안_항목은_목표가_분이고_칸_분의_합과_같아야_한다() {
+        List<MissionSession> sessions = List.of(
+                new MissionSession(1, SessionPhase.MAIN, "가슴펴기", null, 5, null),
+                new MissionSession(2, SessionPhase.COOLDOWN, "어깨 늘리기", null, 1, null));
+
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(20, "TIMER_MINUTES", sessions));
+        assertThrows(IllegalArgumentException.class, () -> itemWithSessions(6, "STEPS", sessions));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> itemWithSessions(6, "TIMER_MINUTES", List.of(sessions.getLast(), sessions.getLast())));
+        assertThat(itemWithSessions(6, "TIMER_MINUTES", sessions.reversed()).sessions())
+                .isEqualTo(sessions);
+    }
+
+    @Test
+    @DisplayName("칸 끝이 받는 칸 — 칸이 있으면 그 칸, 칸 없는 미션은 1번 하나(분 목표면 targetValue 분, 아니면 1분)")
+    void 칸_끝이_받는_칸() {
+        Mission withSessions = withSessions(
+                TargetMetric.TIMER_MINUTES,
+                3,
+                List.of(session(1, SessionPhase.WARMUP, 1), session(2, SessionPhase.MAIN, 2)));
+        assertThat(withSessions.plannedSession(2).minutes()).isEqualTo(2);
+        assertThat(withSessions.plannedSession(0)).isNull();
+        assertThat(withSessions.plannedSession(3)).isNull();
+
+        MissionSession whole = mission(TargetMetric.TIMER_MINUTES, 20).plannedSession(1);
+        assertThat(whole.phase()).isEqualTo(SessionPhase.MAIN);
+        assertThat(whole.minutes()).isEqualTo(20);
+        assertThat(whole.title()).isEqualTo("함께 운동");
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 20).plannedSession(2)).isNull();
+        assertThat(mission(TargetMetric.STEPS, 3000).plannedSession(1).minutes())
+                .isEqualTo(1);
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 20).getSessions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("칸 끝은 startDate ≤ 오늘 ≤ endDate 에만 받는다")
+    void 칸_끝은_기간_안에만_받는다() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES);
+
+        assertThat(m.isActiveOn(monday.minusDays(1))).isFalse();
+        assertThat(m.isActiveOn(monday)).isTrue();
+        assertThat(m.isActiveOn(monday.plusDays(6))).isTrue();
+        assertThat(m.isActiveOn(monday.plusDays(7))).isFalse();
+    }
+
+    @Test
+    @DisplayName("같이 끝내는 보호자 — 코치 미션은 동반자만, 직접 짜기는 보호자 참여자 전원. 아이 · 참여자 아닌 보호자는 빠진다")
+    void 같이_끝내는_보호자() {
+        UUID cheerId = UUID.randomUUID();
+        UUID otherParentId = UUID.randomUUID();
+        Set<UUID> parents = Set.of(parentId, cheerId, otherParentId);
+        Mission coach = Mission.reconstitute(
+                UUID.randomUUID(),
+                familyId,
+                UUID.randomUUID(),
+                "코치",
+                null,
+                MissionOrigin.COACH,
+                TargetMetric.TIMER_MINUTES,
+                10,
+                null,
+                null,
+                monday,
+                monday,
+                parentId,
+                at,
+                List.of(
+                        MissionParticipant.pending(childId, CoachRoles.DRIVER, at),
+                        MissionParticipant.pending(parentId, CoachRoles.COMPANION, at),
+                        MissionParticipant.pending(cheerId, CoachRoles.CHEER, at)),
+                List.of());
+        assertThat(coach.companionsOf(parents)).containsExactly(parentId);
+
+        Mission manual = mission(TargetMetric.TIMER_MINUTES, 10, List.of(childId, parentId, cheerId));
+        assertThat(manual.companionsOf(parents)).containsExactly(parentId, cheerId);
+        assertThat(mission(TargetMetric.TIMER_MINUTES, 10, List.of(childId)).companionsOf(parents))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("지난 날짜 검사: 오늘(KST)보다 앞선 시작일만 422 INVALID_DATE — 오늘 · 앞날은 받는다")
+    void 지난_날짜만_INVALID_DATE() {
+        LocalDate today = LocalDate.of(2026, 9, 9);
+
+        InvalidMissionDateException e = assertThrows(
+                InvalidMissionDateException.class, () -> Mission.requireNotPast(today.minusDays(1), today));
+
+        assertThat(e.getCode()).isEqualTo("INVALID_DATE");
+        assertThat(e.getKind()).isEqualTo(ErrorKind.RULE_VIOLATION);
+        Mission.requireNotPast(today, today);
+        Mission.requireNotPast(today.plusDays(27), today);
+    }
+
+    @Test
+    @DisplayName("지울 수 있는가: 끝난 미션은 MISSION_ENDED 가 먼저, 칸 끝 기록이나 완료 참여자가 있으면 MISSION_ALREADY_STARTED")
+    void 지울_수_있는가() {
+        Mission m = mission(TargetMetric.TIMER_MINUTES, 30); // 9/7 ~ 9/13
+        MissionCompletions done = MissionCompletions.of(List.of(
+                new SessionCompletion(m.getId(), 1, childId, at, monday.plusDays(2), 60, VerifiedBy.VIDEO_PROGRESS)));
+
+        m.requireCancellableOn(monday.plusDays(6), MissionCompletions.none());
+        assertThat(assertThrows(MissionEndedException.class, () -> m.requireCancellableOn(monday.plusDays(7), done))
+                        .getCode())
+                .isEqualTo("MISSION_ENDED");
+        assertThat(assertThrows(
+                                MissionAlreadyStartedException.class,
+                                () -> m.requireCancellableOn(monday.plusDays(2), done))
+                        .getCode())
+                .isEqualTo("MISSION_ALREADY_STARTED");
+
+        m.recordProgress(childId, MissionProgress.of(30, 30, VerifiedBy.TIMER), at);
+        assertThrows(
+                MissionAlreadyStartedException.class,
+                () -> m.requireCancellableOn(monday.plusDays(2), MissionCompletions.none()));
+    }
+}
