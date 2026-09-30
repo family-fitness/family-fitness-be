@@ -31,6 +31,7 @@ import kr.ac.kookmin.familyfitness.activity.api.ActivitySource;
 import kr.ac.kookmin.familyfitness.activity.api.RestDayQuery;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeActivity;
 import kr.ac.kookmin.familyfitness.coaching.support.NoopTransactionManager;
+import kr.ac.kookmin.familyfitness.identity.api.AccountQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.InviteStatus;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
@@ -75,6 +76,10 @@ class LeagueServiceTest {
     private final ProfileQuery profiles = mock(ProfileQuery.class);
     private final RestDayQuery restDayQuery = mock(RestDayQuery.class);
     private final FamilyAccess familyAccess = mock(FamilyAccess.class);
+    /** 심사용 계정 — 이 계정으로 부르면 체험 방을 받는다 */
+    private final UUID reviewer = UUID.randomUUID();
+
+    private final AccountQuery accounts = reviewer::equals;
     /** 프로필 → 잡힌 날(만든 날 이후) */
     private final Map<UUID, Set<LocalDate>> planned = new HashMap<>();
     /** 가족 → 쉬는 날 */
@@ -137,7 +142,8 @@ class LeagueServiceTest {
         LeagueSettlement settlement = new LeagueSettlement(repository, rates, tx, clock, KST);
         LeagueEnrollment enrollment = new LeagueEnrollment(repository, settlement, tx, clock);
         return new At(
-                new LeagueService(familyAccess, profiles, repository, enrollment, settlement, rates, tx, clock, KST),
+                new LeagueService(
+                        familyAccess, profiles, accounts, repository, enrollment, settlement, rates, tx, clock, KST),
                 new LeagueSettlementScheduler(repository, settlement, enrollment, clock, KST));
     }
 
@@ -539,5 +545,82 @@ class LeagueServiceTest {
         assertThat(at(OCTOBER_SETTLE).service().league(user, oneDay, SEPTEMBER).standings())
                 .extracting(LeagueView.Standing::familyName)
                 .containsExactly("매일네", "거의네", "하루네");
+    }
+
+    @Test
+    @DisplayName("체험 가족(심사용 계정)이 리그를 열면 실제 방에 넣지 않고 그 가족 + 가짜 가족 일곱의 체험 방을 돌려준다 — 가짜 가족은 가족 id 로 늘 같다")
+    void 체험_가족은_체험_방을_받는다() {
+        UUID trial = family("체험 가족", 1);
+        plan(kidOf(trial), sep(14));
+        move(kidOf(trial), sep(14));
+
+        LeagueView view = at(MID_SEPTEMBER).service().league(reviewer, trial, null);
+
+        assertThat(view.groupSize()).isEqualTo(8);
+        assertThat(view.standings()).hasSize(8);
+        assertThat(view.tier()).isEqualTo(LeagueTier.START);
+        assertThat(view.month()).isEqualTo("2026-09");
+        assertThat(view.daysLeft()).isEqualTo(15);
+        assertThat(view.rate()).isEqualTo(100);
+        assertThat(view.standings())
+                .filteredOn(LeagueView.Standing::me)
+                .singleElement()
+                .extracting(LeagueView.Standing::familyName)
+                .isEqualTo("체험 가족");
+        assertThat(view.standings())
+                .extracting(LeagueView.Standing::familyName)
+                .doesNotHaveDuplicates()
+                .doesNotContainNull();
+        assertThat(view.standings()).allSatisfy(it -> {
+            assertThat(it.rate()).isNotNull();
+            assertThat(it.score()).isBetween(0.0, 1.0);
+        });
+        assertThat(view.standings())
+                .extracting(LeagueView.Standing::score)
+                .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+        assertThat(at(MID_SEPTEMBER).service().league(reviewer, trial, null))
+                .as("같은 체험 가족은 날마다 · 부를 때마다 같은 가짜 가족을 본다")
+                .isEqualTo(view);
+        assertThat(repository.rounds).as("DB 의 실제 방을 만들지 않는다").isEmpty();
+        assertThat(repository.members).isEmpty();
+
+        UUID otherTrial = family("체험 가족", 1);
+        assertThat(at(MID_SEPTEMBER)
+                        .service()
+                        .league(reviewer, otherTrial, null)
+                        .standings())
+                .extracting(LeagueView.Standing::familyName)
+                .as("다른 체험 가족은 다른 가짜 가족을 본다")
+                .isNotEqualTo(view.standings().stream()
+                        .map(LeagueView.Standing::familyName)
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("실제 가족의 방에는 체험 가족이 없고, 월초 정산은 체험 가족을 건드리지 않는다")
+    void 실제_방과_정산에_체험_가족이_없다() {
+        UUID real = familyWithSeptemberRate("서준이네", 5);
+        UUID trial = family("체험 가족", 1);
+        at(MID_SEPTEMBER).service().league(reviewer, trial, null);
+        LeagueView realView = at(MID_SEPTEMBER).service().league(user, real, null);
+
+        assertThat(realView.groupSize()).isEqualTo(1);
+        assertThat(realView.standings())
+                .extracting(LeagueView.Standing::familyName)
+                .containsExactly("서준이네");
+        assertThat(repository.members).extracting(LeagueMember::familyId).containsExactly(real);
+
+        at(OCTOBER_SETTLE).scheduler().run();
+
+        assertThat(repository.members).extracting(LeagueMember::familyId).containsOnly(real);
+        assertThat(repository.findMember(trial, SEPTEMBER)).isNull();
+        assertThat(repository.findMember(trial, OCTOBER)).isNull();
+        assertThat(at(OCTOBER_SETTLE).service().league(reviewer, trial, null).groupSize())
+                .as("다음 달에도 체험 방")
+                .isEqualTo(8);
+        assertThat(repository.findMember(trial, OCTOBER)).isNull();
+        assertThatThrownBy(() -> at(OCTOBER_SETTLE).service().league(reviewer, trial, SEPTEMBER))
+                .as("지난달 체험 방은 없다")
+                .isInstanceOf(kr.ac.kookmin.familyfitness.league.domain.LeagueNotFoundException.class);
     }
 }
