@@ -88,7 +88,8 @@ public record ExerciseClip(
 
     /**
      * 이 연령대(viewer)에게 보여 줄 구간인지. 연령대가 같으면 된다. 어르신은 성인 구간도 받는다 — 노인 전용 영상을 따로 만들지 않고
-     * 성인 영상을 똑같이 쓰기로 했다(유튜브 어르신 구간은 V132 에 0개, 공단 어르신 영상은 V161 이 더했다). 성인은 어르신 구간을 받지 않는다.
+     * 성인 영상을 똑같이 쓰기로 했다(유튜브 어르신 구간은 V132 에 0개, 공단 어르신 영상은 V161 이 더했다가 V164 가 껐다 — 지금 켜진 어르신
+     * 구간은 없다). 성인은 어르신 구간을 받지 않는다.
      */
     public boolean suits(AgeGroup viewer) {
         return ageGroup == viewer || (viewer == AgeGroup.SENIOR && ageGroup == AgeGroup.ADULT);

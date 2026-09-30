@@ -59,7 +59,7 @@ public class ExerciseService {
      * 거르는 차례: 켜진 운동 구간 → 보는 프로필의 연령대에 맞는 것({@link ExerciseClip#suits}, 어르신은 성인 구간도) → 요인 · 단계 ·
      * 조용함 · 검색어 → (FAVORITES 면) 찜 → 보는 연령대와 같은 구간을 먼저, 그다음 목록 차례로 세움 → 같은 제목은 하나만(처음 것) → 유튜브
      * 구간과 공단 영상을 번갈아({@link #alternateSources}) 앞 {@link #PAGE} 개. 연령대를 먼저 걸어야 같은 제목의 다른 연령대 구간이 대표로 남지
-     * 않고, 어르신이 보면 어르신 영상이 성인 영상보다 앞에 선다.
+     * 않고, 어르신이 보면 어르신 구간이 성인 구간보다 앞에 선다(V164 뒤로 켜진 어르신 구간은 없어 성인 구간만 나온다).
      */
     @Transactional(readOnly = true)
     public ExerciseListView list(UUID userId, ExerciseListQuery query) {
@@ -118,7 +118,7 @@ public class ExerciseService {
      * 유튜브 구간과 공단 영상을 하나씩 번갈아 세운다(유튜브 먼저). 출처 안에서는 들어온 차례(보는 연령대 먼저, 그다음 목록 차례)를 지킨다.
      * 한쪽이 먼저 떨어지면 남은 쪽을 그대로 잇는다. 영상 id 차례로만 세우면 공단 영상 id(0AUDLJ08S_…)가 유튜브 id 대부분보다 앞서, 첫 쪽
      * {@link #PAGE} 개가 모두 공단 영상이었다(다음 쪽은 없다). 출처 안에서 영상 id 차례로 다시 세우면 성인(공통) 공단 영상 id 가 어르신
-     * 영상보다 앞서, 어르신이 보는 첫 쪽에 어르신 영상이 하나도 없었다.
+     * 영상보다 앞서, 어르신이 보는 첫 쪽에 어르신 영상이 하나도 없었다(V163 판 때 일이다. V164 부터 어르신 영상은 싣지 않는다).
      */
     static List<ExerciseClip> alternateSources(List<ExerciseClip> clips) {
         List<ExerciseClip> youtube =

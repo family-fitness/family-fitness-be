@@ -105,9 +105,9 @@ cd family-fitness-be/backend
 2. **CORS 전부 허용.** 어느 포트·호스트에서 불러도 막지 않는다 (`app.cors.allowed-origins=*`).
    초대 링크(`shareUrl`)는 FE 개발 서버 주소 `http://localhost:3000` 으로 만든다.
 3. **AI 서버는 스텁.** AI 서비스 없이도 뜨도록 코치 제안·대화를 결정적인 가짜 응답으로 낸다(`app.ai.mode=stub`). 스텁 제안도 실제 클립 경계로 칸을 낸다.
-   실제 AI 에 붙이는 방법은 아래 「AI 서비스」 절. AI 주소가 죽어 있어도 코치 제안은 영상 구간 표(`V132` 유튜브 · `V161` ~ `V163` 공단 영상)의 라벨로 대체 편성되어 빈 화면이 나지 않는다.
+   실제 AI 에 붙이는 방법은 아래 「AI 서비스」 절. AI 주소가 죽어 있어도 코치 제안은 영상 구간 표(`V132` 유튜브 · `V161` ~ `V164` 공단 영상)의 라벨로 대체 편성되어 빈 화면이 나지 않는다.
 4. **시드 데이터.** 데모 가족 「데모네」(데모 엄마 PARENT·FULL, 데모 첫째 CHILD·측정 1회 있음, 데모 아빠 PARENT 미연결·초대코드 `K7M2QT`),
-   데모 첫째 · 엄마의 운동할 수 있는 시간, 국민체력100 또래 분포 · 등급 기준표(AI 가 실제 공공데이터로 만든 표), AI 운동 영상 48편 · 구간 695개(`V132`, 운영에도 들어간다), 공단 「국민체력100 동영상 정보」 오픈API 영상 732편(한 편 = 구간 하나, `V161` ~ `V163`, 운영에도 들어간다), 시험용 가짜 영상 4편(`sample00002~5`).
+   데모 첫째 · 엄마의 운동할 수 있는 시간, 국민체력100 또래 분포 · 등급 기준표(AI 가 실제 공공데이터로 만든 표), AI 운동 영상 48편 · 구간 695개(`V132`, 운영에도 들어간다), 공단 「국민체력100 동영상 정보」 오픈API 영상 452편(한 편 = 구간 하나, `V161` ~ `V164`, 운영에도 들어간다. 어르신 영상은 싣지 않고 65세 이상은 성인 영상을 받는다), 시험용 가짜 영상 4편(`sample00002~5`).
    서버를 재시작하면 H2 인메모리라 시연 중 만든 데이터는 사라지고 시드만 남는다.
 5. **서버 시계를 앞으로 옮길 수 있다.** 2주 여정 · 월말 리그 · 30일 뒤 다시 재기 알림을 기다리지 않고 본다.
    `POST /api/v1/dev/clock {"by":"P1D"}`(하루 뒤) 또는 `{"to":"2026-10-01T07:31:00+09:00"}`. 옮기는 동안 건너뛴 정시 작업(07:30 오늘의 운동 알림 ·
@@ -176,7 +176,7 @@ Python 3 만 있으면 된다. Windows 콘솔(cp949)에서 결과를 파일로 �
 | `grade_thresholds_to_sql.py` | AI 등급 기준표(`grade_thresholds.csv`, 국민체력100 공식 항목별 기준) → `fitness_grade_thresholds` 마이그레이션. 첫 적재는 `--create-table`(`V154`), 다음 판은 새 V 파일(표를 통째로 바꾼다). AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/grade_thresholds_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_grade_thresholds_<AI 커밋>.sql` |
 | `grade_distribution_to_sql.py` | AI 또래 등급 비율 표(`grade_distribution.csv`, 국민체력100 인증 결과를 (연령대 · 성별 · 나이 · 등급)마다 센 것) → `fitness_grade_distribution` 마이그레이션. 첫 적재는 `--create-table`(`V159`), 다음 판은 새 V 파일. AI 입력 파일이 커밋돼 있지 않으면 멈춘다 | backend 폴더에서 `python3 scripts/grade_distribution_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__fitness_grade_distribution_<AI 커밋>.sql` |
 | `ai_clips_to_sql.py` | AI 클립 릴리스(`video_clips.csv` · `clip_labels.csv` · `corpus_meta.csv`) → 유튜브 운동 영상 · 구간 마이그레이션. 첫 적재는 `--create-table`(`V132`), 다음 릴리스는 새 V 파일. 판에서 빠진 유튜브 구간만 끈다 | backend 폴더에서 `python3 scripts/ai_clips_to_sql.py ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__coaching_clip_release_<AI 커밋>.sql` |
-| `kspo_videos_to_sql.py` | AI 공단 영상 표(`kspo_videos.csv` · `kspo_video_labels.csv`, 공단 「국민체력100 동영상 정보」 오픈API 영상 한 편에 한 줄) → 영상 · 구간 마이그레이션. 한 편 = 구간 하나(`{videoId}-0`). 작업 트리가 아니라 `--ref` 로 준 AI 커밋에서 읽고 그 커밋을 파일 머리에 적는다. 첫 적재는 `--add-columns`(`media_url` · `thumbnail_url` 칸, `V161`), 다음 판은 새 V 파일(`V162` = AI `9f6e746`, `V163` = AI `cae60cb`). 판에서 빠진 공단 구간만 끈다. 제목 끝 「-1」 「-2」 를 뗀다. `--note` 로 앞 판과 달라진 점을 머리 주석에 적는다. `ai_clips_to_sql.py` 를 가져다 쓰니 같은 폴더에서 돌린다 | backend 폴더에서 `python3 scripts/kspo_videos_to_sql.py --ref <AI 커밋> ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__coaching_kspo_release_<AI 커밋>.sql` |
+| `kspo_videos_to_sql.py` | AI 공단 영상 표(`kspo_videos.csv` · `kspo_video_labels.csv`, 공단 「국민체력100 동영상 정보」 오픈API 영상 한 편에 한 줄) → 영상 · 구간 마이그레이션. 한 편 = 구간 하나(`{videoId}-0`). 작업 트리가 아니라 `--ref` 로 준 AI 커밋에서 읽고 그 커밋을 파일 머리에 적는다. 첫 적재는 `--add-columns`(`media_url` · `thumbnail_url` 칸, `V161`), 다음 판은 새 V 파일(`V162` = AI `9f6e746`, `V163` = AI `cae60cb`, `V164` = AI `9d0ec87`). 판에서 빠진 공단 구간만 끈다. 제목 끝 「-1」 「-2」 를 뗀다. `--note` 로 앞 판과 달라진 점을 머리 주석에 적는다. `ai_clips_to_sql.py` 를 가져다 쓰니 같은 폴더에서 돌린다 | backend 폴더에서 `python3 scripts/kspo_videos_to_sql.py --ref <AI 커밋> ../../family-fitness-ai > src/main/resources/db/migration/V<다음 번호>__coaching_kspo_release_<AI 커밋>.sql` |
 | `ai_percentile_fixture.py` | AI 코드(`stats/tables.py` peer · percentile_of)로 백분위 기대값을 뽑아 `src/test/resources/fitness/ai-percentiles.csv` 를 만든다. `AiPercentileParityTest` 가 이 줄마다 서버 계산과 대조한다. AI 표가 바뀌면 마이그레이션과 같이 다시 만든다 | backend 폴더에서 `../../family-fitness-ai/.venv/Scripts/python.exe scripts/ai_percentile_fixture.py ../../family-fitness-ai > src/test/resources/fitness/ai-percentiles.csv` (macOS · Linux 는 `.venv/bin/python`) |
 | `ai_certify_fixture.py` | AI 코드(`stats/assess.py` _with_body · `stats/tables.py` certify)로 인증 등급 기대값을 뽑아 `src/test/resources/fitness/ai-certify.csv` 를 만든다. `AiCertifyParityTest` 가 이 줄마다 서버 계산과 대조한다. AI 기준표가 바뀌면 마이그레이션과 같이 다시 만든다 | backend 폴더에서 `../../family-fitness-ai/.venv/Scripts/python.exe scripts/ai_certify_fixture.py ../../family-fitness-ai > src/test/resources/fitness/ai-certify.csv` |
 | `ddl_to_dbml.py` | 마이그레이션 DDL → `docs/erd.dbml` | 저장소 루트에서 `python3 backend/scripts/ddl_to_dbml.py > docs/erd.dbml` |
@@ -196,7 +196,7 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V163` 이고 다음은 `V164` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V164` 이고 다음은 `V165` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.

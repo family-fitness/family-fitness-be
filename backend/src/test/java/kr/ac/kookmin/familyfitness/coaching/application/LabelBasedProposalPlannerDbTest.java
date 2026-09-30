@@ -25,7 +25,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 대체 편성이 H2 + Flyway 의 실제 클립 표(V132 유튜브 · V161 공단)에서 고른다. 측정은 없고(목이 null) 보호자가 키워 주고 싶은 역량만 준다.
+ * 대체 편성이 H2 + Flyway 의 실제 클립 표(V132 유튜브 · V161 ~ V164 공단)에서 고른다. 측정은 없고(목이 null) 보호자가 키워 주고 싶은 역량만 준다.
  * 공단 영상 클립을 고르면 칸 video 에 source=kspo 와 mp4 주소가, 인용에 AI 와 같은 "kspo:&lt;id&gt;" 가 실려야 한다.
  */
 @SpringBootTest
@@ -74,8 +74,8 @@ class LabelBasedProposalPlannerDbTest {
     }
 
     @Test
-    @DisplayName("어르신은 어르신 공단 영상 클립을 먼저 받고, 칸 영상은 source=kspo · mp4 주소, 인용은 kspo:<id> 다")
-    void 어르신은_어르신_공단_영상_클립을_먼저_받는다() {
+    @DisplayName("어르신은 성인(공통) 공단 영상 클립을 받고, 칸 영상은 source=kspo · mp4 주소, 인용은 kspo:<id> 다")
+    void 어르신은_성인_공단_영상_클립을_받는다() {
         CoachRunResult result = planner.plan(
                 subject(LocalDate.of(1950, 3, 1)),
                 TODAY,
@@ -85,22 +85,26 @@ class LabelBasedProposalPlannerDbTest {
 
         assertThat(result).isNotNull();
         List<CoachRunResult.Session> sessions = sessionsOf(result);
-        assertThat(sessions).isNotEmpty().allSatisfy(it -> {
+        assertThat(sessions).isNotEmpty().allSatisfy(it -> assertThat(it.video())
+                .isNotNull());
+        assertThat(sessions).anySatisfy(it -> assertThat(it.fitnessFactor()).isEqualTo("평형성"));
+        // 어르신 공단 영상은 V164 부터 싣지 않는다 — 본운동 칸은 성인(공통) 공단 클립이다(ExerciseClip.suits)
+        List<CoachRunResult.Session> main =
+                sessions.stream().filter(it -> it.phase().equals("본운동")).toList();
+        assertThat(main).isNotEmpty().allSatisfy(it -> {
             CoachRunResult.Video video = it.video();
             assertThat(video).isNotNull();
             assertThat(video.source()).isEqualTo("kspo");
             assertThat(video.mediaUrl()).isEqualTo("https://openapi.kspo.or.kr/web/video/" + video.videoId() + ".mp4");
             assertThat(video.startSec()).isZero();
+            assertThat(clipOf(it).ageGroup()).isEqualTo(AgeGroup.ADULT);
         });
-        assertThat(sessions).anySatisfy(it -> assertThat(it.fitnessFactor()).isEqualTo("평형성"));
-        // 같은 점수(평형성 · 처방 어휘 이름)면 어르신 영상이 성인 영상보다 앞선다 — 본운동 칸은 모두 어르신 클립이다
-        assertThat(sessions)
-                .filteredOn(it -> it.phase().equals("본운동"))
-                .isNotEmpty()
-                .allSatisfy(it -> assertThat(clipOf(it).ageGroup()).isEqualTo(AgeGroup.SENIOR));
-        List<Citation> citations = result.proposal().citations();
-        assertThat(citations).isNotEmpty().allSatisfy(it -> {
-            assertThat(it.chunkId()).startsWith("kspo:");
+        // 준비 · 정리 칸은 성인 유튜브 구간일 수도 있다. 어느 쪽이든 어르신에게 맞는 성인 클립이다
+        assertThat(sessions).allSatisfy(it -> assertThat(clipOf(it).ageGroup()).isEqualTo(AgeGroup.ADULT));
+        List<Citation> kspo = result.proposal().citations().stream()
+                .filter(it -> it.chunkId().startsWith("kspo:"))
+                .toList();
+        assertThat(kspo).hasSizeGreaterThanOrEqualTo(main.size()).allSatisfy(it -> {
             assertThat(it.label()).startsWith("국민체력100 동영상 정보 · ");
             assertThat(it.url()).startsWith("https://openapi.kspo.or.kr/web/video/");
         });

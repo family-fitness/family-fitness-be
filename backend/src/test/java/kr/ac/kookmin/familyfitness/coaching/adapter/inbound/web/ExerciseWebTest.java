@@ -57,6 +57,9 @@ import org.springframework.transaction.annotation.Transactional;
 @ActiveProfiles("test")
 @Transactional
 class ExerciseWebTest {
+    /** 성인이 보는 운동 찾기 전체(같은 제목 하나씩). 어르신도 같은 수다. */
+    private static final int ADULT_TOTAL = 172;
+
     @Autowired
     MockMvc mvc;
 
@@ -145,10 +148,10 @@ class ExerciseWebTest {
     @Test
     @DisplayName("보는 아이의 연령대(유소년) 구간을 같은 제목 하나씩 앞 40개까지 FE 모양으로 준다 — 공단 영상은 한 편이 구간 하나다")
     void 보는_아이의_연령대_구간을_같은_제목_하나씩_앞_40개까지_FE_모양으로_준다() throws Exception {
-        // 유튜브 구간과 공단 영상 구간을 같은 제목 하나씩 모아 160개(공단 104 · 유튜브 56). 유튜브 · 공단을 번갈아 세운다
+        // 유튜브 구간과 공단 영상 구간을 같은 제목 하나씩 모아 156개. 유튜브 · 공단을 번갈아 세운다
         list(parentUser, "profileId", childId.toString())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(160))
+                .andExpect(jsonPath("$.total").value(156))
                 .andExpect(jsonPath("$.clips", hasSize(40)))
                 .andExpect(jsonPath("$.clips[0].clipId").value("Eg3GpTv7z8s-102"))
                 .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00351-0"))
@@ -203,8 +206,8 @@ class ExerciseWebTest {
     }
 
     @Test
-    @DisplayName("어르신이 보면 첫 쪽의 공단 영상이 모두 어르신 영상이다 — 영상 id 차례로 세우면 성인(공통) 영상이 앞서 어르신 영상이 하나도 없었다")
-    void 어르신이_보면_첫_쪽의_공단_영상이_어르신_영상이다() throws Exception {
+    @DisplayName("어르신이 보면 성인(공통) 공단 영상을 똑같이 받는다 — V164 부터 어르신 공단 영상은 싣지 않는다")
+    void 어르신이_보면_성인_공단_영상을_받는다() throws Exception {
         UUID grandpaId = rows.profile(familyId, LocalDate.of(1956, 4, 1), Sex.M, ProfileRole.PARENT, "할아버지");
         when(familyAccess.requireSameFamilyAsProfile(parentUser, grandpaId))
                 .thenReturn(summary(grandpaId, "할아버지", ProfileRole.PARENT, AgeGroup.SENIOR));
@@ -220,8 +223,11 @@ class ExerciseWebTest {
         assertThat(kspo).hasSize(20);
         assertThat(kspo).allSatisfy(clipId -> assertThat(jdbc.queryForObject(
                         "select age_group from video_exercises where clip_id = ?", String.class, clipId))
-                .isEqualTo("SENIOR"));
-        // 성인 영상도 그대로 함께 나온다(어르신 전용만 따로 두지 않는다) — 어르신 영상 뒤에 선다
+                .isEqualTo("ADULT"));
+        // 어르신은 성인과 같은 목록을 받는다(성인 · 어르신 둘 다 0AUDLJ08S_00181 걷기부터)
+        list(parentUser, "profileId", grandpaId.toString())
+                .andExpect(jsonPath("$.total").value(ADULT_TOTAL))
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00181-0"));
         list(parentUser, "profileId", grandpaId.toString(), "q", "빠르게 걷기")
                 .andExpect(jsonPath("$.clips[*].clipId", hasItem("0AUDLJ08S_00182-0")));
     }
@@ -239,9 +245,9 @@ class ExerciseWebTest {
     void profileId_가_없으면_호출한_계정의_자기_프로필_연령대로_거르고_프로필이_없는_계정은_빈_목록이다() throws Exception {
         list(parentUser)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(217))
+                .andExpect(jsonPath("$.total").value(ADULT_TOTAL))
                 .andExpect(jsonPath("$.clips[0].clipId").value("IhShIA-WJNE-20"))
-                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00173-0"));
+                .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00181-0"));
         list(outsiderUser)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(0))
@@ -252,14 +258,14 @@ class ExerciseWebTest {
     @DisplayName("요인은 한글 이름으로, 검색어는 앞뒤 공백을 빼고 제목의 부분 일치로 거른다")
     void 요인은_한글_이름으로_검색어는_앞뒤_공백을_빼고_제목의_부분_일치로_거른다() throws Exception {
         list(parentUser, "profileId", childId.toString(), "factor", "순발력")
-                .andExpect(jsonPath("$.total").value(12))
+                .andExpect(jsonPath("$.total").value(10))
                 // 유튜브 구간이 하나라 맨 앞에 서고, 그 뒤는 공단 영상이 목록 차례로 잇는다
                 .andExpect(jsonPath("$.clips[0].clipId").value("IdpXx2gm90o-518"))
                 .andExpect(jsonPath("$.clips[0].title").value("버피"))
                 .andExpect(jsonPath("$.clips[0].factor").value("순발력"))
                 .andExpect(jsonPath("$.clips[1].clipId").value("0AUDLJ08S_00431-0"))
                 .andExpect(jsonPath("$.clips[2].clipId", startsWith("0AUDLJ08S_")))
-                .andExpect(jsonPath("$.clips[11].clipId", startsWith("0AUDLJ08S_")));
+                .andExpect(jsonPath("$.clips[9].clipId", startsWith("0AUDLJ08S_")));
         list(parentUser, "profileId", childId.toString(), "q", " 스쿼트 ")
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.clips[*].clipId", contains("IdpXx2gm90o-424", "IdpXx2gm90o-602")));
@@ -268,15 +274,16 @@ class ExerciseWebTest {
         list(parentUser, "q", "스쿼트")
                 .andExpect(jsonPath("$.total").value(0))
                 .andExpect(jsonPath("$.clips[*].clipId", not(hasItem("In2fsTmsggw-114"))));
-        // 같은 제목의 공단 영상(0AUDLJ08S_00311)이 영상 id 차례로 앞서 유튜브 구간 대신 대표로 남는다
+        // 같은 제목의 공단 영상(0AUDLJ08S_00311)이 영상 id 차례로 앞서 유튜브 구간 대신 대표로 남는다.
+        // 「뛰어 내렸다가 바로 점프하기」(00325)는 원판을 써서 V164 가 껐다
         list(parentUser, "q", "점프하기")
-                .andExpect(jsonPath("$.total").value(2))
-                .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00311-0", "0AUDLJ08S_00325-0")))
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.clips[*].clipId", contains("0AUDLJ08S_00311-0")))
                 .andExpect(jsonPath("$.clips[0].title").value("앉았다 일어서면서 점프하기"));
         list(parentUser, "profileId", childId.toString(), "quiet", "true")
-                .andExpect(jsonPath("$.total").value(129));
+                .andExpect(jsonPath("$.total").value(128));
         list(parentUser, "profileId", childId.toString(), "phase", "WARMUP")
-                .andExpect(jsonPath("$.total").value(28));
+                .andExpect(jsonPath("$.total").value(29));
     }
 
     @Test
