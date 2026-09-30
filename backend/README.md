@@ -39,11 +39,20 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   **끝나는 날**: prod 는 `app.auth.review-login.until`(기본 `2026-10-31`, 환경변수 `APP_AUTH_REVIEW_LOGIN_UNTIL=YYYY-MM-DD`)까지만 받는다.
   날짜는 Asia/Seoul 기준이고 그날까지 받는다. 다음 날부터는 켜져 있어도 꺼진 것과 같게 404 `NOT_FOUND` 이고 계정을 만들지 않는다 — 끄는 것을 잊어도
   누구나 계정을 만드는 길이 열려 있지 않게. 심사 일정이 바뀌면 이 환경변수로 옮기고 다시 띄운다. local · compose 는 끝나는 날이 없다.
-  부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
-  남의 계정이 될 수 없다. 같은 IP(IPv6 는 /56 대역 — 통신사가 집 한 곳에 주는 크기)에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다.
+  본문 `{"kind": ...}` 로 심사위원이 세 흐름 가운데 하나를 고른다. 로컬 개발용 로그인 상자의 세 계정과 같은 흐름이다(개발용 상자는 그대로 둔다).
+  - `FAMILY`(본문이 없거나 kind 가 없을 때도 이것): 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음,
+    하윤 인증 2등급)을 만들고 엄마로 로그인한다. nextStep `HOME`. 개발용 「은영 · 가족 3명」 과 같다.
+  - `FRESH`: 가족 없는 새 계정만 만든다. nextStep `CREATE_FAMILY` — 가족 만들기 → 아이 등록 → 측정을 평소 가입 흐름 그대로 해 본다.
+    개발용 「새 계정 · 가족 없음」 과 같다.
+  - `INVITED`: 가짜 보호자 계정(`review-guardian-` + 무작위, 아무도 로그인하지 않는다)이 엄마인 체험 가족을 만들고 아빠 자리에 초대코드를 낸다.
+    가족 없는 새 계정으로 로그인하고 응답 `inviteCode` 에 그 코드를 준다. nextStep `CLAIM`. 코드로 합류하면 심사위원이 체험 가족의 아빠가 된다.
+    개발용 「초대받은 계정」(시드 `demo-parent-2` + 초대코드 `K7M2QT`)과 같다.
+  - 알 수 없는 kind 는 400 `BAD_REQUEST` 이고 계정을 만들지 않는다.
+  세 kind 모두 provider `REVIEW` 인 심사용 계정이라 아래 한도 · 끝나는 날 · 리그 체험 방이 똑같이 걸린다. 새 계정만 만들 뿐
+  남의 계정이 될 수 없다. 같은 IP(IPv6 는 /56 대역 — 통신사가 집 한 곳에 주는 크기)에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다(kind 세 가지를 합쳐 센다).
   새 계정은 IP 와 상관없이 모두 합쳐 한 시간에 300개까지 만든다(`app.auth.review-login.max-total`). 그 뒤로도 429 는 주지 않는다 — 누구
-  한 사람이 300개를 채워 모든 심사위원을 막지 못하게. 대신 그 IP 가 이 한 시간에 만든 계정이 있으면 그 가운데 가장 최근 것으로 들이고,
-  없으면 새 계정을 하나 만든다(그 뒤로 그 IP 는 그 계정으로 들어온다). **다시 받은 계정은 같은 IP(같은 와이파이 · 회사망)에서 먼저 들어온
+  한 사람이 300개를 채워 모든 심사위원을 막지 못하게. 대신 그 IP 가 이 한 시간에 같은 kind 로 만든 계정이 있으면 그 가운데 가장 최근 계정을
+  다시 내주고(`INVITED` 는 그때 준 초대코드도 다시 준다), 없으면 새 계정을 하나 만든다(그 뒤로 그 IP 는 그 kind 로 부르면 그 계정으로 로그인된다). **다시 받은 계정은 같은 IP(같은 와이파이 · 회사망)에서 먼저 들어온
   사람도 토큰을 쥐고 있다** — 그 사람이 가족 이름 · 식구 · 기록을 바꾸면 보이고, 내가 하는 일도 그 사람에게 보인다. 다른 IP 가 만든 계정은
   주지 않는다: 한도를 채운 사람의 계정을 받으면 그 사람이 꾸민 화면을 보고 내 일을 들킨다.
   **운영에서는 늘 프록시 뒤다** — FE 가 `/api/v1/**` 를 Next 서버(rewrites)를 거쳐 넘기므로 BE 가 보는 remoteAddr 는 누가 부르든 Next 서버 IP 다.
@@ -74,9 +83,9 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   코치 대화(`POST /coach/chat`)도 대화마다 LLM 이 불릴 수 있어 센다(`ReviewChatQuota`): 심사용 계정마다 하루(KST) 30번, 모두 합쳐 하루 300번.
   넘기면 AI 를 부르기 전에 429 `TOO_MANY` 다. 편성과 달리 모두 합친 한도도 429 로 막는다 — AI 에 LLM 없이 답하라고 부탁할 칸이 없고, FE 에
   대화 화면이 없어 막혀도 심사위원이 보는 곳이 없다.
-  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 300가족에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 한 가족씩 더해진 만큼이다.
+  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 새 계정 300개(`INVITED` 는 가짜 보호자 계정까지 둘)에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 kind 하나에 계정 하나씩 더해진 만큼이다.
   심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고(잊어도 끝나는 날 다음 날부터는 404 다), 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
-  test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest`)만 켠다.
+  test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest` · `ReviewLoginKindApiTest` 등)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
