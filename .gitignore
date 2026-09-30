@@ -9,3 +9,5 @@
 *.p12
 *.jks
 *.pfx
+# AWS 콘솔에서 받은 액세스 키 파일(<사용자>_accessKeys.csv)
+*accessKeys*.csv

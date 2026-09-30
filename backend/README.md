@@ -86,7 +86,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 새 계정 300개(`INVITED` 는 가짜 보호자 계정까지 둘)에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 kind 하나에 계정 하나씩 더해진 만큼이다.
   심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고(잊어도 끝나는 날 다음 날부터는 404 다), 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
   test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest` · `ReviewLoginKindApiTest` 등)만 켠다.
-- 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
+- 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. Lightsail 서버와 main 자동 배포는 [deploy/README.md](../deploy/README.md). 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
 - 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
