@@ -118,11 +118,16 @@ class CoachRunExecutorTest {
 
     /** 대체 편성으로 낸 제안이다 — 두 번째 단계가 「AI 서비스 장애(까닭) → 영상 라벨 기반 편성」 partial 이다. */
     private static void assertFallback(CoachRun saved, String summary) {
+        assertFallbackWithStep(saved, "AI 서비스 장애(" + summary + ")");
+    }
+
+    /** 대체 편성으로 낸 제안이고, 두 번째 단계 요약이 {@code retrieveStep} 으로 시작한다. */
+    private static void assertFallbackWithStep(CoachRun saved, String retrieveStep) {
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
         assertThat(saved.getFailureCode()).isNull();
         assertThat(saved.getSteps().stream().map(CoachStep::status).toList())
                 .containsExactly("ok", "partial", "ok", "ok");
-        assertThat(saved.getSteps().get(1).summary()).startsWith("AI 서비스 장애(" + summary + ")");
+        assertThat(saved.getSteps().get(1).summary()).startsWith(retrieveStep);
         assertThat(saved.getProposals())
                 .singleElement()
                 .extracting(CoachProposalItem::title)
@@ -710,7 +715,33 @@ class CoachRunExecutorTest {
     }
 
     @Test
-    @DisplayName("다시 불러도 409 이면 FAILED(ERROR) 가 아니라 라벨 기반 대체 편성으로 끝낸다")
+    @DisplayName("같은 아이의 편성 셋을 한꺼번에 요청해 앞의 둘(한 번에 5~13초)이 끝날 때까지 409 가 이어져도, 기다렸다가 AI 편성으로 끝낸다")
+    void 앞의_편성_둘을_기다리는_동안_409_가_이어져도_AI_편성() {
+        CoachRun run = runningRun();
+        AtomicInteger starts = new AtomicInteger();
+        gateway.onStart = request -> {
+            if (starts.incrementAndGet() <= 8) throw new AiRunInProgressException("run_in_progress");
+            return null; // 아홉 번째에 받는다
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(9);
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getSteps().get(1).status()).isEqualTo("ok");
+    }
+
+    @Test
+    @DisplayName("409 를 받았을 때 쉬는 시간을 다 합치면(운영 간격 1.5초 기준) AI 편성 두 번(13초 × 2)보다 길다")
+    void 거절_409_를_기다리는_시간은_AI_편성_두_번보다_길다() {
+        long waitMs = CoachRunExecutor.IN_PROGRESS_RETRIES * CoachRunExecutor.DEFAULT_POLL_INTERVAL_MS * 2;
+
+        assertThat(waitMs).isGreaterThanOrEqualTo(26_000L);
+    }
+
+    @Test
+    @DisplayName("다시 불러도 409 이면 FAILED(ERROR) 가 아니라 라벨 기반 대체 편성으로 끝내고, 요약에는 장애가 아니라 AI 가 다른 편성을 짜는 중이었다고 적는다")
     void 계속_409_이면_라벨_기반_대체_편성() {
         measuredWithWeakness();
         CoachRun run = runningRun();
@@ -720,8 +751,10 @@ class CoachRunExecutorTest {
 
         executor.execute(run.getId());
 
-        assertThat(gateway.startRequests).hasSize(3);
-        assertFallback(runs.findById(run.getId()), "AI 사용 중");
+        assertThat(gateway.startRequests).hasSize(1 + CoachRunExecutor.IN_PROGRESS_RETRIES);
+        CoachRun saved = runs.findById(run.getId());
+        assertFallbackWithStep(saved, "AI 가 다른 편성을 짜는 중(" + LabelBasedProposalPlanner.AI_BUSY + ")");
+        assertThat(saved.getSteps().get(1).summary()).doesNotContain("장애");
     }
 
     @Test

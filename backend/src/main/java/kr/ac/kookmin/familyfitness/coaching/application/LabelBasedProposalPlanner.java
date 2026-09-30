@@ -53,6 +53,9 @@ public class LabelBasedProposalPlanner {
     /** AI 를 부르지 않고 짤 때의 까닭(심사용 계정 모두의 오늘 AI 몫이 끝남, {@link ReviewRunQuota}). 장애가 아니라 단계 요약을 달리 적는다. */
     public static final String AI_LIMIT_REACHED = "심사용 계정의 오늘 AI 편성 몫이 끝남";
 
+    /** AI 가 같은 아이의 다른 편성을 짜느라 409 로 계속 거절했을 때의 까닭. AI 가 고장 난 것이 아니라 단계 요약에 「장애」 를 적지 않는다. */
+    public static final String AI_BUSY = "AI 사용 중";
+
     /** 편성이 키울 요인을 부르는 말. 가장 낮은 요인을 골랐을 때(FE 결과 화면과 같은 말)와 보호자가 골랐을 때. */
     static final String WEAKEST_FACTOR = "지금 키우기 좋은 영역";
 
@@ -386,19 +389,20 @@ public class LabelBasedProposalPlanner {
                                         ? " · 짚을 요인 없음 → " + WHOLE_BODY
                                         : " · 대상 요인 = " + factor.getLabel() + "(" + whyFactor(conditions) + ")")),
                 new CoachRunResult.Step(
-                        2,
-                        "retrieve",
-                        "partial",
-                        (AI_LIMIT_REACHED.equals(failureSummary) ? "AI 를 부르지 않음(" : "AI 서비스 장애(")
-                                + failureSummary
-                                + ") → "
-                                + retrieved),
+                        2, "retrieve", "partial", retrieveCause(failureSummary) + failureSummary + ") → " + retrieved),
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
                         4, "verify", "ok", "인용 " + plan.citations().size() + "건 · 연령 필터 확인"));
     }
 
-    /** 키울 요인을 고른 까닭: 보호자가 골랐으면 {@link #FOCUS_FACTOR}, 아니면(측정에서 가장 낮은 요인) {@link #WEAKEST_FACTOR}. */
+    /** 두 번째 단계 요약의 앞머리. 심사용 한도 · AI 사용 중은 장애가 아니라 따로 적는다. */
+    private static String retrieveCause(String failureSummary) {
+        if (AI_LIMIT_REACHED.equals(failureSummary)) return "AI 를 부르지 않음(";
+        if (AI_BUSY.equals(failureSummary)) return "AI 가 다른 편성을 짜는 중(";
+        return "AI 서비스 장애(";
+    }
+
+    /** 키울 요인을 고른 까닭:보호자가 골랐으면 {@link #FOCUS_FACTOR}, 아니면(측정에서 가장 낮은 요인) {@link #WEAKEST_FACTOR}. */
     private static String whyFactor(CoachRunConditions conditions) {
         return conditions.focusFactor() == null ? WEAKEST_FACTOR : FOCUS_FACTOR;
     }

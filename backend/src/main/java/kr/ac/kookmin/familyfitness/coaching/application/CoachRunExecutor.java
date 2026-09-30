@@ -48,8 +48,12 @@ public class CoachRunExecutor {
 
     public static final int DEFAULT_MAX_POLLS = 40;
 
-    /** AI 가 409 로 거절했을 때 다시 부르는 횟수. 한 번 쉬는 시간은 pollIntervalMs × 2(운영 3초). */
-    static final int IN_PROGRESS_RETRIES = 2;
+    /**
+     * AI 가 409 로 거절했을 때 다시 부르는 횟수. 한 번 쉬는 시간은 pollIntervalMs × 2(운영 3초)라 다 합쳐 30초를 기다린다. AI 편성 한 번은
+     * 5~13초라, 같은 아이의 편성 셋을 한꺼번에 요청해도 세 번째가 앞의 둘이 끝나기를 기다렸다가 AI 로 짠다. 2번(6초)일 때는 세 번째가 늘 대체
+     * 편성으로 끝났다.
+     */
+    static final int IN_PROGRESS_RETRIES = 10;
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -111,7 +115,7 @@ public class CoachRunExecutor {
             fallbackOrFail(runId, "연결 실패", "unavailable: " + e.getMessage(), null);
         } catch (AiRunInProgressException e) {
             // 같은 프로필의 다른 날 편성이 AI 에서 아직 돈다(동시 요청, 또는 BE 가 대체 편성으로 끝낸 실행이 AI 에 남음)
-            fallbackOrFail(runId, "AI 사용 중", "in progress: " + e.getMessage(), null);
+            fallbackOrFail(runId, LabelBasedProposalPlanner.AI_BUSY, "in progress: " + e.getMessage(), null);
         } catch (AiRunNotFoundException e) {
             fallbackOrFail(runId, "실행 없음", "not found: " + e.getMessage(), null);
         } catch (ParticipantConsentRequiredException e) {
