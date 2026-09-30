@@ -61,10 +61,11 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   2. [ ] 바깥망(휴대폰 LTE 등)에서 가짜 헤더를 실어 한 번 부른다(심사용 계정이 하나 생긴다):
      `curl -s -o /dev/null -w '%{http_code}
 ' -X POST -H 'X-Forwarded-For: 203.0.113.9' https://<FE 주소>/api/v1/auth/review-login`
-     그리고 BE 로그의 `심사용 계정 로그인: IP …` 줄을 본다.
-     - 부른 기기의 공인 IP 가 찍히면 된다(앞 프록시가 붙인 값을 Tomcat 이 오른쪽부터 읽어 꾸민 값은 버린다).
-     - `203.0.113.9` 가 찍히면 꾸민 헤더를 믿고 있다 — 1 을 고친다.
-     - Next 서버 IP(사설망 · 루프백)가 찍히면 헤더가 오지 않는다 — 1 을 고치거나, BE 가 Next 를 공인 IP 로 받는다면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` 를 준다.
+     그리고 BE 로그의 `심사용 계정 로그인: IP …` 줄을 본다. IP 는 끝자리를 가린 값만 찍힌다 — IPv4 는 마지막 옥텟이 `*`(예 `198.51.100.*`),
+     IPv6 는 /56 대역(예 `2001:db8:abcd:1200::/56`)이다.
+     - 부른 기기의 공인 IP 앞 세 옥텟(IPv6 는 /56 대역)이 찍히면 된다(앞 프록시가 붙인 값을 Tomcat 이 오른쪽부터 읽어 꾸민 값은 버린다).
+     - `203.0.113.*` 가 찍히면 꾸민 헤더를 믿고 있다 — 1 을 고친다.
+     - Next 서버 IP(사설망 · 루프백, 예 `10.0.0.*` · `127.0.0.*`)가 찍히면 헤더가 오지 않는다 — 1 을 고치거나, BE 가 Next 를 공인 IP 로 받는다면 `SERVER_TOMCAT_REMOTEIP_INTERNAL_PROXIES` 를 준다.
   심사용 계정은 편성(AI · LLM)을 하루(KST) 20번까지 시작한다(`ReviewRunQuota`, 21번째는 429 `TOO_MANY`). 구글 계정은 세지 않는다.
   계정은 누구나 만들 수 있어 계정마다 한도만으로는 LLM 호출이 쌓이므로, 심사용 계정을 모두 합쳐 하루 400번 AI 로 짠 뒤로는 AI 를 부르지 않고
   라벨 대체 편성으로 짠다. 429 로 막지 않는 까닭: 누구 한 사람이 한도를 채우면 그날 모든 심사위원의 편성이 막힌다.
@@ -79,6 +80,16 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
 - 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
 - 정해진 시각에 도는 일(모두 KST)은 설정으로 바꾼다: 리프레시 토큰 정리 `app.auth.refresh-token-cleanup.cron`(매일 04:00) · 알림 `app.notification.mission-ready-cron`(07:30) · `app.notification.remeasure-cron`(09:00) · 리그 정산 `app.league.settle-cron`(매월 1일 00:10). 표는 [docs/api-contract.md](../docs/api-contract.md) 0장.
+
+### 로그와 IP 보관
+
+- BE 는 로그를 표준 출력으로만 낸다(파일에 쓰지 않는다). 보관은 띄운 환경(도커 로그 · systemd 저널 등)이 한다.
+- 로그에 남는 IP 는 심사용 계정 로그인 한 줄(`심사용 계정 로그인: IP …`)뿐이고, 끝자리를 가린 값만 쓴다(IPv4 마지막 옥텟 `*`, IPv6 /56 대역,
+  `ReviewLoginLimiter.maskedForLog`). 한도를 세는 온전한 IP 는 서버 메모리에만 한 시간 두고 버린다(재시작하면 빈다). DB 에는 IP 를 저장하지 않는다.
+- **보관 방침**: 운영 로그는 **30일** 뒤 지운다. 띄우는 환경의 로그 로테이션 보관 기간을 30일로 맞춘다(예 logrotate `maxage 30`,
+  journald `MaxRetentionSec=30day`). 심사가 끝나 심사용 로그인을 끈 뒤 30일이면 IP 가 든 줄이 모두 사라진다.
+- 개인정보처리방침(FE `src/lib/legal.ts`)에는 아직 접속 기록 · IP 항목이 없다. 「심사용 계정 로그인 때 IP 앞자리를 서비스 운영 로그에 30일 남긴다」 를
+  더할지 팀이 정한다(FE 쪽 작업).
 
 ## 프론트 연동 — 로컬 실행 안내
 

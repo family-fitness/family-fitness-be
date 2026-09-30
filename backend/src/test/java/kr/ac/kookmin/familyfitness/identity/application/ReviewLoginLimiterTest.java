@@ -126,6 +126,16 @@ class ReviewLoginLimiterTest {
     }
 
     @Test
+    @DisplayName("로그에 남기는 IP 는 끝자리를 가린다 — IPv4 는 마지막 옥텟을 *, IPv6 는 /56 뒤를 지운 대역, IP 가 아니면 그 사실만")
+    void 로그에_남기는_IP_는_끝자리를_가린다() {
+        assertThat(ReviewLoginLimiter.maskedForLog("203.0.113.77")).isEqualTo("203.0.113.*");
+        assertThat(ReviewLoginLimiter.maskedForLog("::ffff:203.0.113.77")).isEqualTo("203.0.113.*");
+        assertThat(ReviewLoginLimiter.maskedForLog("2001:db8:abcd:12ab:1:2:3:4"))
+                .isEqualTo("2001:db8:abcd:1200::/56");
+        assertThat(ReviewLoginLimiter.maskedForLog("unknown")).isEqualTo("(IP 아님)");
+    }
+
+    @Test
     @DisplayName("IPv6 /56 대역은 RFC 5952 표준 표기로 쓴다 — 배포 점검에서 휴대폰 공인 IP 와 로그 줄을 눈으로 맞춰 본다")
     void IPv6_대역은_표준_표기로_쓴다() {
         // 예전에는 앞 7바이트를 16진수로 붙여 「20010db8abcd12::/56」 처럼 IPv6 표기가 아닌 글자가 찍혔다

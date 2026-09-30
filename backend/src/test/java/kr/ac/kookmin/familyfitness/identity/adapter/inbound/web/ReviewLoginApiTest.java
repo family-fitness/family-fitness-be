@@ -17,8 +17,11 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,6 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest(properties = "app.auth.review-login.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@ExtendWith(OutputCaptureExtension.class)
 class ReviewLoginApiTest {
     /** IP 한도가 시험끼리 섞이지 않게 부를 때마다 다른 IP 를 쓴다. */
     private static final AtomicInteger NEXT_IP = new AtomicInteger(1);
@@ -87,6 +91,14 @@ class ReviewLoginApiTest {
         assertThat(family.get("familyName").asString()).isEqualTo("체험 가족");
         return StreamSupport.stream(family.get("profiles").spliterator(), false)
                 .collect(Collectors.toMap(it -> it.get("name").asString(), Function.identity()));
+    }
+
+    @Test
+    @DisplayName("로그의 IP 는 끝자리를 가린 값만 남는다 — 배포 점검에는 앞 세 옥텟(IPv6 는 /56)으로 충분하다")
+    void 로그의_IP_는_끝자리를_가린_값만_남는다(CapturedOutput output) throws Exception {
+        reviewLogin("198.51.100.77").andExpect(status().isOk());
+
+        assertThat(output.getOut()).contains("심사용 계정 로그인: IP 198.51.100.* ").doesNotContain("198.51.100.77");
     }
 
     @Test

@@ -131,6 +131,23 @@ public class ReviewLoginLimiter {
     }
 
     /**
+     * 로그에 남기는 IP. 끝자리를 가린다 — IPv4(IPv4 에 대응된 IPv6 포함)는 마지막 옥텟을 {@code *} 로(예 {@code 203.0.113.*}), IPv6 는
+     * 셀 때와 같은 /56 대역(뒤 72비트를 지운 값)이다. IP 글자로 읽히지 않으면 받은 글자를 남기지 않는다. 배포 점검(README)은 부른
+     * 기기의 공인 IP 와 앞 세 옥텟 · /56 대역을 견주면 된다. 셀 때 쓰는 이름({@link #keyOf})은 메모리에만 있고 로그에 나가지 않는다.
+     */
+    public static String maskedForLog(String clientIp) {
+        InetAddress address;
+        try {
+            address = InetAddress.ofLiteral(clientIp);
+        } catch (IllegalArgumentException notAnIp) {
+            return "(IP 아님)";
+        }
+        if (address instanceof Inet6Address) return keyOf(clientIp);
+        String ipv4 = address.getHostAddress();
+        return ipv4.substring(0, ipv4.lastIndexOf('.') + 1) + "*";
+    }
+
+    /**
      * IPv6 16바이트를 RFC 5952 표기로. 16비트 묶음 여덟 개를 앞 0 없이 소문자 16진수로 쓰고, 0 인 묶음이 둘 이상 이어진 곳 가운데 가장 긴
      * 곳(길이가 같으면 앞의 곳) 하나를 {@code ::} 로 줄인다. {@link InetAddress#getHostAddress()} 는 줄이지 않는다
      * ({@code 2001:db8:0:0:0:0:0:0}).
