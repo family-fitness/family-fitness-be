@@ -121,7 +121,7 @@ public class LeagueService {
                 result != null ? result.score() : null);
     }
 
-    /** 정산 때 굳힌 값으로 앉힌 자리. 점수 칸을 만들기 전(V167 전)에 정산한 달은 달성률 ÷ 100 을 점수로 쓴다 — 그때 순위도 달성률로 매겼다. */
+    /** 정산 때 굳힌 값으로 앉힌 자리. 점수 칸을 만들기 전(V166 전)에 정산한 달은 달성률 ÷ 100 을 점수로 쓴다 — 그때 순위도 달성률로 매겼다. */
     private static LeagueTable.Seat settledSeat(LeagueMember member) {
         Integer rate = member.finalRate();
         Double score = member.finalScore();

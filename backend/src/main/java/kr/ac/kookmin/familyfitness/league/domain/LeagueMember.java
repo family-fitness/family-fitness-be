@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
  *
  * @param seatNo 방에 들어온 차례(1부터)
  * @param finalRate 정산 때 굳힌 달성률(%). 정산 전이거나 셀 날이 없었으면 null
- * @param finalScore 정산 때 굳힌 순위 점수(0~1). 정산 전이거나 셀 날이 없었으면 null. 점수를 적기 전(V167 전)에 정산한 달도 null 이다
+ * @param finalScore 정산 때 굳힌 순위 점수(0~1). 정산 전이거나 셀 날이 없었으면 null. 점수를 적기 전(V166 전)에 정산한 달도 null 이다
  * @param finalRank 정산 때 굳힌 순위. 정산 전이거나 점수가 없었으면 null
  * @param moved 정산 때 정한 가는 곳. 정산 전이면 null
  */
