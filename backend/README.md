@@ -31,7 +31,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 | `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 | health · info · modulith | 켬(로그인 없이) |
 | `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬 · `APP_AUTH_REVIEW_LOGIN_UNTIL`, 기본 2026-10-31 까지) | http (`APP_AI_BASE_URL`) | 없음 | health 만 | 끔(404) |
 
-- 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
+- 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`). 활성 프로필에 prod 가 있으면 local · compose · test 가 함께 있어도 멈춘다 — `SPRING_PROFILES_ACTIVE=prod,compose` 로 띄우면 compose 파일이 켠 시간 이동(`POST /api/v1/dev/clock`, 인증 없음) · `X-Dev-User-Id` 자동 로그인이 운영에서 켜지기 때문이다.
 - actuator: `/actuator/health` 는 로그인 없이 부른다. info · modulith(모듈 · 패키지 구조와 모듈 사이 의존)는 로그인해야 보이는데, 운영에서는 심사용 로그인으로 누구나 토큰을 받으므로 prod 는 health 만 연다(`application-prod.properties` 의 `management.endpoints.web.exposure.include=health`, 시험 `ProdProfileWebTest`). 나머지 주소는 404 다.
 - API 문서: Swagger UI(`/swagger-ui.html`) · `/v3/api-docs` 는 로그인 없이 열리는 주소라(`SecurityConfig`), prod 는 끈다(`springdoc.api-docs.enabled=false` · `springdoc.swagger-ui.enabled=false`, 시험 `ProdProfileWebTest`). 켜 두면 심사용 로그인을 포함한 모든 경로와 요청 · 응답 모양이 바깥에 나간다. 운영 서버의 API 모양은 local · compose 로 띄워 보거나 `docs/api-contract.md` 로 본다.
 - **심사용 계정 로그인**(`POST /api/v1/auth/review-login`, `app.auth.review-login.enabled`)은 개발용 기능이 아니라 이 목록에 없다.

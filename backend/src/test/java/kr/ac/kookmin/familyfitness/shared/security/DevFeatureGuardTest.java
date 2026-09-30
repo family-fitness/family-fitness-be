@@ -38,6 +38,21 @@ class DevFeatureGuardTest {
     }
 
     @Test
+    @DisplayName(
+            "prod 가 활성이면 local · compose · test 가 함께 있어도 개발용 기능이 켜지면 기동을 멈춘다 — prod,compose 로 띄우면 시간 이동 · 자동 로그인이 운영에서 켜졌다")
+    void prod_가_있으면_개발_프로필이_함께_있어도_멈춘다() {
+        for (String dev : new String[] {"local", "compose", "test"}) {
+            MockEnvironment mixed = allDevFeaturesOn(env("prod", dev));
+            assertThatThrownBy(() -> DevFeatureGuard.check(mixed))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("prod")
+                    .hasMessageContaining("app.dev.time-travel.enabled");
+        }
+        // 개발용 기능이 모두 꺼져 있으면 prod 와 개발 프로필이 함께 있어도 뜬다
+        assertThatCode(() -> DevFeatureGuard.check(env("prod", "compose"))).doesNotThrowAnyException();
+    }
+
+    @Test
     @DisplayName("prod 에서 시간 이동을 켜면 기동을 멈춘다")
     void prod_에서_시간_이동을_켜면_기동을_멈춘다() {
         MockEnvironment prod = env("prod").withProperty("app.dev.time-travel.enabled", "true");
