@@ -10,4 +10,4 @@
 
 원본 설계는 Notion(API 명세서 · 인터페이스 명세)과 [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf)에 있다.
 계약이 바뀌면 Notion 을 먼저 고치고 `api-contract.md` 와 코드를 맞춘다.
-살아 있는 API 문서는 서버의 Swagger UI(`/swagger-ui.html`)다.
+살아 있는 API 문서는 서버의 Swagger UI(`/swagger-ui.html`)다. local · compose 프로필에서만 켜지고 운영(prod)에서는 꺼져 있다(backend/README.md 「프로필」).

@@ -52,4 +52,15 @@ class ProdProfileWebTest {
         mvc.perform(get("/actuator/info").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    @DisplayName("운영에서 Swagger UI 와 /v3/api-docs 는 꺼져 있다 — 로그인 없이 API 전체 모양이 나가지 않는다")
+    void 운영에서_Swagger_UI_와_api_docs_는_꺼져_있다() throws Exception {
+        String bearer = auth.bearer(UUID.randomUUID());
+
+        for (String path : new String[] {"/v3/api-docs", "/swagger-ui.html", "/swagger-ui/index.html"}) {
+            mvc.perform(get(path)).andExpect(status().isNotFound());
+            mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isNotFound());
+        }
+    }
 }
