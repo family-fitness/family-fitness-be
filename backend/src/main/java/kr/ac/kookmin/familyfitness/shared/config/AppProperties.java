@@ -1,7 +1,9 @@
 package kr.ac.kookmin.familyfitness.shared.config;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -63,13 +65,23 @@ public record AppProperties(
      * 심사용 계정 로그인(`POST /api/v1/auth/review-login`). 부를 때마다 새 계정과 체험 가족을 만든다.
      * 심사위원이 운영 서버에서 구글 계정 없이 둘러보라고 여는 길이라 개발용 기능이 아니다 — local · compose · prod 에서 켜고,
      * DevFeatureGuard 목록에 넣지 않는다.
+     *
+     * @param until 받는 마지막 날(app.timezone 날짜, 그날 포함). 그 뒤로는 켜져 있어도 꺼진 것과 같게 404 다. 없으면 켜져 있는 동안 늘 받는다.
+     *     prod 는 기본 2026-10-31 이다(APP_AUTH_REVIEW_LOGIN_UNTIL) — 심사가 끝난 뒤 끄는 것을 잊어도 계정을 만드는 길이 열려 있지 않게.
      */
-    public record ReviewLogin(@DefaultValue("false") boolean enabled) {
+    public record ReviewLogin(
+            @DefaultValue("false") boolean enabled,
+            @Nullable LocalDate until) {
         @ConstructorBinding
         public ReviewLogin {}
 
         public ReviewLogin() {
-            this(false);
+            this(false, null);
+        }
+
+        /** 그날 심사용 계정 로그인을 받는지. 켜져 있고, 끝나는 날이 없거나 그날이 끝나는 날을 넘지 않았다. */
+        public boolean openOn(LocalDate today) {
+            return enabled && (until == null || !today.isAfter(until));
         }
     }
 

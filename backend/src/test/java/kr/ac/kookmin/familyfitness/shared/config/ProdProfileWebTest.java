@@ -1,9 +1,11 @@
 package kr.ac.kookmin.familyfitness.shared.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.support.TestAuth;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +41,9 @@ class ProdProfileWebTest {
     @Autowired
     TestAuth auth;
 
+    @Autowired
+    AppProperties properties;
+
     @Test
     @DisplayName("운영에서 actuator 는 health 만 연다 — 로그인해도 /actuator/info · /actuator/modulith 는 404 다")
     void 운영에서_actuator_는_health_만_연다() throws Exception {
@@ -51,6 +56,13 @@ class ProdProfileWebTest {
                 .andExpect(status().isNotFound());
         mvc.perform(get("/actuator/info").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("운영에서 심사용 로그인은 켜져 있고 2026-10-31 이 지나면 스스로 꺼진다(APP_AUTH_REVIEW_LOGIN_UNTIL 로 바꾼다)")
+    void 운영에서_심사용_로그인은_끝나는_날이_있다() {
+        assertThat(properties.auth().reviewLogin().enabled()).isTrue();
+        assertThat(properties.auth().reviewLogin().until()).isEqualTo(LocalDate.of(2026, 10, 31));
     }
 
     @Test

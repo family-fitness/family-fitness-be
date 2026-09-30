@@ -9,6 +9,7 @@ import kr.ac.kookmin.familyfitness.identity.api.ReviewFamilyCreated;
 import kr.ac.kookmin.familyfitness.identity.domain.GuardianConsent;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.WeeklyAvailability.RawSlot;
+import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
 import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
@@ -57,6 +58,7 @@ public class ReviewLoginService {
     private final AuthService auth;
     private final ApplicationEventPublisher events;
     private final IdentityClock clock;
+    private final AppProperties.ReviewLogin window;
 
     public ReviewLoginService(
             ReviewLoginLimiter limiter,
@@ -66,7 +68,8 @@ public class ReviewLoginService {
             AvailabilityService availability,
             AuthService auth,
             ApplicationEventPublisher events,
-            IdentityClock clock) {
+            IdentityClock clock,
+            AppProperties properties) {
         this.limiter = limiter;
         this.registration = registration;
         this.families = families;
@@ -75,6 +78,15 @@ public class ReviewLoginService {
         this.auth = auth;
         this.events = events;
         this.clock = clock;
+        this.window = properties.auth().reviewLogin();
+    }
+
+    /**
+     * 오늘(app.timezone) 심사용 계정 로그인을 받는지. 끝나는 날(app.auth.review-login.until)이 지났으면 켜져 있어도 받지 않는다 —
+     * 컨트롤러가 꺼진 것과 같게 404 를 준다. 운영은 기본 2026-10-31 이다(APP_AUTH_REVIEW_LOGIN_UNTIL).
+     */
+    public boolean isOpen() {
+        return window.openOn(clock.today());
     }
 
     /**

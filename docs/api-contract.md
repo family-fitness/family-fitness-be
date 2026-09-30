@@ -129,7 +129,7 @@
 
 ### 구현 상태 (2026-09-29 · `feature/BE-35-launch-readiness`)
 
-- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local · compose · prod)에만 있다.
+- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local · compose · prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜 · 그날 포함)이 지나면 404 `NOT_FOUND` 다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).

@@ -29,13 +29,16 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
 | `local` (`bootRun` 기본) | H2 인메모리, PostgreSQL 모드. `/h2-console` | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 | 있음 | health · info · modulith | 켬(로그인 없이) |
 | `compose` | Docker Compose PostgreSQL | `X-Dev-User-Id` 헤더 인증 · dev-login · 심사용 계정 · 구글 | 스텁 (`APP_AI_MODE=http` 로 전환) | 있음 | health · info · modulith | 켬(로그인 없이) |
 | `test` (시험 전용) | H2 인메모리 | dev-login · 구글 | 스텁 | 있음 | health · info · modulith | 켬(로그인 없이) |
-| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬) | http (`APP_AI_BASE_URL`) | 없음 | health 만 | 끔(404) |
+| `prod` | `SPRING_DATASOURCE_*` 환경변수 | 구글 · 심사용 계정(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 켬 · `APP_AUTH_REVIEW_LOGIN_UNTIL`, 기본 2026-10-31 까지) | http (`APP_AI_BASE_URL`) | 없음 | health 만 | 끔(404) |
 
 - 개발용 기능(dev-login · 자동 로그인 · H2 콘솔 · 시간 이동)이 켜져 있는데 활성 프로필에 local · compose · test 가 없으면 기동 전에 멈춘다(`DevFeatureGuard`).
 - actuator: `/actuator/health` 는 로그인 없이 부른다. info · modulith(모듈 · 패키지 구조와 모듈 사이 의존)는 로그인해야 보이는데, 운영에서는 심사용 로그인으로 누구나 토큰을 받으므로 prod 는 health 만 연다(`application-prod.properties` 의 `management.endpoints.web.exposure.include=health`, 시험 `ProdProfileWebTest`). 나머지 주소는 404 다.
 - API 문서: Swagger UI(`/swagger-ui.html`) · `/v3/api-docs` 는 로그인 없이 열리는 주소라(`SecurityConfig`), prod 는 끈다(`springdoc.api-docs.enabled=false` · `springdoc.swagger-ui.enabled=false`, 시험 `ProdProfileWebTest`). 켜 두면 심사용 로그인을 포함한 모든 경로와 요청 · 응답 모양이 바깥에 나간다. 운영 서버의 API 모양은 local · compose 로 띄워 보거나 `docs/api-contract.md` 로 본다.
 - **심사용 계정 로그인**(`POST /api/v1/auth/review-login`, `app.auth.review-login.enabled`)은 개발용 기능이 아니라 이 목록에 없다.
   심사위원이 운영 서버에서 구글 계정 없이 둘러보는 길이라 운영에서 켜 둔다(`APP_AUTH_REVIEW_LOGIN_ENABLED`, 기본 `true` — 심사가 끝나면 `false`).
+  **끝나는 날**: prod 는 `app.auth.review-login.until`(기본 `2026-10-31`, 환경변수 `APP_AUTH_REVIEW_LOGIN_UNTIL=YYYY-MM-DD`)까지만 받는다.
+  날짜는 Asia/Seoul 기준이고 그날까지 받는다. 다음 날부터는 켜져 있어도 꺼진 것과 같게 404 `NOT_FOUND` 이고 계정을 만들지 않는다 — 끄는 것을 잊어도
+  누구나 계정을 만드는 길이 열려 있지 않게. 심사 일정이 바뀌면 이 환경변수로 옮기고 다시 띄운다. local · compose 는 끝나는 날이 없다.
   부를 때마다 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음, 하윤 인증 2등급)을 만들 뿐
   남의 계정이 될 수 없다. 같은 IP(IPv6 는 /56 대역 — 통신사가 집 한 곳에 주는 크기)에서 한 시간에 30번을 넘기면 429 `TOO_MANY` 다.
   새 계정은 IP 와 상관없이 모두 합쳐 한 시간에 300개까지 만든다(`app.auth.review-login.max-total`). 그 뒤로도 429 는 주지 않는다 — 누구
@@ -69,7 +72,7 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   넘기면 AI 를 부르기 전에 429 `TOO_MANY` 다. 편성과 달리 모두 합친 한도도 429 로 막는다 — AI 에 LLM 없이 답하라고 부탁할 칸이 없고, FE 에
   대화 화면이 없어 막혀도 심사위원이 보는 곳이 없다.
   **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 300가족에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 한 가족씩 더해진 만큼이다.
-  심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고, 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
+  심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고(잊어도 끝나는 날 다음 날부터는 404 다), 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
   test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest`)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
