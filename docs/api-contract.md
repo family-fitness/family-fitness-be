@@ -586,7 +586,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - `profileId` · `date`: 누구의 어느 날을 짠 실행인지. 없앤 주간 편성이 남긴 옛 행은 둘 다 null. `weekStart` 는 그 날짜가 든 주의 월요일이다.
 - `canApprove` = `AWAITING_APPROVAL` 이고, 호출자가 보호자이고, 만들 항목이 전부 지난 것은 아니고(전부 지났으면 승인이 409), 미션으로 옮길 참여자가 모두 보호자 동의가 있다(없으면 승인이 422 `CONSENT_REQUIRED`).
 - `steps` 는 실행이 끝날 때 한 번에 저장된다(폴링 중에는 비어 있다).
-- `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 409 · 서버가 제안을 저장하다 실패 등). AI 응답을 읽지 못한 것은 `ERROR` 가 아니라 대체 편성으로 간다(8장). 코드라서 화면 문구는 FE 가 정한다.
+- `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 서버가 제안을 저장하다 실패 등. AI 409 는 다시 부른 뒤 대체 편성으로 간다). AI 응답을 읽지 못한 것은 `ERROR` 가 아니라 대체 편성으로 간다(8장). 코드라서 화면 문구는 FE 가 정한다.
 - `notices`: AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
 `proposals[]`: `{position, title, rationale|null, targetMetric, targetValue, startDate, endDate, participants:[{profileId, role, coachRole}], video|null:{videoId, title|null, url, startSec|null, badges[], mediaUrl|null, thumbnailUrl|null}, citations:[{index, label, chunkId, url|null}], sessions:[{position, phase, title, factor|null, minutes, clip|null:{videoId, startSec, endSec|null, title|null, mediaUrl|null, thumbnailUrl|null}}]}`.
 - `sessions`: 제안의 칸. 모양은 미션 칸과 같고, 승인하면 그대로 미션 칸으로 복사된다. 칸 `minutes` 는 서버가 채운다(8장 칸 분 배분). 칸 끝의 `seq` 는 이 `position` 이다.
@@ -895,7 +895,8 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
 | `failed` · 40회 폴링 안에 안 끝남 · 폴링 404 · 시작 호출의 연결 실패 · 시간 초과 · 5xx · 응답을 읽지 못함 | 라벨 기반 대체 편성(`LabelBasedProposalPlanner`, steps[1] 이 `partial`). 고를 요인(측정 백분위 · 보호자가 키워 주고 싶은 역량)이 없으면(측정 전 · 만 7~10세) 그 연령대 클립으로 「전신 기르기」 미션을 짠다(AI 규칙 편성과 같다). 짤 클립도 인용할 근거도 없으면 FAILED(`AI_FAILED`) |
 | (AI 를 부르지 않음) 심사용 계정을 모두 합쳐 오늘(KST) 400번 AI 로 짠 뒤의 심사용 편성(`ReviewRunQuota`) | 곧바로 라벨 기반 대체 편성. steps[1] 이 `partial` 이고 요약은 「AI 를 부르지 않음(심사용 계정의 오늘 AI 편성 몫이 끝남) → …」. 누가 한도를 채워도 다른 심사위원의 편성이 429 로 막히지 않게 한다 |
 | 폴링 한 번의 일시 오류(시간 초과 · 503 · 응답을 읽지 못함) | 그 회차만 건너뛰고 다음 폴링. 40회가 다 차면 위 대체 편성 |
-| AI 409 · 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
+| 시작 호출이 AI 409(`RUN_IN_PROGRESS` — AI 는 날짜와 상관없이 프로필 하나에 실행 하나만 받는다. 같은 아이의 다른 날을 동시에 요청했거나, 서버가 대체 편성으로 끝낸 실행이 AI 에 아직 남은 경우) | 3초(폴링 간격의 두 배) 쉬고 두 번까지 다시 부른다. 그래도 409 면 위 대체 편성(steps[1] 요약 「AI 서비스 장애(AI 사용 중) → …」) |
+| AI 400 · 서버가 제안을 저장하다 실패 | FAILED(`ERROR`) |
 | 요청 뒤 대상의 동의를 거둠 | FAILED(`CONSENT_REQUIRED`) |
 
 - 대체 편성은 클립 표(`V132` 유튜브 구간 + `V161` ~ `V165` 공단 영상 구간, 공단 구간은 연령대 · 요인 · 단계 줄마다 후보)에서 대상 연령대 · 요인에 맞는 구간을 고른다. 청소년은 「공통」 공단 구간도 받는다. 대상 요인은 AI `target_factor` 와 같다 — 보호자가 키워 주고 싶은 역량이 있으면 그것, 없으면 측정에서 백분위가 가장 낮은 요인이다(모든 요인이 높아도 강한 요인으로 넘어가지 않는다). 미션 이름은 「<요인> 키우기 <분>분」 이다. 어르신은 성인 클립도 후보로 넣는다. 순위는 AI `_age_rank` 와 같다 — 요인 · 처방 어휘 점수가 먼저이고, 같은 점수 안에서만 제 연령대를 앞에 세운다(공단 어르신 영상은 `V164` 부터 싣지 않아 어르신은 성인 구간을 받는다). 공단 영상 구간을 고르면 AI 와 같게 칸 video 에 `source:"kspo"` · mp4 주소를, 인용에 `chunkId` `kspo:<videoId>` · 라벨 = AI 표의 인용 이름(`citation_label`, 예 「국민체력100 운동처방동영상 · 걷기」, 없으면 「국민체력100 동영상 정보 · 제목」) · url mp4 주소를 싣는다. 준비 · 본 · 정리 가짓수는 AI `catalog.py` 와 같다: 10분까지 1·3·1, 20분까지 2·4·1, 35분까지 2·5·2, 그 위 3·6·3. 맞는 클립이 없으면(클립 표가 비었거나 조건에 걸려 본운동이 없으면) 요인 라벨이 맞는 영상 한 편을 통째로 본운동 한 칸에 넣는다(제 연령대를 겨냥한 영상 → 연령 범위가 좁은 영상 → 짧은 영상 차례. 어르신은 성인 범위 영상도 받는다). 스텁도 실제 클립 경계로 칸을 낸다 — 7~12세는 `Eg3GpTv7z8s`, 만 19세 위(성인 · 어르신)는 `IhShIA-WJNE`, 그 밖의 나이는 영상 없이.

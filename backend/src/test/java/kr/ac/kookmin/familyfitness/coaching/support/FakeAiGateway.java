@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
 public class FakeAiGateway implements AiGateway {
     private final AiGateway delegate;
 
-    public @Nullable Function<CoachRunRequest, CoachRunAccepted> onStart;
+    public @Nullable Function<CoachRunRequest, @Nullable CoachRunAccepted> onStart;
     public @Nullable Function<String, CoachRunResult> onPoll;
     public @Nullable Function<CoachMessageRequest, CoachMessageResponse> onAsk;
     public final List<CoachRunRequest> startRequests = new ArrayList<>();
@@ -47,7 +47,9 @@ public class FakeAiGateway implements AiGateway {
     @Override
     public CoachRunAccepted startCoachRun(CoachRunRequest request) {
         startRequests.add(request);
-        return onStart == null ? delegate.startCoachRun(request) : onStart.apply(request);
+        // onStart 가 null 을 돌려주면 스텁이 받는다(처음 몇 번만 거절하는 시험)
+        CoachRunAccepted scripted = onStart == null ? null : onStart.apply(request);
+        return scripted == null ? delegate.startCoachRun(request) : scripted;
     }
 
     @Override

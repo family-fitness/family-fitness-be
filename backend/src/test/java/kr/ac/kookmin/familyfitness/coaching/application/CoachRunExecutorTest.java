@@ -34,6 +34,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.AiBadRequestException;
+import kr.ac.kookmin.familyfitness.shared.ai.AiRunInProgressException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
@@ -641,6 +642,39 @@ class CoachRunExecutorTest {
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
         assertThat(saved.getFailureCode()).isEqualTo(CoachRunFailureCode.ERROR);
         assertThat(saved.getProposals()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("AI 가 409(그 프로필에 실행 중인 것이 있음)로 거절해도 다시 불러 받아 주면 AI 편성으로 끝낸다")
+    void AI_가_409_로_거절해도_다시_불러_받아_주면_AI_편성() {
+        CoachRun run = runningRun();
+        AtomicInteger starts = new AtomicInteger();
+        gateway.onStart = request -> {
+            if (starts.incrementAndGet() == 1) throw new AiRunInProgressException("run_in_progress");
+            return null; // 두 번째부터는 스텁이 받는다
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(2);
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+    }
+
+    @Test
+    @DisplayName("다시 불러도 409 이면 FAILED(ERROR) 가 아니라 라벨 기반 대체 편성으로 끝낸다")
+    void 계속_409_이면_라벨_기반_대체_편성() {
+        measuredWithWeakness();
+        CoachRun run = runningRun();
+        gateway.onStart = request -> {
+            throw new AiRunInProgressException("run_in_progress");
+        };
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(3);
+        assertFallback(runs.findById(run.getId()), "AI 사용 중");
     }
 
     @Test

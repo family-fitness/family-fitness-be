@@ -6,6 +6,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunFailureCode;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachStep;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiGateway;
+import kr.ac.kookmin.familyfitness.shared.ai.AiRunInProgressException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunAccepted;
@@ -33,6 +34,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *       고를 요인(측정 · 보호자가 키워 주고 싶은 역량)이 없으면 그 연령대 클립으로 전신 미션을 짠다. 그 클립도 없거나 대체 편성이
  *       실패하면 FAILED(AI_FAILED).
  *   <li>이벤트가 labelsOnly(심사용 계정 모두의 오늘 AI 몫이 끝남)면 AI 를 부르지 않고 곧바로 라벨 기반 대체 편성.
+ *   <li>AI 가 409(그 프로필에 실행 중인 것이 있음 — AI 는 날짜와 상관없이 프로필 하나에 실행 하나만 받는다)로 거절하면
+ *       {@code pollIntervalMs × 2} 쉬고 {@value #IN_PROGRESS_RETRIES} 번까지 다시 부른다. 그래도 409 이면 라벨 기반 대체 편성.
  *   <li>폴링 한 번의 일시 오류(타임아웃 · 연결 실패 · 5xx)는 그 회차만 건너뛰고 다음 폴링으로 넘긴다.
  *   <li>보호자 동의가 그 사이 거둬졌으면 FAILED(CONSENT_REQUIRED), 그 밖의 예외(AI 400 등)는 FAILED(ERROR).
  * </ol>
@@ -44,6 +47,9 @@ public class CoachRunExecutor {
     public static final long DEFAULT_POLL_INTERVAL_MS = 1500L;
 
     public static final int DEFAULT_MAX_POLLS = 40;
+
+    /** AI 가 409 로 거절했을 때 다시 부르는 횟수. 한 번 쉬는 시간은 pollIntervalMs × 2(운영 3초). */
+    static final int IN_PROGRESS_RETRIES = 2;
 
     private final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -98,11 +104,14 @@ public class CoachRunExecutor {
             }
             CoachRunRequest request = pipeline.prepare(runId);
             if (request == null) return; // 기다리는 사이 정리 작업이 끝낸 실행
-            CoachRunAccepted accepted = gateway.startCoachRun(request);
+            CoachRunAccepted accepted = start(runId, request);
             if (!pipeline.attachAiRun(runId, accepted.runId())) return; // 그 사이 정리 작업이 끝낸 실행은 폴링하지 않는다
             finish(runId, accepted.runId(), poll(accepted.runId()));
         } catch (AiUnavailableException e) {
             fallbackOrFail(runId, "연결 실패", "unavailable: " + e.getMessage(), null);
+        } catch (AiRunInProgressException e) {
+            // 같은 프로필의 다른 날 편성이 AI 에서 아직 돈다(동시 요청, 또는 BE 가 대체 편성으로 끝낸 실행이 AI 에 남음)
+            fallbackOrFail(runId, "AI 사용 중", "in progress: " + e.getMessage(), null);
         } catch (AiRunNotFoundException e) {
             fallbackOrFail(runId, "실행 없음", "not found: " + e.getMessage(), null);
         } catch (ParticipantConsentRequiredException e) {
@@ -114,6 +123,21 @@ public class CoachRunExecutor {
         } catch (Exception e) {
             log.error("코치 실행 실패: run={}", runId, e);
             failQuietly(runId, CoachRunFailureCode.ERROR, describe(e));
+        }
+    }
+
+    /**
+     * POST /v1/coach/runs. 409 면 쉬었다가 {@link #IN_PROGRESS_RETRIES} 번까지 다시 부르고, 그래도 409 면 그 예외를 던진다.
+     */
+    private CoachRunAccepted start(UUID runId, CoachRunRequest request) throws InterruptedException {
+        for (int retry = 0; ; retry++) {
+            try {
+                return gateway.startCoachRun(request);
+            } catch (AiRunInProgressException e) {
+                if (retry >= IN_PROGRESS_RETRIES) throw e;
+                log.info("AI 가 409(실행 중)로 거절했다 — 쉬었다가 다시 부른다 {}/{}: run={}", retry + 1, IN_PROGRESS_RETRIES, runId);
+                if (pollIntervalMs > 0) Thread.sleep(pollIntervalMs * 2);
+            }
         }
     }
 
