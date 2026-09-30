@@ -207,6 +207,17 @@ class FitnessWebTest {
     }
 
     @Test
+    @DisplayName("어르신 측정 항목은 AI 기준항목과 같은 012 · 028 둘이고 둘 다 필수다(019 는 없다)")
+    void 어르신_측정_항목은_012_028_둘_다_필수다() throws Exception {
+        mvc.perform(get("/api/v1/fitness/items").param("ageGroup", "어르신").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].itemCode", contains("012", "028")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].inputGroup", contains("EASY")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].optional", contains(false)))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='028')].equipment", contains("악력계")));
+    }
+
+    @Test
     @DisplayName("모르는 연령대는 400")
     void 모르는_연령대는_400() throws Exception {
         mvc.perform(get("/api/v1/fitness/items").param("ageGroup", "노년").header(HttpHeaders.AUTHORIZATION, bearer()))

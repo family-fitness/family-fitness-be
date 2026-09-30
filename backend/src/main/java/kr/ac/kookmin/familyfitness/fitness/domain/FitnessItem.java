@@ -86,7 +86,8 @@ public enum FitnessItem {
             InputGroup.EASY,
             null,
             new ValueRange(0, 120),
-            EnumSet.of(AgeGroup.ADULT, AgeGroup.SENIOR)),
+            // 어르신은 받지 않는다 — AI 어르신 기준항목은 012 · 028 둘이라 019 는 점수가 나오지 않는다
+            EnumSet.of(AgeGroup.ADULT)),
     SHUTTLE_RUN(
             "020",
             "왕복오래달리기",
@@ -293,6 +294,19 @@ public enum FitnessItem {
         return inputGroup == InputGroup.EQUIPMENT;
     }
 
+    /**
+     * 그 연령대에서 보이는 입력 그룹. 어르신의 028 상대악력만 EASY(필수)다 — AI 어르신 기준항목이 012 · 028 둘뿐이라
+     * 028 을 선택으로 두면 근력 점수 없이 끝난다. 악력계가 있어야 하는 것은 같다({@link #getEquipment()}).
+     */
+    public InputGroup inputGroup(AgeGroup ageGroup) {
+        return this == RELATIVE_GRIP && ageGroup == AgeGroup.SENIOR ? InputGroup.EASY : inputGroup;
+    }
+
+    /** 그 연령대에서 선택 입력인지. {@link #inputGroup(AgeGroup)} 이 EQUIPMENT 면 선택이다. */
+    public boolean isOptional(AgeGroup ageGroup) {
+        return inputGroup(ageGroup) == InputGroup.EQUIPMENT;
+    }
+
     public boolean isFor(AgeGroup ageGroup) {
         return ageGroups.contains(ageGroup);
     }
@@ -323,7 +337,8 @@ public enum FitnessItem {
     public static List<FitnessItem> forAgeGroup(AgeGroup ageGroup) {
         return Arrays.stream(values())
                 .filter(it -> it.isFor(ageGroup))
-                .sorted(Comparator.comparing(FitnessItem::getInputGroup).thenComparing(FitnessItem::getCode))
+                .sorted(Comparator.comparing((FitnessItem it) -> it.inputGroup(ageGroup))
+                        .thenComparing(FitnessItem::getCode))
                 .toList();
     }
 

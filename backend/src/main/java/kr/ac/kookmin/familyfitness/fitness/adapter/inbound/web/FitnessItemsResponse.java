@@ -33,8 +33,8 @@ public record FitnessItemsResponse(AgeGroup ageGroup, List<Item> items) {
                                 it.getUnit(),
                                 it.getFactor(),
                                 it.isHigherIsBetter(),
-                                it.getInputGroup(),
-                                it.isOptional(),
+                                it.inputGroup(ageGroup),
+                                it.isOptional(ageGroup),
                                 it.getEquipment(),
                                 it.getRange()))
                         .toList());

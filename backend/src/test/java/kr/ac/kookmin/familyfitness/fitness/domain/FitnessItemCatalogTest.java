@@ -27,7 +27,8 @@ class FitnessItemCatalogTest {
                 .containsExactlyInAnyOrder("020", "035", "037", "028", "009", "010", "012", "013", "014", "017");
         assertThat(codes(AgeGroup.ADULT))
                 .containsExactlyInAnyOrder("020", "035", "037", "028", "019", "012", "021", "040", "022", "041");
-        assertThat(codes(AgeGroup.SENIOR)).containsExactlyInAnyOrder("012", "028", "019");
+        // 어르신은 AI 기준항목(common/items.py AGE_GROUP_ITEMS["어르신"])과 같은 둘 — 019 는 AI 가 점수를 내지 않는다
+        assertThat(codes(AgeGroup.SENIOR)).containsExactlyInAnyOrder("012", "028");
     }
 
     @Test
@@ -44,6 +45,19 @@ class FitnessItemCatalogTest {
                         .filter(it -> it.getInputGroup() == InputGroup.EQUIPMENT)
                         .toList())
                 .allMatch(it -> it.isOptional() && it.getEquipment() != null);
+    }
+
+    @Test
+    @DisplayName("어르신은 012 · 028 둘 다 필수다 — 028 상대악력은 악력계가 있어야 하지만 어르신 점수를 내는 두 항목 가운데 하나다")
+    void 어르신은_012_028_둘_다_필수다() {
+        assertThat(FitnessItem.forAgeGroup(AgeGroup.SENIOR)).allSatisfy(it -> {
+            assertThat(it.inputGroup(AgeGroup.SENIOR)).isEqualTo(InputGroup.EASY);
+            assertThat(it.isOptional(AgeGroup.SENIOR)).isFalse();
+        });
+        assertThat(FitnessItem.RELATIVE_GRIP.getEquipment()).isEqualTo("악력계");
+        // 다른 연령대의 028 은 그대로 도구 항목 · 선택이다
+        assertThat(FitnessItem.RELATIVE_GRIP.inputGroup(AgeGroup.ADULT)).isEqualTo(InputGroup.EQUIPMENT);
+        assertThat(FitnessItem.RELATIVE_GRIP.isOptional(AgeGroup.ADULT)).isTrue();
     }
 
     @Test
