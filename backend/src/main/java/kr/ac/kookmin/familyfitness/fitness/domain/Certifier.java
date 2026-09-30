@@ -128,8 +128,8 @@ public class Certifier {
             if (GradeTable.ALTERNATIVES.contains(code)) continue;
             String label =
                     switch (code) {
-                        case BMI -> "키 · 몸무게";
-                        case WAIST_TO_HEIGHT -> noHeight ? "키 · 허리둘레" : "허리둘레";
+                        case BMI -> "키와 몸무게";
+                        case WAIST_TO_HEIGHT -> noHeight ? "키와 허리둘레" : "허리둘레";
                         case BodyMeasures.BODY_FAT_CODE -> "체지방률";
                         case BodyMeasures.WAIST_CODE -> "허리둘레";
                         default -> labelOf(code, ageGroup);

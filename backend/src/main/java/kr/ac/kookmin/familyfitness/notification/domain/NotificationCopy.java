@@ -67,11 +67,11 @@ public final class NotificationCopy {
     }
 
     public static String achievementTitle(String achievementTitle) {
-        return "새 업적 — " + achievementTitle;
+        return "새 업적: " + achievementTitle;
     }
 
     public static String remeasureTitle(String kidName) {
-        return kidName + " 키 · 몸무게를 새로 재 볼까요";
+        return kidName + " 키와 몸무게를 새로 재 볼까요";
     }
 
     public static String remeasureBody(long daysSinceLastTest) {

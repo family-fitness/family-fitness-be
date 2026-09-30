@@ -217,7 +217,7 @@ public enum FitnessItem {
     private static final class Equipment {
         private static final String SPACE = "공간";
         private static final String DEVICE = "장비";
-        private static final String WALL_AND_BALL = "벽·공";
+        private static final String WALL_AND_BALL = "벽과 공";
     }
 
     /** 혈압. 입력으로 받지 않는다 (400 ITEM_NOT_ALLOWED). */

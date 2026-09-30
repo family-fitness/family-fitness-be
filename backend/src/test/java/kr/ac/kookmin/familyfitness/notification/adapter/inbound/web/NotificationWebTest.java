@@ -255,7 +255,7 @@ class NotificationWebTest {
                 .andExpect(jsonPath(
                         "$.items[?(@.kind == 'PRAISE')].cheerId",
                         contains(sent[1].cheerId().toString())))
-                .andExpect(jsonPath("$.items[?(@.kind == 'ACHIEVEMENT')].title", contains("새 업적 — 첫 스티커")))
+                .andExpect(jsonPath("$.items[?(@.kind == 'ACHIEVEMENT')].title", contains("새 업적: 첫 스티커")))
                 .andExpect(jsonPath("$.items[?(@.kind == 'ACHIEVEMENT')].body", contains("칭찬 스티커를 처음 받았어요")));
         assertThat(count(dad)).isZero();
     }
@@ -296,7 +296,7 @@ class NotificationWebTest {
         list(kid)
                 .andExpect(jsonPath("$.items", hasSize(1)))
                 .andExpect(jsonPath("$.items[0].kind").value("ACHIEVEMENT"))
-                .andExpect(jsonPath("$.items[0].title").value("새 업적 — 첫걸음"))
+                .andExpect(jsonPath("$.items[0].title").value("새 업적: 첫걸음"))
                 .andExpect(jsonPath("$.items[0].body").value("운동 한 칸을 처음 끝냈어요"));
         assertThat(count(mom)).isZero();
     }
@@ -363,7 +363,7 @@ class NotificationWebTest {
         list(dad)
                 .andExpect(jsonPath("$.items", hasSize(1)))
                 .andExpect(jsonPath("$.items[0].kind").value("REMEASURE"))
-                .andExpect(jsonPath("$.items[0].title").value("서준 키 · 몸무게를 새로 재 볼까요"))
+                .andExpect(jsonPath("$.items[0].title").value("서준 키와 몸무게를 새로 재 볼까요"))
                 .andExpect(jsonPath("$.items[0].body").value("지난번에 잰 지 30일"))
                 .andExpect(jsonPath("$.items[0].aboutProfileId").value(kid.toString()))
                 .andExpect(jsonPath("$.items[0].date").isEmpty());
@@ -435,7 +435,7 @@ class NotificationWebTest {
         list(kid)
                 .andExpect(jsonPath("$.items", hasSize(2)))
                 .andExpect(jsonPath("$.items[0].body").value("오늘 운동"))
-                .andExpect(jsonPath("$.items[1].title").value("새 업적 — 100분"));
+                .andExpect(jsonPath("$.items[1].title").value("새 업적: 100분"));
     }
 
     @Test

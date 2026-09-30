@@ -193,8 +193,8 @@ class CertifierTest {
         assertThat(noBody.missingItems())
                 .containsExactly(
                         new MissingItem(List.of("009"), "윗몸말아올리기"),
-                        new MissingItem(List.of("018"), "키 · 몸무게"),
-                        new MissingItem(List.of("042"), "키 · 허리둘레"));
+                        new MissingItem(List.of("018"), "키와 몸무게"),
+                        new MissingItem(List.of("042"), "키와 허리둘레"));
         // 1등급(022 · 044)과 3등급(BMI · 허리둘레-신장비)이 둘씩 같으면 높은 등급의 것
         Certification tie = girl11(BodyMeasures.NONE, "020=70", "028=41.3", "012=4.0", "009=20", "043=33");
         assertThat(tie.missingItems())

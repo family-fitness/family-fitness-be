@@ -123,7 +123,7 @@ public class LabelBasedProposalPlanner {
         if (point != null) {
             base.add(new Citation(
                     1,
-                    "국민체력100 규준 · " + ageGroup.getLabel() + " " + factor.getLabel() + " 백분위 " + point.percentile(),
+                    "국민체력100 규준, " + ageGroup.getLabel() + " " + factor.getLabel() + " 백분위 " + point.percentile(),
                     "norm:" + ageGroup.getLabel() + "-" + point.itemCode(),
                     null));
         }
@@ -419,14 +419,11 @@ public class LabelBasedProposalPlanner {
         if (mediaUrl != null) {
             String label = video == null ? null : video.getCitationLabel();
             return new Citation(
-                    index,
-                    label != null ? label : KSPO_CITATION + " · " + title,
-                    KSPO_CHUNK_PREFIX + videoId,
-                    mediaUrl);
+                    index, label != null ? label : KSPO_CITATION + ", " + title, KSPO_CHUNK_PREFIX + videoId, mediaUrl);
         }
         return new Citation(
                 index,
-                "국민체력100 운동영상 · " + title,
+                "국민체력100 운동영상, " + title,
                 VIDEO_CHUNK_PREFIX + videoId,
                 video == null ? ExerciseVideo.youtubeUrl(videoId) : video.getUrl());
     }
@@ -443,11 +440,11 @@ public class LabelBasedProposalPlanner {
                         || it.chunkId().startsWith(KSPO_CHUNK_PREFIX))
                 .count();
         String retrieved =
-                routine.isEmpty() ? "영상 라벨 기반 편성 · 영상 " + videoCount + "편" : "클립 라벨 기반 편성 · 클립 " + routine.size() + "개";
+                routine.isEmpty() ? "영상 라벨로 편성, 영상 " + videoCount + "편" : "클립 라벨로 편성, 클립 " + routine.size() + "개";
         String composed = routine.isEmpty()
-                ? "하루 " + conditions.minutes() + "분 · 칸 1개"
-                : "하루 " + conditions.minutes() + "분 · 준비 " + count(routine, SessionPhase.WARMUP) + " · 본 "
-                        + count(routine, SessionPhase.MAIN) + " · 정리 " + count(routine, SessionPhase.COOLDOWN);
+                ? "하루 " + conditions.minutes() + "분, 칸 1개"
+                : "하루 " + conditions.minutes() + "분, 준비 " + count(routine, SessionPhase.WARMUP) + ", 본 "
+                        + count(routine, SessionPhase.MAIN) + ", 정리 " + count(routine, SessionPhase.COOLDOWN);
         return List.of(
                 new CoachRunResult.Step(
                         1,
@@ -455,13 +452,13 @@ public class LabelBasedProposalPlanner {
                         "ok",
                         "측정 " + (latest == null ? "없음" : "있음")
                                 + (factor == null
-                                        ? " · 짚을 요인 없음 → " + WHOLE_BODY
-                                        : " · 대상 요인 = " + factor.getLabel() + "(" + whyFactor(conditions) + ")")),
+                                        ? ", 짚을 요인 없음 → " + WHOLE_BODY
+                                        : ", 대상 요인 = " + factor.getLabel() + "(" + whyFactor(conditions) + ")")),
                 new CoachRunResult.Step(
                         2, "retrieve", "partial", retrieveCause(failureSummary) + failureSummary + ") → " + retrieved),
                 new CoachRunResult.Step(3, "compose", "ok", composed),
                 new CoachRunResult.Step(
-                        4, "verify", "ok", "인용 " + plan.citations().size() + "건 · 연령 필터 확인"));
+                        4, "verify", "ok", "인용 " + plan.citations().size() + "건, 연령 필터 확인"));
     }
 
     /** 두 번째 단계 요약의 앞머리. 심사용 한도 · AI 사용 중은 장애가 아니라 따로 적는다. */

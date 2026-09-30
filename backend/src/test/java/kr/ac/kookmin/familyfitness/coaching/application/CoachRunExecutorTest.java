@@ -286,8 +286,8 @@ class CoachRunExecutorTest {
 
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
-        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨 기반 편성 · 클립 7개");
-        assertThat(saved.getSteps().get(2).summary()).isEqualTo("하루 20분 · 준비 2 · 본 4 · 정리 1");
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨로 편성, 클립 7개");
+        assertThat(saved.getSteps().get(2).summary()).isEqualTo("하루 20분, 준비 2, 본 4, 정리 1");
         CoachProposalItem item = saved.getProposals().getFirst();
         assertThat(item.sessions().stream().map(MissionSession::title).toList())
                 .containsExactly("스트레칭", "나비자세", "가슴펴기", "팔 스트레칭", "다리 늘리기", "양팔 펴기", "다리 뒤 늘리기");
@@ -352,8 +352,8 @@ class CoachRunExecutorTest {
         CoachRun saved = runs.findById(run.getId());
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
         assertThat(saved.getFailureCode()).isNull();
-        assertThat(saved.getSteps().get(0).summary()).isEqualTo("측정 있음 · 짚을 요인 없음 → 전신");
-        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨 기반 편성 · 클립 4개");
+        assertThat(saved.getSteps().get(0).summary()).isEqualTo("측정 있음, 짚을 요인 없음 → 전신");
+        assertThat(saved.getSteps().get(1).summary()).endsWith("클립 라벨로 편성, 클립 4개");
         CoachProposalItem item = saved.getProposals().getFirst();
         assertThat(item.title()).isEqualTo("전신 기르기 20분");
         assertThat(item.sessions().stream().map(MissionSession::title).toList())
@@ -370,7 +370,7 @@ class CoachRunExecutorTest {
 
         CoachRun toddlerSaved = runs.findById(toddlerRun.getId());
         assertThat(toddlerSaved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
-        assertThat(toddlerSaved.getSteps().get(0).summary()).isEqualTo("측정 없음 · 짚을 요인 없음 → 전신");
+        assertThat(toddlerSaved.getSteps().get(0).summary()).isEqualTo("측정 없음, 짚을 요인 없음 → 전신");
         assertThat(toddlerSaved.getProposals().getFirst().sessions().stream()
                         .map(MissionSession::title)
                         .toList())

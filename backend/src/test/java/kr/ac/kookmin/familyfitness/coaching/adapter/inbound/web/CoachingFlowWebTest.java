@@ -447,8 +447,8 @@ class CoachingFlowWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.refused").value(false))
                 .andExpect(jsonPath("$.citations", hasSize(1)))
-                .andExpect(jsonPath("$.citations[0].sourceLabel").value("국민체력100 운동처방 · 유소년 11세"))
-                .andExpect(jsonPath("$.citations[0].excerpt").value("국민체력100 운동처방 · 유소년 11세"))
+                .andExpect(jsonPath("$.citations[0].sourceLabel").value("국민체력100 운동처방, 유소년 11세"))
+                .andExpect(jsonPath("$.citations[0].excerpt").value("국민체력100 운동처방, 유소년 11세"))
                 .andReturn();
         String conversationId = extract("\"conversationId\":\"([^\"]+)\"", chatResult);
         // 계정 있는 아이 이름으로는 그 아이 계정만 묻는다 — 보호자 계정은 403

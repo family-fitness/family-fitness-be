@@ -33,7 +33,7 @@ public final class XpReason {
         return switch (kind) {
             case SESSION_DONE -> "운동을 했어요";
             case MISSION_DONE -> "운동을 다 했어요";
-            case REMEASURE -> "키 · 몸무게를 새로 쟀어요";
+            case REMEASURE -> "키와 몸무게를 새로 쟀어요";
             case STICKER -> {
                 String who = senderCall == null || senderCall.isBlank() ? UNKNOWN_SENDER : senderCall;
                 yield who + iGa(who) + " 붙여 준 스티커";

@@ -87,10 +87,10 @@ public class StubAiGateway implements AiGateway {
             String videoId, String title, List<SampleClip> warmup, List<SampleClip> main, List<SampleClip> cooldown) {}
 
     private static final SampleVideo YOUTH_SAMPLE = new SampleVideo(
-            COACH_VIDEO, "국민체력100 · [유소년] 성장기 학생들을 위한 근력 운동 프로그램", WARMUP_CLIPS, MAIN_CLIPS, COOLDOWN_CLIPS);
+            COACH_VIDEO, "국민체력100, [유소년] 성장기 학생들을 위한 근력 운동 프로그램", WARMUP_CLIPS, MAIN_CLIPS, COOLDOWN_CLIPS);
     private static final SampleVideo ADULT_SAMPLE = new SampleVideo(
             ADULT_COACH_VIDEO,
-            "국민체력100 · [성인/1주차] 딱 4주만 같이 해봐요💪｜1주일만 해도 체지방 쫙! 빼고 근력 확! 높일 수 있는 전신 순환운동",
+            "국민체력100, [성인/1주차] 딱 4주만 같이 해봐요💪｜1주일만 해도 체지방 쫙! 빼고 근력 확! 높일 수 있는 전신 순환운동",
             ADULT_WARMUP_CLIPS,
             ADULT_MAIN_CLIPS,
             ADULT_COOLDOWN_CLIPS);
@@ -180,19 +180,19 @@ public class StubAiGateway implements AiGateway {
         List<CoachRunResult.Step> steps = List.of(
                 new CoachRunResult.Step(
                         1, "assess", "ok", "대상 " + request.profiles().size() + "명 중 측정값 있는 사람 " + measured + "명"),
-                new CoachRunResult.Step(2, "retrieve", "ok", "또래 운동처방 1건·영상 1편 검색"),
+                new CoachRunResult.Step(2, "retrieve", "ok", "또래 운동처방 1건과 영상 1편 검색"),
                 new CoachRunResult.Step(
                         3,
                         "compose",
                         "ok",
                         "주행자 " + drivers.size() + "명에게 " + factor + " 미션 " + drivers.size() + "개 편성"),
-                new CoachRunResult.Step(4, "verify", "ok", "연령 필터·근거 인용 확인"));
+                new CoachRunResult.Step(4, "verify", "ok", "연령 필터와 근거 인용 확인"));
         if (drivers.isEmpty()) {
             return new CoachRunResult(runId, "refused", steps, null, true, "no_relevant_source");
         }
         String day = LocalDate.parse(request.startDate()).toString();
         List<Citation> citations = new ArrayList<>(List.of(
-                new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null), coachVideoCitation(2)));
+                new Citation(1, "국민체력100 운동처방, 유소년 11세", "prescription:유소년-11-F-0142", null), coachVideoCitation(2)));
         List<CoachRunResult.Mission> missions = drivers.stream()
                 .map(driver -> {
                     SampleVideo video = sampleVideoFor(driver.profile());
@@ -291,8 +291,8 @@ public class StubAiGateway implements AiGateway {
             return new CoachMessageResponse("", List.of(), true, "medical_query");
         }
         return new CoachMessageResponse(
-                "또래 처방에서는 상체를 앞·옆으로 숙이는 준비운동 동작이 함께 제시됩니다 [1].",
-                List.of(new Citation(1, "국민체력100 운동처방 · 유소년 11세", "prescription:유소년-11-F-0142", null)),
+                "또래 처방에는 상체를 앞이나 옆으로 숙이는 준비운동 동작이 같이 나와요 [1].",
+                List.of(new Citation(1, "국민체력100 운동처방, 유소년 11세", "prescription:유소년-11-F-0142", null)),
                 false,
                 null);
     }
@@ -318,7 +318,7 @@ public class StubAiGateway implements AiGateway {
     private Citation videoCitation(int index) {
         return new Citation(
                 index,
-                "국민체력100 · 초등학생의 기초체력향상과 운동능력발달을 위한 운동",
+                "국민체력100, 초등학생의 기초체력향상과 운동능력발달을 위한 운동",
                 "video:" + SAMPLE_VIDEO,
                 "https://www.youtube.com/watch?v=" + SAMPLE_VIDEO + "&t=" + SAMPLE_VIDEO_START + "s");
     }

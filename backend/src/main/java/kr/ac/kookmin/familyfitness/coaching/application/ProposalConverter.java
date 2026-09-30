@@ -213,7 +213,7 @@ public class ProposalConverter {
     private static String description(List<CoachRunResult.Session> sessions) {
         return sessions.stream()
                 .map(it -> it.phase().isBlank() ? it.exerciseName() : it.phase() + " " + it.exerciseName())
-                .collect(Collectors.joining(" · "));
+                .collect(Collectors.joining(", "));
     }
 
     /** 칸 표에 넣을 수 있고 틀 수 있는 영상인지. 영상 표에 없는 공단 영상은 화면이 유튜브로 틀려다 실패하므로 버린다. */
@@ -256,7 +256,7 @@ public class ProposalConverter {
             if (!copyParent.isBlank()) return copyParent;
         }
         String joined =
-                result.steps().stream().map(CoachRunResult.Step::summary).collect(Collectors.joining(" · "));
+                result.steps().stream().map(CoachRunResult.Step::summary).collect(Collectors.joining(". "));
         return joined.isBlank() ? null : joined;
     }
 

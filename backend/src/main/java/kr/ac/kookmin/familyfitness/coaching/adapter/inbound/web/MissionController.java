@@ -197,7 +197,7 @@ public class MissionController {
         LocalDate endDate = body.endDate();
         if (dates != null) {
             if (startDate != null || endDate != null) {
-                throw new InvalidInputException("dates 와 startDate · endDate 는 같이 보낼 수 없습니다");
+                throw new InvalidInputException("dates 는 startDate, endDate 와 같이 보낼 수 없습니다");
             }
             return dates.stream()
                     .distinct()
@@ -206,7 +206,7 @@ public class MissionController {
                     .toList();
         }
         if (startDate == null || endDate == null) {
-            throw new InvalidInputException("startDate · endDate 또는 dates 가 필요합니다");
+            throw new InvalidInputException("startDate 와 endDate, 또는 dates 가 필요합니다");
         }
         if (endDate.isBefore(startDate)) throw new InvalidInputException("endDate 는 startDate 이후여야 합니다");
         return List.of(new Period(startDate, endDate));

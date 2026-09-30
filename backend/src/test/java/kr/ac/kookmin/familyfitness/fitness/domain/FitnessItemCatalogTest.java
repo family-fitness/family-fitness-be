@@ -90,7 +90,7 @@ class FitnessItemCatalogTest {
         assertThat(wallPass.isHigherIsBetter()).isTrue();
         assertThat(wallPass.getInputGroup()).isEqualTo(InputGroup.EQUIPMENT);
         assertThat(wallPass.isOptional()).isTrue();
-        assertThat(wallPass.getEquipment()).isEqualTo("벽·공");
+        assertThat(wallPass.getEquipment()).isEqualTo("벽과 공");
         assertThat(wallPass.getRange()).isEqualTo(new ValueRange(0, 60));
         assertThat(wallPass.isFor(AgeGroup.YOUTH)).isTrue();
         assertThat(wallPass.isFor(AgeGroup.ADOLESCENT)).isFalse();

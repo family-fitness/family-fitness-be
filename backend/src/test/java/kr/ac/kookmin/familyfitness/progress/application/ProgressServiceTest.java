@@ -437,7 +437,7 @@ class ProgressServiceTest {
                             tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
                             tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
                             tuple(XpKind.SESSION_DONE, null, 10, today, "운동을 했어요"),
-                            tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키 · 몸무게를 새로 쟀어요"),
+                            tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키와 몸무게를 새로 쟀어요"),
                             tuple(XpKind.STICKER, mom, 10, today, "은영이 붙여 준 스티커"));
             // 여섯째 줄(그제 운동 5 + 5 + 20)은 다섯 줄 밖이다
             assertThat(query.view(userId, kid).xp()).isEqualTo(90);

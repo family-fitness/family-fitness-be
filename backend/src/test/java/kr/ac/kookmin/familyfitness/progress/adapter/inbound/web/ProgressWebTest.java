@@ -250,7 +250,7 @@ class ProgressWebTest {
                         "$.recentXp[?(@.kind == 'REMEASURE')].occurredOn", containsInAnyOrder(today.toString())))
                 // 전환기 칸 — 지금 FE 는 reason · at 을 그대로 그린다. 아이가 읽는 줄이라 보호자는 「엄마」 다
                 .andExpect(jsonPath(
-                        "$.recentXp[*].reason", containsInAnyOrder("운동을 다 했어요", "엄마가 붙여 준 스티커", "키 · 몸무게를 새로 쟀어요")))
+                        "$.recentXp[*].reason", containsInAnyOrder("운동을 다 했어요", "엄마가 붙여 준 스티커", "키와 몸무게를 새로 쟀어요")))
                 .andExpect(jsonPath("$.recentXp[*].at", everyItem(matchesPattern("\\d{4}-\\d{2}-\\d{2}T.+Z"))));
 
         // 부모 프로필도 답한다 — 고마워요 스티커로는 쌓이지 않는다

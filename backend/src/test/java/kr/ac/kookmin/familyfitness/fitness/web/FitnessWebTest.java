@@ -194,7 +194,7 @@ class FitnessWebTest {
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].higherIsBetter", contains(true)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].inputGroup", contains("EQUIPMENT")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].optional", contains(true)))
-                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].equipment", contains("벽·공")))
+                .andExpect(jsonPath("$.items[?(@.itemCode=='044')].equipment", contains("벽과 공")))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].range.min", contains(0)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='044')].range.max", contains(60)))
                 .andExpect(jsonPath("$.items[?(@.itemCode=='020')].itemLabel", contains("15m 왕복오래달리기")))

@@ -112,7 +112,7 @@ class LabelBasedProposalPlannerDbTest {
                 .toList();
         // 인용 이름은 AI 표의 citation_label 그대로다(담당자 코드 형식, 끝에 「-1」 이 없다)
         assertThat(kspo).hasSizeGreaterThanOrEqualTo(main.size()).allSatisfy(it -> {
-            assertThat(it.label()).matches("국민체력100 운동처방(동영상|가이드) · .*").doesNotMatch(".*[-－]\\s*\\d+\\s*$");
+            assertThat(it.label()).matches("국민체력100 운동처방(동영상|가이드), .*").doesNotMatch(".*[-－]\\s*\\d+\\s*$");
             assertThat(it.url()).startsWith("https://openapi.kspo.or.kr/web/video/");
         });
     }

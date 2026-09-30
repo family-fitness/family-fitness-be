@@ -160,15 +160,15 @@ public class HttpAiGateway implements AiGateway {
         } catch (RestClientResponseException e) {
             throw translate(what, e);
         } catch (ResourceAccessException e) {
-            throw new AiUnavailableException("AI 연결 실패·타임아웃: " + what + " — " + e.getMessage(), e);
+            throw new AiUnavailableException("AI 에 연결하지 못했거나 시간이 넘었다: " + what + ": " + e.getMessage(), e);
         } catch (RestClientException e) {
-            throw new AiUnavailableException("AI 응답 본문을 읽지 못했다: " + what + " — " + e.getMessage(), e);
+            throw new AiUnavailableException("AI 응답 본문을 읽지 못했다: " + what + ": " + e.getMessage(), e);
         }
         if (body == null) throw new AiUnavailableException("AI 응답이 비어 있다: " + what);
         try {
             return toDomain.apply(body);
         } catch (RuntimeException e) {
-            throw new AiUnavailableException("AI 응답을 해석하지 못했다: " + what + " — " + e, e);
+            throw new AiUnavailableException("AI 응답을 해석하지 못했다: " + what + ": " + e, e);
         }
     }
 

@@ -256,7 +256,7 @@ class ExerciseClipPersistenceAdapterTest {
         assertThat(video.getLabel().ageFrom()).isEqualTo(7);
         assertThat(video.getLabel().ageTo()).isEqualTo(12);
         assertThat(video.getLabel().factors()).containsExactly("근력", "근지구력");
-        assertThat(video.getCitationLabel()).isEqualTo("국민체력100 운동처방가이드 · 팔굽혀펴기");
+        assertThat(video.getCitationLabel()).isEqualTo("국민체력100 운동처방가이드, 팔굽혀펴기");
         assertThat(video.getUrl()).isEqualTo("https://openapi.kspo.or.kr/web/video/0AUDLJ08S_00351.mp4");
         assertThat(video.getBadges()).containsExactly(ExerciseVideo.BADGE_QUIET, ExerciseVideo.BADGE_SMALL_ROOM);
         assertThat(clips.findAllByIds(List.of("0AUDLJ08S_00351-0", "IdpXx2gm90o-56")))
@@ -281,7 +281,7 @@ class ExerciseClipPersistenceAdapterTest {
         assertThat(walk.getLabel().suitableFor(AgeGroup.ADOLESCENT)).isTrue();
         assertThat(walk.getLabel().suitableFor(AgeGroup.SENIOR)).isTrue();
         assertThat(walk.getLabel().suitableFor(AgeGroup.YOUTH)).isFalse();
-        assertThat(walk.getCitationLabel()).isEqualTo("국민체력100 운동처방동영상 · 걷기");
+        assertThat(walk.getCitationLabel()).isEqualTo("국민체력100 운동처방동영상, 걷기");
         assertThat(walk.getThumbnailUrl())
                 .isEqualTo("https://openapi.kspo.or.kr/web/image/0AUDLJ08S_00181/0AUDLJ08S_00181_SC_00001.jpeg");
         // 성인 197편은 모두 청소년 줄도 있다

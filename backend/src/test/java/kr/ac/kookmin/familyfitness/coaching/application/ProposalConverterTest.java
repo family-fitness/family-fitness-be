@@ -123,7 +123,7 @@ class ProposalConverterTest {
         assertThat(item.targetMetric()).isEqualTo("TIMER_MINUTES");
         assertThat(item.targetValue()).isEqualTo(15);
         assertThat(item.rationale()).isEqualTo("또래 처방에 나온 늘이는 동작을 앞세워 골랐습니다 [1].");
-        assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세) · 준비운동 척추 들어올리기 (고양이자세)");
+        assertThat(item.description()).startsWith("준비운동 넙다리 안쪽 늘리기 (나비자세), 준비운동 척추 들어올리기 (고양이자세)");
         assertThat(item.startsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         assertThat(item.endsOn()).isEqualTo(LocalDate.of(2026, 9, 7));
         // 대표 영상은 첫 본운동 칸이다(준비운동 첫 칸이 아니다)
@@ -453,7 +453,7 @@ class ProposalConverterTest {
                 null);
         assertThat(ProposalConverter.summary(withProposal)).isEqualTo("부모 요약");
         assertThat(ProposalConverter.summary(new CoachRunResult("r", "failed", steps, null, false, null)))
-                .isEqualTo("측정 2명 · 확인");
+                .isEqualTo("측정 2명. 확인");
         assertThat(ProposalConverter.steps(withProposal).stream()
                         .map(kr.ac.kookmin.familyfitness.coaching.domain.CoachStep::name)
                         .toList())

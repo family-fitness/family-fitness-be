@@ -79,7 +79,7 @@ class ProgressRulesTest {
     void 최근_줄_문장() {
         assertThat(XpReason.of(XpKind.SESSION_DONE, null)).isEqualTo("운동을 했어요");
         assertThat(XpReason.of(XpKind.MISSION_DONE, null)).isEqualTo("운동을 다 했어요");
-        assertThat(XpReason.of(XpKind.REMEASURE, null)).isEqualTo("키 · 몸무게를 새로 쟀어요");
+        assertThat(XpReason.of(XpKind.REMEASURE, null)).isEqualTo("키와 몸무게를 새로 쟀어요");
         assertThat(XpReason.of(XpKind.STICKER, "엄마")).isEqualTo("엄마가 붙여 준 스티커");
         assertThat(XpReason.of(XpKind.STICKER, "아빠")).isEqualTo("아빠가 붙여 준 스티커");
         assertThat(XpReason.of(XpKind.STICKER, "서준")).isEqualTo("서준이 붙여 준 스티커");
