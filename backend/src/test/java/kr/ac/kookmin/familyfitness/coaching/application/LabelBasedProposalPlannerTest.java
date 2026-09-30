@@ -10,8 +10,10 @@ import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
+import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
+import kr.ac.kookmin.familyfitness.shared.domain.Band;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
 import kr.ac.kookmin.familyfitness.shared.domain.Sex;
@@ -26,8 +28,9 @@ class LabelBasedProposalPlannerTest {
 
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(
             List.of(Videos.video("adult", 19, 64, "근력", 300), Videos.video("youth", 7, 12, "근력", 100)));
+    private final FakeFitness fitness = new FakeFitness();
     private final LabelBasedProposalPlanner planner =
-            new LabelBasedProposalPlanner(new FakeFitness(), videos, new InMemoryExerciseClipRepository());
+            new LabelBasedProposalPlanner(fitness, videos, new InMemoryExerciseClipRepository());
 
     private static ProfileDetails grandpa() {
         return new ProfileDetails(
@@ -62,6 +65,33 @@ class LabelBasedProposalPlannerTest {
         CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험");
 
         assertThat(mainVideo(result).videoId()).isEqualTo("adult");
+    }
+
+    @Test
+    @DisplayName("측정으로 고른 요인의 보호자 문구는 「… 영역입니다」 로 띄어 쓰지 않는다 — 「꾸준히 하고 있는 영역 입니다」 가 나갔다")
+    void 보호자_문구는_영역입니다_로_붙여_쓴다() {
+        ProfileDetails child = new ProfileDetails(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                null,
+                "하윤",
+                ProfileRole.CHILD,
+                LocalDate.of(2015, 5, 1),
+                Sex.F,
+                null,
+                null,
+                null,
+                true);
+        fitness.measured(child.profileId(), new FactorPoint(FitnessFactor.STRENGTH, "012", 50), null);
+
+        CoachRunResult result =
+                planner.plan(child, TODAY, new CoachRunConditions(20, false, null, null, false), TODAY, "시험");
+
+        assertThat(result).isNotNull();
+        String parentCopy = result.proposal().missions().getFirst().copyParent();
+        assertThat(parentCopy)
+                .isEqualTo("근력은 " + Band.ofPercentile(50).getCopy() + "입니다. 오늘 20분이면 충분합니다")
+                .doesNotContain(" 입니다");
     }
 
     @Test

@@ -130,7 +130,7 @@ public class LabelBasedProposalPlanner {
                 point == null
                         ? "고르신 " + factor.getLabel() + "을 기르는 동작으로 " + minutes + "분을 짰습니다"
                         : factor.getLabel() + "은 "
-                                + Band.ofPercentile(point.percentile()).getCopy() + " 입니다. 오늘 " + minutes + "분이면 충분합니다",
+                                + Band.ofPercentile(point.percentile()).getCopy() + "입니다. 오늘 " + minutes + "분이면 충분합니다",
                 plan,
                 steps(latest, factor, conditions, failureSummary, routine, plan));
     }
