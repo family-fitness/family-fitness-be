@@ -15,7 +15,6 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunExecutorConfig;
 import kr.ac.kookmin.familyfitness.league.application.LeagueSettlementScheduler;
 import kr.ac.kookmin.familyfitness.notification.application.NotificationScheduler;
@@ -140,7 +139,10 @@ class AJourneyTest {
             assertThat((Integer) read(progress, "$.streakDays")).as("D%d 이어서 한 날", day).isEqualTo(day);
             if (weekend) {
                 // 아이가 끝낸 칸은 같이 하기로 한 아빠에게도 적힌다
-                assertThat((Integer) read(progress(dad, dadProfile), "$.activeDays")).isGreaterThanOrEqualTo(1);
+                List<Boolean> dadDone = read(
+                        body(ok(as(mom, get("/api/v1/missions/" + missionId)))),
+                        "$.participants[?(@.profileId == '" + dadProfile + "')].completed");
+                assertThat(dadDone).as("D%d 아빠도 같이 끝냄", day).containsExactly(true);
             }
             assertEarned(progress, "FIRST_STEP", true);
             assertEarned(progress, "STREAK_3", day >= 3);
@@ -367,9 +369,5 @@ class AJourneyTest {
         public Instant instant() {
             return now[0];
         }
-    }
-
-    static UUID uuid(String s) {
-        return UUID.fromString(s);
     }
 }
