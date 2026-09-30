@@ -5,9 +5,9 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.domain.TooManyReviewLoginsException;
@@ -111,7 +111,9 @@ public class ReviewLoginLimiter {
     }
 
     /**
-     * 셀 때 쓰는 IP 이름. IPv4(IPv4 에 대응된 IPv6 포함)는 주소 그대로, IPv6 는 앞 56비트. IP 글자로 읽히지 않으면 받은 글자 그대로다.
+     * 셀 때 쓰는 IP 이름. IPv4(IPv4 에 대응된 IPv6 포함)는 주소 그대로, IPv6 는 앞 56비트 대역을 표준 표기(RFC 5952, 예
+     * {@code 2001:db8:abcd:1200::/56})로 쓴다 — 로그에도 이 글자가 나가서, 배포 점검 때 휴대폰 공인 IP 와 눈으로 맞춰 본다.
+     * IP 글자로 읽히지 않으면 받은 글자 그대로다.
      */
     static String keyOf(String clientIp) {
         InetAddress address;
@@ -122,9 +124,45 @@ public class ReviewLoginLimiter {
         }
         if (address instanceof Inet6Address) {
             byte[] bytes = address.getAddress();
-            return HexFormat.of().formatHex(bytes, 0, 7) + "::/56";
+            Arrays.fill(bytes, 7, bytes.length, (byte) 0);
+            return standard(bytes) + "/56";
         }
         return address.getHostAddress();
+    }
+
+    /**
+     * IPv6 16바이트를 RFC 5952 표기로. 16비트 묶음 여덟 개를 앞 0 없이 소문자 16진수로 쓰고, 0 인 묶음이 둘 이상 이어진 곳 가운데 가장 긴
+     * 곳(길이가 같으면 앞의 곳) 하나를 {@code ::} 로 줄인다. {@link InetAddress#getHostAddress()} 는 줄이지 않는다
+     * ({@code 2001:db8:0:0:0:0:0:0}).
+     */
+    static String standard(byte[] bytes) {
+        int[] groups = new int[8];
+        for (int i = 0; i < 8; i++) groups[i] = ((bytes[2 * i] & 0xff) << 8) | (bytes[2 * i + 1] & 0xff);
+        int bestStart = -1;
+        int bestLength = 1;
+        for (int i = 0; i < 8; ) {
+            if (groups[i] != 0) {
+                i++;
+                continue;
+            }
+            int start = i;
+            while (i < 8 && groups[i] == 0) i++;
+            if (i - start > bestLength) {
+                bestStart = start;
+                bestLength = i - start;
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            if (i == bestStart) {
+                out.append("::");
+                i += bestLength - 1;
+                continue;
+            }
+            if (!out.isEmpty() && out.charAt(out.length() - 1) != ':') out.append(':');
+            out.append(Integer.toHexString(groups[i]));
+        }
+        return out.toString();
     }
 
     private static void dropOld(Deque<Instant> times, Instant since) {

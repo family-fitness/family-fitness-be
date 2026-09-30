@@ -114,15 +114,27 @@ class ReviewLoginLimiterTest {
     }
 
     @Test
-    @DisplayName("IP 이름: IPv4 는 그대로, IPv4 에 대응된 IPv6 는 IPv4 로, IPv6 는 /56 대역, IP 가 아니면 받은 글자 그대로")
+    @DisplayName("IP 이름: IPv4 는 그대로, IPv4 에 대응된 IPv6 는 IPv4 로, IPv6 는 /56 대역을 표준 표기로, IP 가 아니면 받은 글자 그대로")
     void IP_이름() {
         assertThat(ReviewLoginLimiter.keyOf("203.0.113.7")).isEqualTo("203.0.113.7");
         assertThat(ReviewLoginLimiter.keyOf("::ffff:203.0.113.7")).isEqualTo("203.0.113.7");
         assertThat(ReviewLoginLimiter.keyOf("2001:db8::1"))
                 .isEqualTo(ReviewLoginLimiter.keyOf("2001:0db8:0:ff:ffff::9"))
-                .isEqualTo("20010db8000000::/56")
+                .isEqualTo("2001:db8::/56")
                 .isNotEqualTo(ReviewLoginLimiter.keyOf("2001:db8:0:100::1"));
         assertThat(ReviewLoginLimiter.keyOf("unknown")).isEqualTo("unknown");
+    }
+
+    @Test
+    @DisplayName("IPv6 /56 대역은 RFC 5952 표준 표기로 쓴다 — 배포 점검에서 휴대폰 공인 IP 와 로그 줄을 눈으로 맞춰 본다")
+    void IPv6_대역은_표준_표기로_쓴다() {
+        // 예전에는 앞 7바이트를 16진수로 붙여 「20010db8abcd12::/56」 처럼 IPv6 표기가 아닌 글자가 찍혔다
+        assertThat(ReviewLoginLimiter.keyOf("2001:db8:abcd:12ab::1")).isEqualTo("2001:db8:abcd:1200::/56");
+        assertThat(ReviewLoginLimiter.keyOf("2001:DB8:ABCD:12FF:1:2:3:4")).isEqualTo("2001:db8:abcd:1200::/56");
+        assertThat(ReviewLoginLimiter.keyOf("::1")).isEqualTo("::/56");
+        assertThat(ReviewLoginLimiter.keyOf("fe80::1")).isEqualTo("fe80::/56");
+        // 가운데 0 이 이어지면 가장 긴 0 묶음 하나만 줄인다
+        assertThat(ReviewLoginLimiter.keyOf("2001:0:0:1200::1")).isEqualTo("2001:0:0:1200::/56");
     }
 
     @Test
