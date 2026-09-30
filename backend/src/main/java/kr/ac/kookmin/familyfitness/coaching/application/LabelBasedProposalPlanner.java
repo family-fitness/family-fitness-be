@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
@@ -423,10 +424,31 @@ public class LabelBasedProposalPlanner {
         }
         return new Citation(
                 index,
-                "국민체력100 운동영상, " + title,
+                "국민체력100 운동영상, " + youtubeCitationTitle(title),
                 VIDEO_CHUNK_PREFIX + videoId,
                 video == null ? ExerciseVideo.youtubeUrl(videoId) : video.getUrl());
     }
+
+    /**
+     * 유튜브 제목을 화면 근거 이름으로 다듬는다. 이모지와 앞쪽 대괄호 머리말(예: [유소년])을 걷고, 세로 막대는 쉼표로, (30min) 은
+     * (30분) 으로 바꾼다. 머리말을 걷고 남는 글이 없으면 머리말을 그대로 둔다.
+     */
+    static String youtubeCitationTitle(String title) {
+        String cleaned = EMOJI.matcher(title).replaceAll("");
+        String withoutHead = LEADING_BRACKET.matcher(cleaned).replaceFirst("");
+        if (!withoutHead.isBlank()) {
+            cleaned = withoutHead;
+        }
+        cleaned = VERTICAL_BAR.matcher(cleaned).replaceAll(", ");
+        cleaned = MINUTES.matcher(cleaned).replaceAll("($1분)");
+        return SPACES.matcher(cleaned).replaceAll(" ").strip();
+    }
+
+    private static final Pattern EMOJI = Pattern.compile("[\\p{So}\\x{1F3FB}-\\x{1F3FF}\\x{200D}\\x{FE0F}]");
+    private static final Pattern LEADING_BRACKET = Pattern.compile("^\\s*\\[[^\\]]*\\]\\s*");
+    private static final Pattern VERTICAL_BAR = Pattern.compile("\\s*\\|\\s*");
+    private static final Pattern MINUTES = Pattern.compile("\\s*\\(\\s*(\\d+)\\s*min\\s*\\)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SPACES = Pattern.compile("\\s{2,}");
 
     private static List<CoachRunResult.Step> steps(
             @Nullable LatestFitness latest,

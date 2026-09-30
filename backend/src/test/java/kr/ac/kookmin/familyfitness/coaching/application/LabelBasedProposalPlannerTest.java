@@ -2,18 +2,22 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
 import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseClip;
+import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
+import kr.ac.kookmin.familyfitness.coaching.domain.VideoLabel;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
+import kr.ac.kookmin.familyfitness.shared.ai.Citation;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
 import kr.ac.kookmin.familyfitness.shared.domain.AgeGroup;
 import kr.ac.kookmin.familyfitness.shared.domain.Band;
@@ -367,5 +371,40 @@ class LabelBasedProposalPlannerTest {
         assertThat(main).hasSize(4);
         assertThat(factorCount(main, FitnessFactor.CARDIO)).isEqualTo(4);
         assertThat(result.proposal().missions().getFirst().title()).startsWith("심폐지구력 키우기");
+    }
+
+    @Test
+    @DisplayName("유튜브 영상 근거 이름은 제목의 이모지와 앞쪽 대괄호 머리말을 걷고 영어 길이 표시를 분으로 바꾼다")
+    void 유튜브_영상_근거_이름은_제목을_다듬어_쓴다() {
+        videos.videos.clear();
+        videos.videos.put(
+                "raw",
+                new ExerciseVideo(
+                        "raw",
+                        "[👦🏻유소년] 성장기 학생들을 위한 체력향상 운동프로그램 (30min)",
+                        "국민체력100",
+                        "PUBLIC",
+                        300,
+                        new VideoLabel(19, 64, VideoLabel.parseFactors("근력"), "LOW", "SMALL_ROOM", "QUIET", null),
+                        null,
+                        "SEED",
+                        Instant.parse("2026-09-01T00:00:00Z")));
+
+        CoachRunResult result = planner.plan(grandpa(), TODAY, STRENGTH, TODAY, "시험", List.of());
+
+        assertThat(result).isNotNull();
+        assertThat(result.proposal().citations())
+                .extracting(Citation::label)
+                .contains("국민체력100 운동영상, 성장기 학생들을 위한 체력향상 운동프로그램(30분)");
+    }
+
+    @Test
+    @DisplayName("근거 이름 다듬기는 제목 속 세로 막대를 쉼표로 바꾸고 겹친 띄어쓰기를 하나로 줄인다")
+    void 근거_이름_다듬기는_세로_막대와_겹친_띄어쓰기를_고친다() {
+        assertThat(LabelBasedProposalPlanner.youtubeCitationTitle("🦖유아기 복합 지각능력  향상 활동 | EP01. 알맞게 놓아요! (25min)"))
+                .isEqualTo("유아기 복합 지각능력 향상 활동, EP01. 알맞게 놓아요!(25분)");
+        assertThat(LabelBasedProposalPlanner.youtubeCitationTitle("[🌱키쑥쑥 성장기] 스트레칭 (20 MIN)"))
+                .isEqualTo("스트레칭(20분)");
+        assertThat(LabelBasedProposalPlanner.youtubeCitationTitle("[머리말만]")).isEqualTo("[머리말만]");
     }
 }
