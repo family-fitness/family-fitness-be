@@ -13,6 +13,11 @@ public interface FamilyInviteJpaRepository extends JpaRepository<FamilyInviteEnt
             UUID familyId, Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update FamilyInviteEntity i set i.claimedAt = :at, i.claimedByUserId = :userId "
+            + "where i.code = :code and i.claimedAt is null")
+    int markClaimedIfUnclaimed(@Param("code") String code, @Param("userId") UUID userId, @Param("at") Instant at);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from FamilyInviteEntity i where i.familyId = :familyId and i.code = :code and i.claimedAt is null")
     int deleteUnclaimed(@Param("familyId") UUID familyId, @Param("code") String code);
 }

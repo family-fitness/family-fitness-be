@@ -356,6 +356,259 @@ class FamilyInviteApiTest {
                 .andExpect(jsonPath("$.error.code").value("CODE_NOT_FOUND"));
     }
 
+    // ===== 가족 초대코드로 들어오기 =====
+
+    @Test
+    @DisplayName("PARENT 초대로 들어온 계정은 넣은 정보로 보호자 프로필이 생기고 SUPPORT_MODE 로 간다. 오너는 아니다")
+    void PARENT_초대로_들어온다() throws Exception {
+        Home home = home();
+        String code = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        Session dad = devLogin();
+        Map<String, Object> body = joinBody(code, "아빠", "1986-01-01", "M");
+        body.put("heightCm", 175.5);
+        body.put("weightKg", 70);
+
+        JsonNode joined = read(claim(dad, body).andExpect(status().isOk()));
+
+        String dadId = joined.get("profileId").asString();
+        assertThat(joined.get("familyId").asString()).isEqualTo(home.familyId());
+        assertThat(joined.get("role").asString()).isEqualTo("PARENT");
+        assertThat(joined.get("nextStep").asString()).isEqualTo("SUPPORT_MODE");
+        JsonNode me = read(mvc.perform(auth(get("/api/v1/me"), dad)).andExpect(status().isOk()));
+        // 참여 방식을 고르기 전에 닫고 다시 열어도 SUPPORT_MODE 다
+        assertThat(me.get("nextStep").asString()).isEqualTo("SUPPORT_MODE");
+        assertThat(me.get("selfProfileId").asString()).isEqualTo(dadId);
+        JsonNode self = me.get("profiles").get(0);
+        assertThat(self.get("name").asString()).isEqualTo("아빠");
+        assertThat(self.get("role").asString()).isEqualTo("PARENT");
+        assertThat(self.get("sex").asString()).isEqualTo("M");
+        assertThat(self.get("ageGroup").asString()).isEqualTo("성인");
+        assertThat(self.get("isOwner").asBoolean()).isFalse();
+        assertThat(self.get("hasAccount").asBoolean()).isTrue();
+        assertThat(self.get("inviteStatus").asString()).isEqualTo("CLAIMED");
+        assertThat(self.get("familyId").asString()).isEqualTo(home.familyId());
+        Map<String, Object> row = jdbc.queryForMap("select * from profiles where id = ?", UUID.fromString(dadId));
+        assertThat(row.get("user_id").toString()).isEqualTo(dad.userId().toString());
+        assertThat(row.get("birth_date").toString()).isEqualTo("1986-01-01");
+        assertThat(new java.math.BigDecimal(row.get("height_cm").toString())).isEqualByComparingTo("175.5");
+        assertThat(new java.math.BigDecimal(row.get("weight_kg").toString())).isEqualByComparingTo("70");
+        assertThat(row.get("claim_code")).isEqualTo(code);
+        assertThat(row.get("claim_code_issued_by").toString()).isEqualTo(home.ownerProfileId());
+        Map<String, Object> invite = jdbc.queryForMap("select * from family_invites where code = ?", code);
+        assertThat(invite.get("claimed_at")).isNotNull();
+        assertThat(invite.get("claimed_by_user_id").toString())
+                .isEqualTo(dad.userId().toString());
+        // 쓴 코드는 목록에서 빠지고 다시 쓰지 못한다
+        assertThat(list(read(listInvites(home.owner(), home.familyId())).get("invites")))
+                .isEmpty();
+        claim(devLogin(), joinBody(code, "삼촌", "1990-01-01", "M"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+        preview(devLogin(), code)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+        // 들어온 보호자는 가족 초대를 낼 수 있다
+        createInvite(dad, home.familyId(), "CHILD", consent(true, true)).andExpect(status().isCreated());
+        // 참여 방식을 고르면 홈으로 간다
+        mvc.perform(json(
+                        auth(
+                                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                        "/api/v1/profiles/" + dadId + "/support-mode"),
+                                dad),
+                        Map.of("supportMode", "WEEKEND")))
+                .andExpect(status().isOk());
+        assertThat(read(mvc.perform(auth(get("/api/v1/me"), dad)))
+                        .get("nextStep")
+                        .asString())
+                .isEqualTo("HOME");
+    }
+
+    @Test
+    @DisplayName("CHILD 초대로 들어온 아이 프로필에는 초대 때 받은 보호자 동의가 들어가고, 동의 이력의 동의자는 초대한 보호자다")
+    void CHILD_초대로_들어온_아이에게_동의가_들어간다() throws Exception {
+        Home home = home();
+        String code = codeOf(createInvite(home.owner(), home.familyId(), "CHILD", consent(true, true)));
+        Object issuedAt = jdbc.queryForMap("select created_at from family_invites where code = ?", code)
+                .get("created_at");
+        Session kid = devLogin();
+
+        JsonNode joined =
+                read(claim(kid, joinBody(code, "하윤", today.minusYears(11).toString(), "F"))
+                        .andExpect(status().isOk()));
+
+        UUID kidId = UUID.fromString(joined.get("profileId").asString());
+        assertThat(joined.get("role").asString()).isEqualTo("CHILD");
+        assertThat(joined.get("nextStep").asString()).isEqualTo("HOME");
+        JsonNode self = read(mvc.perform(auth(get("/api/v1/me"), kid)).andExpect(status().isOk()))
+                .get("profiles")
+                .get(0);
+        assertThat(self.get("ageGroup").asString()).isEqualTo("유소년");
+        assertThat(self.get("consentRequired").asBoolean()).isTrue();
+        assertThat(self.get("consentGiven").asBoolean()).isTrue();
+        assertThat(self.get("measurable").asBoolean()).isTrue();
+        assertThat(self.get("isOwner").asBoolean()).isFalse();
+        Map<String, Object> row = jdbc.queryForMap("select * from profiles where id = ?", kidId);
+        assertThat(row.get("consent_personal_at")).isEqualTo(issuedAt);
+        assertThat(row.get("consent_health_at")).isEqualTo(issuedAt);
+        assertThat(row.get("consent_by_user_id").toString())
+                .isEqualTo(home.owner().userId().toString());
+        assertThat(row.get("consent_revoked_at")).isNull();
+        List<Map<String, Object>> events =
+                jdbc.queryForList("select * from consent_events where profile_id = ?", kidId);
+        assertThat(events).singleElement().satisfies(it -> {
+            assertThat(it.get("kind")).isEqualTo("GRANTED");
+            assertThat(it.get("actor_user_id").toString())
+                    .isEqualTo(home.owner().userId().toString());
+            assertThat(it.get("personal_data")).isEqualTo(true);
+            assertThat(it.get("health_data")).isEqualTo(true);
+            assertThat(it.get("occurred_at")).isEqualTo(issuedAt);
+        });
+        // 보호자가 보는 구성원 목록에도 동의가 있는 아이로 보인다
+        JsonNode members =
+                read(mvc.perform(auth(get("/api/v1/families/" + home.familyId() + "/profiles"), home.owner()))
+                        .andExpect(status().isOk()));
+        assertThat(list(members.get("profiles")))
+                .filteredOn(it -> it.get("profileId").asString().equals(kidId.toString()))
+                .singleElement()
+                .satisfies(it -> {
+                    assertThat(it.get("name").asString()).isEqualTo("하윤");
+                    assertThat(it.get("consentGiven").asBoolean()).isTrue();
+                    assertThat(it.get("hasAccount").asBoolean()).isTrue();
+                });
+    }
+
+    @Test
+    @DisplayName("가족 초대코드인데 이름, 생년월일, 성별 가운데 하나라도 빠지면 400 BAD_REQUEST 이고 코드는 그대로 남는다")
+    void 정보가_빠지면_400() throws Exception {
+        Home home = home();
+        String code = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        Session dad = devLogin();
+
+        for (Map<String, Object> body : List.of(
+                Map.<String, Object>of("claimCode", code),
+                without(joinBody(code, "아빠", "1986-01-01", "M"), "name"),
+                without(joinBody(code, "아빠", "1986-01-01", "M"), "birthDate"),
+                without(joinBody(code, "아빠", "1986-01-01", "M"), "sex"),
+                joinBody(code, " ", "1986-01-01", "M"))) {
+            claim(dad, body)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
+        // 미래 생년월일, 범위 밖 키도 400 이다
+        claim(dad, joinBody(code, "아빠", today.plusDays(1).toString(), "M")).andExpect(status().isBadRequest());
+        Map<String, Object> tooTall = joinBody(code, "아빠", "1986-01-01", "M");
+        tooTall.put("heightCm", 300);
+        claim(dad, tooTall).andExpect(status().isBadRequest());
+
+        assertThat(count("select count(*) from profiles where user_id = ?", dad.userId()))
+                .isZero();
+        assertThat(jdbc.queryForMap("select claimed_at from family_invites where code = ?", code)
+                        .get("claimed_at"))
+                .isNull();
+        claim(dad, joinBody(code, "아빠", "1986-01-01", "M")).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PARENT 초대에 만 14세 미만 생년월일이면 422 UNDER_14_NOT_ALLOWED 이고, CHILD 초대는 만 14세 이상도 들어온다")
+    void PARENT_초대에_만_14세_미만이면_422() throws Exception {
+        Home home = home();
+        String parentCode = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        String childCode = codeOf(createInvite(home.owner(), home.familyId(), "CHILD", consent(true, true)));
+        Session teen = devLogin();
+
+        claim(teen, joinBody(parentCode, "형", today.minusYears(13).toString(), "M"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("UNDER_14_NOT_ALLOWED"));
+        assertThat(jdbc.queryForMap("select claimed_at from family_invites where code = ?", parentCode)
+                        .get("claimed_at"))
+                .isNull();
+
+        JsonNode joined =
+                read(claim(teen, joinBody(childCode, "형", today.minusYears(15).toString(), "M"))
+                        .andExpect(status().isOk()));
+        assertThat(joined.get("role").asString()).isEqualTo("CHILD");
+    }
+
+    @Test
+    @DisplayName(
+            "가족 초대코드 판정 차례는 자리 초대코드와 같다: 만료 410, 같은 가족 409 ALREADY_MEMBER, 다른 가족 409 ALREADY_IN_FAMILY, 그 뒤에 정보 400")
+    void 가족_초대코드_판정_차례() throws Exception {
+        Home home = home();
+        String code = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        String expired = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        jdbc.update(
+                "update family_invites set expires_at = ? where code = ?",
+                OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1),
+                expired);
+        Session kid = childAccount(home);
+        Session otherOwner = home().owner();
+        Session fresh = devLogin();
+
+        // 정보가 빠졌어도 코드와 계정 판정이 먼저다
+        claim(fresh, Map.of("claimCode", expired))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error.code").value("CODE_EXPIRED"));
+        claim(fresh, joinBody(expired, "아빠", "1986-01-01", "M"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error.code").value("CODE_EXPIRED"));
+        claim(home.owner(), Map.of("claimCode", code))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_MEMBER"));
+        claim(kid, joinBody(code, "첫째", "1986-01-01", "M"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_MEMBER"));
+        claim(otherOwner, joinBody(code, "엄마", "1988-03-01", "F"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_IN_FAMILY"));
+        claim(fresh, Map.of("claimCode", code))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        claim(fresh, Map.of("claimCode", "ZZZZZZ"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CODE_NOT_FOUND"));
+
+        assertThat(count("select count(*) from profiles where family_id = ?", UUID.fromString(home.familyId())))
+                .isEqualTo(2);
+        claim(fresh, joinBody(code, "아빠", "1986-01-01", "M")).andExpect(status().isOk());
+        claim(devLogin(), joinBody(code, "삼촌", "1990-01-01", "M"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+    }
+
+    @Test
+    @DisplayName("자리 초대코드는 지금처럼 코드만 받고, 함께 온 이름과 생년월일은 쓰지 않는다")
+    void 자리_초대코드는_정보를_쓰지_않는다() throws Exception {
+        Home home = home();
+        Session dad = parentAccount(home, "아빠");
+
+        JsonNode me = read(mvc.perform(auth(get("/api/v1/me"), dad)).andExpect(status().isOk()));
+
+        assertThat(me.get("profiles").get(0).get("name").asString()).isEqualTo("아빠");
+        Map<String, Object> member = new LinkedHashMap<>();
+        member.put("name", "둘째");
+        member.put("birthDate", today.minusYears(9).toString());
+        member.put("sex", "F");
+        member.put("role", "CHILD");
+        member.put("guardianConsent", consent(true, true));
+        String seatId = read(mvc.perform(json(
+                                auth(post("/api/v1/families/" + home.familyId() + "/profiles"), home.owner()), member))
+                        .andExpect(status().isCreated()))
+                .get("profileId")
+                .asString();
+        String seatCode = read(mvc.perform(auth(post("/api/v1/profiles/" + seatId + "/invite"), home.owner())))
+                .get("claimCode")
+                .asString();
+        Session second = devLogin();
+        JsonNode claimed = read(
+                claim(second, joinBody(seatCode, "다른 이름", "2000-01-01", "M")).andExpect(status().isOk()));
+        assertThat(claimed.get("profileId").asString()).isEqualTo(seatId);
+        JsonNode self = read(mvc.perform(auth(get("/api/v1/me"), second)))
+                .get("profiles")
+                .get(0);
+        assertThat(self.get("name").asString()).isEqualTo("둘째");
+        assertThat(self.get("sex").asString()).isEqualTo("F");
+    }
+
     // ===== 도우미 =====
 
     private Session devLogin() throws Exception {
@@ -440,6 +693,26 @@ class FamilyInviteApiTest {
 
     private String codeOf(ResultActions created) throws Exception {
         return read(created.andExpect(status().isCreated())).get("code").asString();
+    }
+
+    private ResultActions claim(Session session, Map<String, Object> body) throws Exception {
+        return mvc.perform(json(auth(post("/api/v1/profiles/claim"), session), body));
+    }
+
+    /** 가족 초대코드로 들어올 때의 본문. 키와 몸무게는 뺀다. */
+    private static Map<String, Object> joinBody(String code, String name, String birthDate, String sex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("claimCode", code);
+        body.put("name", name);
+        body.put("birthDate", birthDate);
+        body.put("sex", sex);
+        return body;
+    }
+
+    private static Map<String, Object> without(Map<String, Object> body, String key) {
+        Map<String, Object> copy = new LinkedHashMap<>(body);
+        copy.remove(key);
+        return copy;
     }
 
     private ResultActions preview(Session session, String code) throws Exception {

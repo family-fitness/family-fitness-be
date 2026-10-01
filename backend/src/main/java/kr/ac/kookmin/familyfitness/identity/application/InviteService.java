@@ -11,6 +11,7 @@ import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCodeNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyInvite;
+import kr.ac.kookmin.familyfitness.identity.domain.NewMember;
 import kr.ac.kookmin.familyfitness.identity.domain.Profile;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -99,16 +100,26 @@ public class InviteService {
                 invite.code().expiresAt());
     }
 
+    /** 자리 초대코드만 쓰는 곳(가족 초대코드면 400 BAD_REQUEST). {@link #claim(UUID, String, NewMember)} 와 같다. */
+    public ClaimResult claim(UUID userId, String rawCode) {
+        return claim(userId, rawCode, null);
+    }
+
     /**
      * 판정 순서: 시도 초과 429 → 없음 404 → 이미 사용 409 → 만료 410 → 이 가족 구성원 409 → 다른 가족 409 ALREADY_IN_FAMILY.
+     * 가족 초대코드는 그 뒤에 정보 없음 400 BAD_REQUEST, PARENT 초대인데 만 14세 미만 422 UNDER_14_NOT_ALLOWED 가 붙는다.
      * 사전 검사를 함께 지나친 동시 요청은 profiles.user_id 유니크 인덱스가 막고 저장소가 ALREADY_IN_FAMILY 로 바꾼다.
+     *
+     * @param member 가족 초대코드로 들어온 사람이 넣은 정보. 자리 초대코드는 보지 않는다
      */
-    public ClaimResult claim(UUID userId, String rawCode) {
-        Seat seat =
-                switch (find(userId, rawCode)) {
-                    case Seat it -> it;
-                    case FamilyCode it -> throw new ClaimCodeNotFoundException("가족 초대코드로 들어오기는 아직 없습니다");
-                };
+    public ClaimResult claim(UUID userId, String rawCode, @Nullable NewMember member) {
+        return switch (find(userId, rawCode)) {
+            case Seat seat -> claimSeat(userId, seat);
+            case FamilyCode familyCode -> join(userId, familyCode, member);
+        };
+    }
+
+    private ClaimResult claimSeat(UUID userId, Seat seat) {
         Family family = seat.family();
         Profile profile = seat.profile();
         Instant now = clock.now();
@@ -117,6 +128,28 @@ public class InviteService {
         if (!families.attachUserIfUnclaimed(profile.getId(), userId, now)) {
             throw new AlreadyClaimedException("다른 계정이 먼저 사용했습니다");
         }
+        return resultOf(family, profile);
+    }
+
+    /**
+     * 가족 초대코드로 들어온다. 판정은 도메인({@link Family#join})이 하고, 초대를 쓴 표시는 조건부 UPDATE 한 문장이다. 같은 코드를
+     * 함께 쓴 두 요청 가운데 늦은 쪽은 0행이라 409 ALREADY_CLAIMED 다. 프로필 저장이 실패하면 쓴 표시도 함께 되돌아간다.
+     */
+    private ClaimResult join(UUID userId, FamilyCode target, @Nullable NewMember member) {
+        Family family = target.family();
+        FamilyInvite invite = target.invite();
+        Instant now = clock.now();
+        Profile profile =
+                family.join(invite, userId, !families.profilesOfUser(userId).isEmpty(), member, now, clock.today());
+        if (!familyInvites.markClaimedIfUnclaimed(invite.code().code(), userId, now)) {
+            throw new AlreadyClaimedException("다른 계정이 먼저 사용했습니다");
+        }
+        families.save(family);
+        return resultOf(family, profile);
+    }
+
+    /** 보호자는 참여 방식을 고르러(SUPPORT_MODE), 아이는 홈으로 간다. */
+    private static ClaimResult resultOf(Family family, Profile profile) {
         NextStep nextStep = profile.getRole() == ProfileRole.PARENT ? NextStep.SUPPORT_MODE : NextStep.HOME;
         return new ClaimResult(profile.getId(), family.getId(), profile.getRole(), nextStep);
     }

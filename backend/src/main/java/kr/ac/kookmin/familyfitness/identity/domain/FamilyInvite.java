@@ -7,7 +7,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * 가족 초대(초대 먼저). 보호자가 역할만 정해 낸 코드이고({@link Family#issueFamilyInvite}), 이름과 생년월일은 코드로 들어온
- * 사람이 넣는다.
+ * 사람이 넣는다({@link Family#join}).
  * 보호자가 정보를 먼저 넣어 만든 자리의 초대코드({@link Profile#getClaimCode})와 모양과 만료가 같다. 한 번만 쓴다.
  *
  * @param guardianConsent CHILD 초대를 만들 때 보호자가 보낸 동의. 늘 둘 다 true 다. PARENT 초대는 null

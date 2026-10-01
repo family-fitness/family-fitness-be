@@ -59,6 +59,11 @@ public class FamilyInviteRepositoryAdapter implements FamilyInviteRepository {
     }
 
     @Override
+    public boolean markClaimedIfUnclaimed(String code, UUID userId, Instant at) {
+        return rows.markClaimedIfUnclaimed(code, userId, at) == 1;
+    }
+
+    @Override
     public boolean deleteUnclaimed(UUID familyId, String code) {
         return rows.deleteUnclaimed(familyId, code) > 0;
     }

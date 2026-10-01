@@ -40,6 +40,25 @@ class InMemoryFamilyInviteRepository implements FamilyInviteRepository {
     }
 
     @Override
+    public boolean markClaimedIfUnclaimed(String code, UUID userId, Instant at) {
+        FamilyInvite invite = invites.get(code);
+        if (invite == null || invite.isClaimed()) return false;
+        invites.put(
+                code,
+                new FamilyInvite(
+                        invite.code(),
+                        invite.familyId(),
+                        invite.role(),
+                        invite.guardianConsent(),
+                        invite.consentByUserId(),
+                        invite.issuedByProfileId(),
+                        invite.createdAt(),
+                        at,
+                        userId));
+        return true;
+    }
+
+    @Override
     public boolean deleteUnclaimed(UUID familyId, String code) {
         FamilyInvite invite = invites.get(code);
         if (invite == null || !invite.familyId().equals(familyId) || invite.isClaimed()) return false;
