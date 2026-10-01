@@ -41,11 +41,16 @@ public class CoachingErasureAdapter implements CoachingErasureRepository {
 
     @Override
     public void leaveMissions(UUID profileId, UUID heirProfileId) {
+        dropParticipation(profileId);
+        rows.handOverConfirmations(profileId, heirProfileId);
+        rows.handOverMissions(profileId, heirProfileId);
+    }
+
+    @Override
+    public void dropParticipation(UUID profileId) {
         rows.deleteFeedbackOf(profileId);
         rows.deleteCompletionsOf(profileId);
         rows.deleteParticipantRowsOf(profileId);
-        rows.handOverConfirmations(profileId, heirProfileId);
-        rows.handOverMissions(profileId, heirProfileId);
     }
 
     @Override
@@ -57,6 +62,11 @@ public class CoachingErasureAdapter implements CoachingErasureRepository {
     public void forgetInRuns(UUID familyId, UUID profileId, UUID heirProfileId) {
         rows.forgetRequester(profileId);
         rows.handOverApprovals(profileId, heirProfileId);
+        dropFromProposals(familyId, profileId);
+    }
+
+    @Override
+    public void dropFromProposals(UUID familyId, UUID profileId) {
         for (CoachRunProposalItemEntity item : rows.findProposalItemsOfFamily(familyId)) {
             List<ProposalParticipant> participants = jsonMapper.readValue(item.getParticipantsJson(), PARTICIPANTS);
             List<ProposalParticipant> kept = participants.stream()

@@ -107,7 +107,7 @@ public class AccountDeletionService {
             erasure.forgetConsentActor(account);
             erasure.forgetInviteClaimer(account);
         }
-        forgetDeletedMissionsOnCheers(family.getId());
+        DeletedMissionsOnCheers.forget(erasure, missions, family.getId());
     }
 
     private void eraseFamily(Family family) {
@@ -115,16 +115,6 @@ public class AccountDeletionService {
                 family.getProfiles().stream().map(Profile::getId).toList();
         events.publishEvent(new FamilyDeleting(family.getId(), profileIds));
         erasure.eraseFamily(family.getId(), profileIds);
-    }
-
-    /**
-     * 남는 응원의 missionId 가 지운 미션을 가리키면 비운다. coaching 이 그 사람만 참여한 미션을 통째로 지웠을 수 있다. 미션 표는
-     * coaching 것이라 미션이 남아 있는지는 {@link MissionLookup} 으로 묻는다.
-     */
-    private void forgetDeletedMissionsOnCheers(UUID familyId) {
-        for (UUID missionId : erasure.missionsOnCheers(familyId)) {
-            if (!missions.isFamilyMission(familyId, missionId)) erasure.forgetMissionOnCheers(familyId, missionId);
-        }
     }
 
     /** 커밋된 뒤에 돌린다. 되돌린 탈퇴의 계정을 심사용 계정 후보에서 빼지 않게. 트랜잭션 밖이면 곧바로. */

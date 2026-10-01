@@ -24,6 +24,11 @@ public class ActivityErasureAdapter implements ActivityErasureRepository {
     }
 
     @Override
+    public void eraseRecords(UUID profileId) {
+        rows.deleteDaily(List.of(profileId));
+    }
+
+    @Override
     public void eraseFamily(UUID familyId, Collection<UUID> profileIds) {
         if (!profileIds.isEmpty()) rows.deleteDaily(profileIds);
         rows.deleteRestCards(familyId);

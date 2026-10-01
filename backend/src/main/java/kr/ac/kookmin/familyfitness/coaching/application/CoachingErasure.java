@@ -6,6 +6,7 @@ import kr.ac.kookmin.familyfitness.coaching.api.MissionsErased;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachingErasureRepository;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyDeleting;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDeleting;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileRecordsDeleting;
 import kr.ac.kookmin.familyfitness.progress.api.DeletedMissions;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
@@ -13,7 +14,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 탈퇴와 구성원 내보내기 때 미션, 편성, 대화, 찜을 정리한다. identity 가 지우는 트랜잭션 안에서 동기로 듣는다(차례는
+ * 탈퇴, 구성원 내보내기, 동의 철회 때 미션, 편성, 대화, 찜을 정리한다. identity 가 지우는 트랜잭션 안에서 동기로 듣는다(차례는
  * {@link ProfileDeleting} 설명). 한 사람이 빠질 때의 차례(미션 지우기 {@link MissionDeletionService} 와 같이 자식 행부터):
  * <ol>
  *   <li>참여자가 그 사람뿐인 미션은 통째로 지운다(느낌, 칸 끝, 참여자, 칸, 미션)
@@ -48,6 +49,26 @@ public class CoachingErasure {
         rows.leaveMissions(profileId, heir);
         rows.deleteRunsAbout(profileId);
         rows.forgetInRuns(deleting.familyId(), profileId, heir);
+        rows.erasePersonal(List.of(profileId));
+        if (solo.isEmpty()) return;
+        deletedMissions.forget(solo);
+        events.publishEvent(new MissionsErased(deleting.familyId(), solo));
+    }
+
+    /**
+     * 동의 철회. 프로필은 남는다. 위와 같은 차례로 그 사람만 참여한 미션은 통째로, 여럿이 하는 미션은 그 사람 몫만 지우고, 그 사람을
+     * 대상으로 짠 편성과 제안을 지운다. 그 사람의 코치 대화와 인용, 영상 기록, 구간 찜도 지운다. 아이 프로필만 오므로 미션을 만든
+     * 사람, 참여자를 확인한 사람, 편성을 요청하거나 승인한 사람처럼 보호자만 하는 일을 적은 칸은 돌릴 것이 없다.
+     */
+    @EventListener
+    @Order(30)
+    public void on(ProfileRecordsDeleting deleting) {
+        UUID profileId = deleting.profileId();
+        List<UUID> solo = rows.soloMissionsOf(deleting.familyId(), profileId);
+        rows.deleteMissions(solo);
+        rows.dropParticipation(profileId);
+        rows.deleteRunsAbout(profileId);
+        rows.dropFromProposals(deleting.familyId(), profileId);
         rows.erasePersonal(List.of(profileId));
         if (solo.isEmpty()) return;
         deletedMissions.forget(solo);

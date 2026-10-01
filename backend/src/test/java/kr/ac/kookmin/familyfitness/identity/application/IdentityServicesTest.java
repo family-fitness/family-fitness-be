@@ -3,6 +3,9 @@ package kr.ac.kookmin.familyfitness.identity.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -25,7 +28,9 @@ import kr.ac.kookmin.familyfitness.identity.api.NotAParentException;
 import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileNotFoundException;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileRecordsDeleting;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.identity.application.port.IdentityErasureRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyClaimedException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyMemberException;
@@ -83,14 +88,17 @@ class IdentityServicesTest {
     private final InviteCodes inviteCodes = new InviteCodes(families, familyInvites);
     private final InviteService inviteService =
             new InviteService(families, familyInvites, inviteCodes, props, identityClock, claimAttempts);
-    private final ProfileSettingsService settingsService =
-            new ProfileSettingsService(families, summaries, identityClock);
     /** 미션 id → 가족 id. coaching 이 구현하는 {@link MissionLookup} 의 가짜. */
     private final Map<UUID, UUID> missionFamilies = new HashMap<>();
 
     private final MissionLookup missionLookup =
             (familyId, missionId) -> familyId.equals(missionFamilies.get(missionId));
     private final List<Object> published = new ArrayList<>();
+    /** 동의를 거둘 때 identity 가 지우는 표. 지우는 쿼리는 실제 DB 시험(ConsentWithdrawalApiTestBase)이 본다. */
+    private final IdentityErasureRepository erasure = mock(IdentityErasureRepository.class);
+
+    private final ProfileSettingsService settingsService = new ProfileSettingsService(
+            families, summaries, identityClock, new ProfileRecordsEraser(erasure, missionLookup, published::add));
     private final CheerService cheerService =
             new CheerService(families, cheers, missionLookup, published::add, identityClock);
 
@@ -695,6 +703,26 @@ class IdentityServicesTest {
                             tuple(ConsentEvent.Kind.GRANTED, grantedAt),
                             tuple(ConsentEvent.Kind.REVOKED, grantedAt.plusSeconds(60)),
                             tuple(ConsentEvent.Kind.GRANTED, grantedAt.plusSeconds(120)));
+        }
+
+        @Test
+        @DisplayName("동의를 거두면 그 아이의 기록을 지우라는 이벤트를 내고 응원과 운동할 수 있는 시간을 지운다. 다시 동의할 때는 지우지 않는다")
+        void 동의를_거두면_그_아이의_기록을_지운다() {
+            CreatedFamily family = createFamily();
+            ProfileSummary child = addChild(family.familyId());
+            UUID cheer = UUID.randomUUID();
+            when(erasure.cheersOf(child.profileId())).thenReturn(List.of(cheer));
+
+            settingsService.updateConsent(parentUser, child.profileId(), new GuardianConsent(false, true));
+
+            assertThat(published)
+                    .containsExactly(new ProfileRecordsDeleting(family.familyId(), child.profileId(), List.of(cheer)));
+            verify(erasure).eraseRecords(child.profileId(), List.of(cheer));
+
+            published.clear();
+            settingsService.updateConsent(parentUser, child.profileId(), new GuardianConsent(true, true));
+
+            assertThat(published).isEmpty();
         }
 
         @Test

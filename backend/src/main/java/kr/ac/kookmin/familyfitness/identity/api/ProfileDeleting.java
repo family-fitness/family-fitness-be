@@ -5,7 +5,8 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
- * 가족에서 프로필 하나를 지우기 바로 전이다(오너가 아닌 사람의 탈퇴, 오너의 구성원 내보내기). 가족은 남는다.
+ * 가족에서 프로필 하나를 지우기 바로 전이다(오너가 아닌 사람의 탈퇴, 오너의 구성원 내보내기). 가족은 남는다. 프로필은 남기고 기록만
+ * 지울 때(동의 철회)는 {@link ProfileRecordsDeleting} 을 낸다.
  *
  * <p>identity 가 지우는 트랜잭션 안에서 발행하고, 아래 모듈이 같은 트랜잭션에서 동기로 듣고 자기 표의 행을 먼저 지운다. 외래 키에
  * ON DELETE CASCADE 가 없어서, 이 사람을 가리키는 행이 남아 있으면 identity 가 프로필 행을 지울 때 실패한다. 듣는 쪽이 하나라도

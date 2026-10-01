@@ -12,18 +12,24 @@ import kr.ac.kookmin.familyfitness.shared.domain.SupportMode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 참여 수준(PARENT 본인 프로필) · 보호자 동의(가족의 PARENT, 자기 프로필 제외) · 이름 · 생년월일 · 성별 고치기(가족의 PARENT). */
+/**
+ * 참여 수준(PARENT 본인 프로필) · 보호자 동의(가족의 PARENT, 자기 프로필 제외) · 이름 · 생년월일 · 성별 고치기(가족의 PARENT).
+ * 보호자 동의를 거두면 같은 트랜잭션에서 그 아이의 기록을 지운다({@link ProfileRecordsEraser}).
+ */
 @Service
 @Transactional
 public class ProfileSettingsService {
     private final FamilyRepository families;
     private final ProfileSummaries summaries;
     private final IdentityClock clock;
+    private final ProfileRecordsEraser records;
 
-    public ProfileSettingsService(FamilyRepository families, ProfileSummaries summaries, IdentityClock clock) {
+    public ProfileSettingsService(
+            FamilyRepository families, ProfileSummaries summaries, IdentityClock clock, ProfileRecordsEraser records) {
         this.families = families;
         this.summaries = summaries;
         this.clock = clock;
+        this.records = records;
     }
 
     public ProfileSummary changeSupportMode(UUID userId, UUID profileId, SupportMode mode) {
@@ -33,11 +39,17 @@ public class ProfileSettingsService {
         return summaries.summary(profile);
     }
 
-    /** 바꿀 때마다 동의 이력(consent_events)에 한 줄 남는다 — 저장소가 가족을 저장할 때 같이 넣는다. */
+    /**
+     * 바꿀 때마다 동의 이력(consent_events)에 한 줄 남는다. 저장소가 가족을 저장할 때 같이 넣는다. 거두면(하나라도 false) 같은
+     * 트랜잭션에서 그 아이의 측정, 운동 기록 같은 기록을 지운다({@link ProfileRecordsEraser}). 개인정보 동의만 거둬도 같다. 그 아이를
+     * 처리할 근거가 없어지고, 거둔 채인 프로필은 어느 기록도 새로 쌓지 못해서다. 프로필(이름, 생년월일, 성별, 가족)과 동의 이력은
+     * 남는다. 이미 거둔 채로 다시 거둬도 같은 일을 한다.
+     */
     public ConsentState updateConsent(UUID userId, UUID profileId, GuardianConsent decision) {
         Family family = load(profileId);
         Profile profile = family.updateConsent(userId, profileId, decision, clock.now(), clock.today());
         families.save(family);
+        if (!decision.isComplete()) records.erase(family.getId(), profileId);
         boolean given = profile.getConsent().isGiven();
         return new ConsentState(
                 profile.consentGiven(clock.today()),

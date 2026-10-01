@@ -237,7 +237,7 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
     }
 
     /**
-     * 생성 뒤 바뀔 수 있는 값만 덮어쓴다. 계정 연결(user_id)은 조건부 UPDATE 로만 바꾼다.
+     * 생성 뒤 바뀔 수 있는 값만 덮어쓴다. 키와 몸무게는 동의를 거둘 때만 비워진다. 계정 연결(user_id)은 조건부 UPDATE 로만 바꾼다.
      * Hibernate 는 바뀐 행의 모든 칸을 다시 쓰므로(user_id 포함) 옛 상태로 덮는 것은 행 버전({@link ProfileEntity} @Version)이 막는다.
      */
     private static void applyChanges(ProfileEntity entity, Profile profile, Instant now) {
@@ -245,6 +245,8 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
         entity.setDisplayName(profile.getDisplayName());
         entity.setBirthDate(profile.getBirthDate());
         entity.setSex(profile.getSex().name());
+        entity.setHeightCm(profile.getHeightCm());
+        entity.setWeightKg(profile.getWeightKg());
         entity.setSupportMode(
                 profile.getSupportMode() == null
                         ? null

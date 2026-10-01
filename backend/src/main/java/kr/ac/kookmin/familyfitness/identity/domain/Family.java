@@ -306,6 +306,7 @@ public class Family {
     /**
      * 동의 변경 — 이 가족의 PARENT 만, 대상은 CHILD 만. 판정 순서: 구성원 · 보호자 → 대상 있음 → 자기 프로필 아님 → 대상이 CHILD
      * → 행위자 만 14세 이상. 부여든 철회든 한 번에 이력 한 줄을 남긴다. 재동의는 지금 상태의 철회 시각을 걷지만 이력의 철회 줄은 그대로다.
+     * 철회하면 프로필에 적어 둔 키와 몸무게도 비운다. 그 아이의 다른 기록은 서비스가 같은 트랜잭션에서 지운다.
      */
     public Profile updateConsent(
             UUID actorUserId, UUID profileId, GuardianConsent decision, Instant at, LocalDate today) {
