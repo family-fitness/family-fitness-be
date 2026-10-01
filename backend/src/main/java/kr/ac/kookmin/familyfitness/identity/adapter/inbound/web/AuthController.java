@@ -1,10 +1,12 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 
 import jakarta.validation.Valid;
+import kr.ac.kookmin.familyfitness.identity.application.AccountDeletionService;
 import kr.ac.kookmin.familyfitness.identity.application.AuthService;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,9 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class AuthController {
     private final AuthService auth;
+    private final AccountDeletionService deletion;
 
-    public AuthController(AuthService auth) {
+    public AuthController(AuthService auth, AccountDeletionService deletion) {
         this.auth = auth;
+        this.deletion = deletion;
     }
 
     @PostMapping("/auth/google")
@@ -44,8 +48,19 @@ public class AuthController {
         auth.logout(request == null ? null : request.refreshToken());
     }
 
+    /** 탈퇴한 계정의 토큰이면 401 UNAUTHORIZED. */
     @GetMapping("/me")
     public MeResponse me(CurrentUser user) {
-        return MeResponse.of(auth.session(user.userId()));
+        return MeResponse.of(auth.me(user.userId()));
+    }
+
+    /**
+     * 탈퇴. 계정과 그 계정에 붙은 프로필, 그 사람의 기록, 리프레시 토큰 기록을 지운다. 오너가 혼자 남았으면 가족까지 지우고, 다른
+     * 프로필이 남아 있으면 409 FAMILY_NOT_EMPTY 이고 아무것도 지우지 않는다. 이미 탈퇴한 계정의 토큰이면 401 UNAUTHORIZED.
+     */
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void withdraw(CurrentUser user) {
+        deletion.withdraw(user.userId());
     }
 }
