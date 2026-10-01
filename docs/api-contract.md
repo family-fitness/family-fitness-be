@@ -9,7 +9,7 @@
 ## 0. 전 API 공통
 
 - 기준 경로 `/api/v1`. 성공은 payload 그대로(봉투 없음).
-  - 본문 없는 성공(204)은 넷이다: `POST /auth/logout` · `DELETE /missions/{missionId}` · `POST /missions/{missionId}/feedback` · `POST /notifications/read`.
+  - 본문 없는 성공(204)은 여섯이다: `POST /auth/logout`, `DELETE /me`, `DELETE /families/{familyId}/profiles/{profileId}`, `DELETE /missions/{missionId}`, `POST /missions/{missionId}/feedback`, `POST /notifications/read`.
 - 실패는 한 형태: `{"error": {"code": "RUN_IN_PROGRESS", "message": "…"}}`. 화면은 `code` 로 가르고 `message` 는 그대로 띄우지 않는다.
   - 도메인 예외뿐 아니라 Spring MVC 표준 예외(405 · 406 · 413 · 415 등)와 `/error` 경로(필터 예외 · 방화벽 거절)도 같은 봉투다. 405 에는 `Allow` 헤더가 붙는다.
   - 오류 응답의 Content-Type 은 `Accept` 와 상관없이 `application/json` 이다.
@@ -34,6 +34,7 @@
 | 토큰 없이 | 공개 경로 | — |
 | 로그인 | 유효한 액세스 토큰 | 401 `UNAUTHORIZED` |
 | 같은 가족 | 호출 계정에 그 가족(또는 대상 프로필의 가족) 프로필이 붙어 있다 | 403 `NOT_SAME_FAMILY` |
+| 오너 | 같은 가족이고, 붙은 프로필이 가족을 만든 보호자다(`ProfileSummary.isOwner`) | 403 `NOT_SAME_FAMILY`, 403 `NOT_FAMILY_OWNER` |
 | 보호자 | 같은 가족이고, 붙은 프로필이 PARENT 다 | 403 `NOT_SAME_FAMILY` · 403 `NOT_A_PARENT` |
 | 자기 프로필 | 대상 프로필이 호출 계정에 붙어 있다 | 403 `FORBIDDEN` |
 | 대신 | 자기 프로필이거나, 같은 가족 보호자가 **계정 없는 아이** 프로필을 대신한다(`Family.canActAs`). 계정 있는 아이 · 계정 없는 부모 자리는 대신하지 않는다 | 403 `NOT_SAME_FAMILY` · 403 `FORBIDDEN` |
@@ -85,11 +86,12 @@
 | 400 | `NO_ITEMS` · `ITEM_NOT_ALLOWED` · `UNKNOWN_ITEM` · `ITEM_OUT_OF_RANGE` | 측정 등록 — 항목 0개 · 혈압(005 · 006) · 모르는 코드 · `range` 밖 값 |
 | 400 | `INVALID_SLOT` | 운동할 수 있는 시간 바꾸기 — 칸 값 규칙 위반 |
 | 400 | `PROFILE_REQUIRED` | 운동 구간 찜 · 찜 목록에 `profileId` 가 없음 |
-| 401 | `UNAUTHORIZED` | 토큰 없음 · 만료 · 서명 불일치 |
+| 401 | `UNAUTHORIZED` | 토큰 없음, 만료, 서명 불일치. 탈퇴한 계정의 토큰으로 `/me`(GET, DELETE), 가족 만들기, 초대코드 쓰기를 부름 |
 | 401 | `INVALID_REFRESH_TOKEN` | `auth/refresh` — 검증 실패 · 기록 없음 · 이미 폐기(재사용) · 계정이 ACTIVE 아님 |
 | 401 | `GOOGLE_AUTH_FAILED` | `auth/google` |
 | 403 | `NOT_SAME_FAMILY` | 다른 가족의 리소스 |
 | 403 | `NOT_A_PARENT` | 보호자 전용 주소를 아이 계정이 부름. 아이가 칭찬(PRAISE)을 보냄. 아이 계정이 캘린더에서 남의 기록을 봄 |
+| 403 | `NOT_FAMILY_OWNER` | 구성원 내보내기를 오너가 아닌 구성원(다른 보호자, 아이 계정)이 부름 |
 | 403 | `NOT_A_PARTICIPANT` | 미션 참여자가 아님 |
 | 403 | `FORBIDDEN` | 대신할 수 없는 프로필(응원 `fromProfileId` · 칸 끝 · 느낌 · 알림함 · 옛 타이머 · 걸음수 · 영상 진행 · 코치 대화), 자기 프로필이 아님(참여 방식), 계정이 붙은 다른 사람 프로필 고치기, 다른 프로필의 대화, Spring Security 거절 |
 | 403 | `SELF_CONSENT` | 자기 프로필의 동의를 바꿈 |
@@ -106,6 +108,8 @@
 | 409 | `PROPOSAL_EXPIRED` | 승인할 제안 항목의 기간이 전부 지남 |
 | 409 | `MISSION_ENDED` · `MISSION_ALREADY_STARTED` | 미션 지우기 — 기간이 끝남 · 누가 칸을 끝냈거나 완료됨 |
 | 409 | `ALREADY_THANKED` | 같은 칭찬 스티커에 고마워요를 두 번 |
+| 409 | `FAMILY_NOT_EMPTY` | 탈퇴: 오너인데 가족에 다른 프로필(계정 없는 아이 포함)이 남아 있음. 아무것도 지우지 않는다 |
+| 409 | `CANNOT_REMOVE_SELF` | 구성원 내보내기: 오너가 자기 프로필을 내보내려 함. 오너는 탈퇴로 나간다 |
 | 409 | `ALREADY_REST_DAY` · `NO_REST_CARD_LEFT` | 쉬는 날 카드 — 이미 쉬는 날 · 이달 카드 두 장을 다 씀 |
 | 409 | `LEAGUE_BUSY` | 리그 방 배정이 다섯 번 연달아 겹침. 다시 부르면 된다 |
 | 410 | `CODE_EXPIRED` | 초대코드 기한 지남 |
@@ -129,7 +133,7 @@
 
 ### 구현 상태 (2026-09-29 · `feature/BE-35-launch-readiness`)
 
-- 경로 46개, 메서드까지 세면 53개(아래 「주소 목록」). 전환기 별칭(경로 5개 · 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local · compose · test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local · compose · prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜 · 그날 포함)이 지나면 404 `NOT_FOUND` 다.
+- 경로 48개, 메서드까지 세면 57개(아래 「주소 목록」). 전환기 별칭(경로 5개, 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local, compose, test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local, compose, prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜, 그날 포함)이 지나면 404 `NOT_FOUND` 다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).
@@ -139,6 +143,7 @@
   - 5차(PR #27~#29): 미션 지난 날짜 막기 · 지우기 · 여러 날 한 번에 · 운동 느낌. 가족 캘린더. notification 모듈(알림함).
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
   - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 공단 영상을 AI 새 표 776편으로 고침 — 질환자용 근골격계운동 114편 끔 · 제목 끝 「-1」 「-2」 뗌(`V162`) · 다시 AI 새 표 732편으로 고침 — 오십견 · 요통 같은 질환용 영상 44편 끔 · 요인이 비었던 131편에 요인(`V163`) · 다시 AI 새 표 452편으로 고침 — 기준표에서 빠진 어르신 · 헬스장 · 수영장 · 기구 · 둘 이상 영상 280편 끔, 어르신은 성인(공통) 영상을 받음(`V164`) · AI 담당자 코드의 한 파일 표(910줄)로 다시 실음 — 「공통」 영상을 청소년에게도, 요인 · 단계가 둘인 영상은 줄마다 후보로, 인용 이름은 AI 표 값(`V165`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP(IPv6 /56)마다 한 시간 30번 · 새 계정은 모두 합쳐 한 시간 300개 뒤로는 그 IP 가 만든 계정으로 들임, prod 는 X-Forwarded-For 를 읽음) · 심사용 계정 로그인 본문 `{kind}` — `FAMILY`(기본, 체험 가족) · `FRESH`(가족 없는 새 계정) · `INVITED`(체험 가족 아빠 자리 초대코드를 응답 `inviteCode` 로), 한도가 찬 뒤 다시 내주는 계정은 같은 kind 만.
+  - 탈퇴(BE-40): 계정 탈퇴 `DELETE /me`, 오너의 구성원 내보내기 `DELETE /families/{familyId}/profiles/{profileId}`, `ProfileSummary.isOwner`. 탈퇴한 계정의 토큰은 `/me` 에서 401 이다.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
@@ -148,7 +153,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 47개 · 메서드 55개)
+### 주소 목록 (경로 48개, 메서드 57개)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
@@ -159,8 +164,10 @@
 | identity | POST | `/auth/review-login` | 토큰 없이(local · compose · prod) | 200 |
 | (개발용) | GET · POST | `/dev/clock` | 로그인(local · compose) | 200 · 200 |
 | identity | GET | `/me` | 로그인 | 200 |
+| identity | DELETE | `/me` | 로그인 | 204 |
 | identity | POST | `/families` | 로그인 | 201 |
 | identity | POST · GET | `/families/{familyId}/profiles` | 보호자 · 같은 가족 | 201 · 200 |
+| identity | DELETE | `/families/{familyId}/profiles/{profileId}` | 오너 | 204 |
 | identity | PATCH | `/profiles/{profileId}` | 보호자(계정 없는 프로필 · 자기 프로필) | 200 |
 | identity | PATCH | `/profiles/{profileId}/support-mode` | 자기 프로필(PARENT) | 200 |
 | identity | PATCH | `/profiles/{profileId}/consent` | 보호자(자기 프로필 제외) | 200 |
@@ -249,12 +256,13 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 
 ### ProfileSummary (identity 가 내보내는 유일한 공개 언어)
 ```
-{profileId, familyId, name, role, ageGroup, sex, hasAccount, inviteStatus, supportMode|null, measurable, consentRequired, consentGiven}
+{profileId, familyId, name, role, ageGroup, sex, hasAccount, inviteStatus, supportMode|null, measurable, consentRequired, consentGiven, isOwner}
 ```
 - `sex` 는 `M` · `F`.
 - `consentRequired` = 만 14세 미만이거나, 동의를 거둔 채다. 거둔 동의는 만 14세가 지나도 풀리지 않고 보호자가 다시 동의해야 풀린다.
 - `consentGiven` = 동의가 필요 없거나(위가 false), personal · health 둘 다 동의했고 거두지 않았다.
 - `measurable` = 만 4세 이상 AND `consentGiven`.
+- `isOwner` = 가족을 만든 보호자다(`profiles.is_owner`). 가족마다 한 사람이고, 이 사람만 구성원을 내보낼 수 있다. 오너는 가족에 혼자 남아야 탈퇴할 수 있다.
 - 싣는 응답: 가족 구성원 목록 · `/me` · 로그인 · 리프레시 · 가족 만들기 · 구성원 추가 · 프로필 고치기 · 참여 방식 변경. `fitness-map` 의 `members[]` 도 같은 칸을 싣는다.
 - 다른 모듈은 `Profile` 엔티티를 받지 않는다. `profileId` 만 들고 다니고 `ProfileQuery` 로 `ProfileSummary`/`ProfileDetails` 를 조회한다. `@ManyToOne(Profile)` 은 identity 밖에서 금지.
 
@@ -406,6 +414,28 @@ local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보
 
 ### GET /api/v1/me — 로그인
 응답 200 `{userId, nextStep, profiles, selfProfileId|null}`. `nextStep` 은 1장 머리의 표대로다. 초대로 들어온 보호자가 참여 방식을 고르기 전에 앱을 닫았다 다시 열면 `SUPPORT_MODE` 다.
+탈퇴한 계정의 토큰이면 401 `UNAUTHORIZED` 다. 액세스 토큰은 탈퇴 뒤에도 만료까지 서명 검사를 지나므로, 계정이 남아 있는지 여기서 본다.
+
+### DELETE /api/v1/me (로그인)
+계정 탈퇴. 본문 없음. 응답 204(본문 없음).
+계정에 붙은 프로필에 따라 지우는 것이 다르다.
+
+| 계정 | 지우는 것 | 남는 것 |
+|---|---|---|
+| 프로필 없음(가족 없음) | 계정 | 없음 |
+| 오너가 아닌 프로필(다른 보호자, 아이 본인 계정) | 계정, 그 프로필, 그 사람의 기록 | 가족, 다른 식구와 그 기록 |
+| 오너, 가족에 혼자 | 계정, 프로필, 가족과 가족의 모든 기록(리그 참가 기록 포함) | 없음 |
+| 오너, 다른 프로필이 있음 | 아무것도 지우지 않는다(409 `FAMILY_NOT_EMPTY`) | 전부 |
+
+- 리프레시 토큰 기록도 지운다(모든 기기에서 로그아웃된다). 액세스 토큰은 상태 없는 JWT 라 만료(1시간)까지 서명 검사를 지난다. 그 토큰으로 `/me`(GET, DELETE), 가족 만들기, 초대코드 쓰기를 부르면 401 `UNAUTHORIZED` 다. 가족 주소는 가족이 남았으면 403 `NOT_SAME_FAMILY`, 가족이 지워졌으면 404 `FAMILY_NOT_FOUND` 다. 500 은 나지 않는다.
+- 그 사람의 기록: 하루 활동, 측정과 항목, 미션 참여와 칸 끝과 느낌, 코치 대화와 인용, 영상 기록, 구간 찜, 운동할 수 있는 시간, 동의 이력, 경험치 줄과 업적, 알림(받은 것, 그 사람에 관한 것, 그 사람이 보낸 것), 응원(보낸 것, 받은 것, 그 응원에 단 고마워요와 그 응원으로 만든 알림), 그 사람을 대상으로 짠 편성과 제안 항목, 제안 칸.
+- 그 사람만 참여한 미션은 통째로 지운다. 여럿이 하는 미션은 그 사람 몫만 지운다. 그 사람을 대상으로 짠 편성으로 만든 미션에 남는 사람(함께 한 보호자)이 있으면, 미션은 남기고 편성과의 연결만 끊어 직접 만든 미션(`origin` `MANUAL`, `coachRunId` null)이 된다.
+- 남는 가족이 계속 쓰는 기록에서 그 사람을 가리키던 칸은 오너 프로필로 돌린다: 미션을 만든 사람, 참여자를 확인한 사람, 쉬는 날 카드를 쓴 사람, 편성을 승인한 사람, 다른 식구의 운동할 수 있는 시간을 적은 사람, 초대코드를 보낸 사람. 편성을 요청한 사람 칸은 비운다. 제안 항목의 참여자 목록에서는 뺀다.
+- 그 사람이 아이에게 해 준 보호자 동의는 그대로 살아 있다. 누가 동의했는지 적은 계정 칸(`profiles.consent_by_user_id`, `consent_events.actor_user_id`)만 비운다.
+- 남는 사람의 경험치 합계, 레벨, 연속 기록, 업적은 바뀌지 않는다. 남는 사람의 경험치 줄은 지우지 않고, 보낸 사람 칸(`from_profile_id`)과 지운 미션 칸(`mission_id`)만 비운다. 응원의 `missionId` 가 지운 미션이면 null 로 바꾼다.
+- 경험치 원장(`V140`)과 동의 이력(`V145`)은 넣기만 하는 표지만, 탈퇴와 내보내기에서만 그 사람의 줄을 지운다. 개인정보처리방침이 「탈퇴하면 바로 지워요」 라고 약속해서다.
+- 한 트랜잭션이다. 외래 키에 ON DELETE CASCADE 가 없어서, identity 가 같은 트랜잭션의 동기 이벤트(`ProfileDeleting`, `FamilyDeleting`)를 내면 activity, fitness, coaching, progress, league, notification 차례로 자기 행을 먼저 지우고, 마지막에 identity 가 응원, 운동할 수 있는 시간, 동의 이력, 프로필, 가족, 리프레시 토큰, 계정을 지운다. 중간에 하나라도 실패하면 아무것도 지워지지 않는다(500 `INTERNAL_ERROR`).
+판정 차례: 401 `UNAUTHORIZED`(없는 계정, 이미 탈퇴함) → 409 `FAMILY_NOT_EMPTY`.
 
 ### POST /api/v1/families — 로그인
 요청 `{familyName●(1~20자), owner●: {name●(1~20), birthDate●, sex●}}`. `role` 없음 — 만든 사람은 항상 PARENT·owner.
@@ -424,6 +454,13 @@ local · compose 의 자동 로그인은 `X-Dev-User-Id: <userId>` 헤더를 보
 ### GET /api/v1/families/{familyId}/profiles — 같은 가족
 응답 200 `{familyId, familyName, profiles: ProfileSummary[]}`.
 오류: 404 `FAMILY_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
+
+### DELETE /api/v1/families/{familyId}/profiles/{profileId} (오너)
+구성원 내보내기. 본문 없음. 응답 204(본문 없음).
+- 그 프로필과 그 사람의 기록을 탈퇴(`DELETE /me`)와 같은 규칙으로 지운다. 가족과 다른 식구의 기록은 남는다.
+- 프로필에 계정이 붙어 있으면 계정은 남긴다. 그 계정은 가족 없는 계정이 되어 `/me` 의 `nextStep` 이 `CREATE_FAMILY`, `profiles` 가 `[]`, `selfProfileId` 가 null 이다. 리프레시 토큰도 그대로다.
+- 오너는 자기 프로필을 내보내지 못한다. 구성원을 모두 내보낸 뒤 탈퇴로 나간다.
+판정 차례: 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_FAMILY_OWNER`(오너가 아님, 아이 계정 포함) → 404 `PROFILE_NOT_FOUND`(이 가족의 프로필이 아님) → 409 `CANNOT_REMOVE_SELF`.
 
 ### PATCH /api/v1/profiles/{profileId} — 보호자(계정 없는 프로필 · 자기 프로필)
 요청 `{name?(1~20, 공백만은 안 됨), birthDate?, sex?}` — 빠진 칸은 그대로 둔다. 응답 200 ProfileSummary(고친 뒤 값).
@@ -966,7 +1003,8 @@ FE 화면 ↔ 주소 대응은 FE 요청서(`BACKEND_API.md`)가 원본이다. �
 - 앱 밖 푸시(웹 푸시) · 「오늘 아직 안 했어요」 같은 재촉 알림 · 리그 결과(티어가 바뀌었다) 알림.
 - 미션 고치기(PATCH) · 참여자 한 명 빼기 · 한 번에 등록한 묶음 지우기. 미션 만들기 멱등 키.
 - 운동 느낌 · 운동할 수 있는 시간을 다음 편성에 싣는 것(AI 계약이 먼저 필요).
-- 동의 이력 조회 · 만 14세 이상 본인 동의 절차 · 계정 탈퇴와 데이터 파기.
-- 가족 이름 바꾸기 · 리그용 별칭(지금은 가족 이름이 다른 집 순위표에 그대로 나간다) · 빈 가족에서 나가기.
+- 동의 이력 조회, 만 14세 이상 본인 동의 절차.
+- 가족 이름 바꾸기, 리그용 별칭(지금은 가족 이름이 다른 집 순위표에 그대로 나간다).
+- 계정을 남긴 채 스스로 가족에서 나가기와 오너 넘기기. 지금은 탈퇴하거나 오너가 내보내야 가족에서 빠지고, 오너는 구성원을 모두 내보내 혼자 남은 뒤에만 탈퇴(가족까지 지움)할 수 있다.
 - 설계안의 `GET /videos/{videoId}/exercises`, `GET /facilities`.
 - 토큰을 HttpOnly 쿠키로 옮기는 일.
