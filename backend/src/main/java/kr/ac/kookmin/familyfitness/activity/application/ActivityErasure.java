@@ -3,13 +3,14 @@ package kr.ac.kookmin.familyfitness.activity.application;
 import kr.ac.kookmin.familyfitness.activity.application.port.ActivityErasureRepository;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyDeleting;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDeleting;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileRecordsDeleting;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 탈퇴와 구성원 내보내기 때 activity 의 행을 지운다. identity 가 지우는 트랜잭션 안에서 동기로 듣는다(차례는
- * {@link ProfileDeleting} 설명). 여기서 실패하면 탈퇴 전체가 되돌아간다.
+ * 탈퇴, 구성원 내보내기, 동의 철회 때 activity 의 행을 지운다. identity 가 지우는 트랜잭션 안에서 동기로 듣는다(차례는
+ * {@link ProfileDeleting} 설명). 여기서 실패하면 탈퇴나 철회 전체가 되돌아간다.
  */
 @Component
 public class ActivityErasure {
@@ -23,6 +24,13 @@ public class ActivityErasure {
     @Order(10)
     public void on(ProfileDeleting deleting) {
         rows.eraseProfile(deleting.profileId(), deleting.ownerProfileId());
+    }
+
+    /** 동의 철회. 프로필은 남고 그 사람의 하루 활동만 지운다. */
+    @EventListener
+    @Order(10)
+    public void on(ProfileRecordsDeleting deleting) {
+        rows.eraseRecords(deleting.profileId());
     }
 
     @EventListener

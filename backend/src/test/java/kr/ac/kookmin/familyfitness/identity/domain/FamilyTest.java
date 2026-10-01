@@ -272,6 +272,36 @@ class FamilyTest {
     }
 
     @Test
+    @DisplayName("동의를 거두면 프로필에 적어 둔 키와 몸무게도 비우고, 다시 동의해도 돌아오지 않는다")
+    void 동의를_거두면_키와_몸무게를_비운다() {
+        Family family = newFamily();
+        Profile child = family.addMember(
+                parentUserId,
+                "아이",
+                childBirthDate,
+                Sex.M,
+                ProfileRole.CHILD,
+                new BigDecimal("130.5"),
+                new BigDecimal("28.0"),
+                new GuardianConsent(true, true),
+                consentedAt,
+                today);
+        assertThat(child.getHeightCm()).isEqualByComparingTo("130.5");
+
+        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(false, true), consentedAt, today);
+
+        assertThat(child.getHeightCm()).isNull();
+        assertThat(child.getWeightKg()).isNull();
+        assertThat(child.getDisplayName()).isEqualTo("아이");
+        assertThat(child.getBirthDate()).isEqualTo(childBirthDate);
+
+        family.updateConsent(parentUserId, child.getId(), new GuardianConsent(true, true), consentedAt, today);
+
+        assertThat(child.getHeightCm()).isNull();
+        assertThat(child.getWeightKg()).isNull();
+    }
+
+    @Test
     @DisplayName("동의 변경은 이 가족의 부모만 할 수 있다")
     void 동의_변경은_이_가족의_부모만_할_수_있다() {
         Family family = newFamily();

@@ -5,9 +5,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 탈퇴와 구성원 내보내기 때 identity 표를 지운다. 다른 모듈이 자기 행을 먼저 지운 뒤에 부른다. 부르는 쪽 트랜잭션 안에서만 돈다.
- * 동의 이력(consent_events)은 고치지 않는 표지만(V145), 개인정보처리방침이 「탈퇴하면 바로 지워요」 라고 약속해서 이때만 예외로
- * 지우거나 고친다.
+ * 탈퇴, 구성원 내보내기, 동의 철회 때 identity 표를 지운다. 다른 모듈이 자기 행을 먼저 지운 뒤에 부른다. 부르는 쪽 트랜잭션
+ * 안에서만 돈다. 동의 이력(consent_events)은 고치지 않는 표지만(V145), 개인정보처리방침이 「탈퇴하면 바로 지워요」 라고 약속해서
+ * 탈퇴와 내보내기 때만 예외로 지우거나 고친다. 동의 철회는 이력을 그대로 둔다(철회한 증거다).
  */
 public interface IdentityErasureRepository {
     /**
@@ -31,6 +31,13 @@ public interface IdentityErasureRepository {
      * 돌린다.
      */
     void eraseProfile(UUID profileId, UUID heirProfileId, Collection<UUID> cheerIds);
+
+    /**
+     * 프로필은 남기고 그 사람의 identity 기록만 지운다(동의 철회). 응원, 그 사람의 운동할 수 있는 시간 차례다. 프로필 행과 동의
+     * 이력은 남긴다. 아이 프로필만 오므로 다른 식구의 운동할 수 있는 시간을 적은 사람, 초대코드를 보낸 사람처럼 보호자만 하는 일을
+     * 적은 칸은 돌릴 것이 없다.
+     */
+    void eraseRecords(UUID profileId, Collection<UUID> cheerIds);
 
     /**
      * 이 계정이 남긴 동의 기록에서 계정을 지운다(profiles.consent_by_user_id, consent_events.actor_user_id,

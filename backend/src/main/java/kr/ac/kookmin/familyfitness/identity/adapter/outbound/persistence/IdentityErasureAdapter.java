@@ -43,19 +43,25 @@ public class IdentityErasureAdapter implements IdentityErasureRepository {
         rows.forgetMissionOnCheers(familyId, missionId);
     }
 
-    /** 고마워요가 지울 응원을 가리키므로(fk_cheers_reply_to) 답장 연결을 먼저 끊는다. */
+    /** 응원과 그 사람의 운동할 수 있는 시간을 {@link #eraseRecords} 로 지운 뒤, 남는 행을 오너로 돌리고 동의 이력과 프로필 행을 지운다. */
     @Override
     public void eraseProfile(UUID profileId, UUID heirProfileId, Collection<UUID> cheerIds) {
-        if (!cheerIds.isEmpty()) {
-            rows.unlinkReplies(cheerIds);
-            rows.deleteCheers(cheerIds);
-        }
-        rows.deleteSlots(List.of(profileId));
+        eraseRecords(profileId, cheerIds);
         rows.handOverSlots(profileId, heirProfileId);
         rows.deleteConsentEvents(List.of(profileId));
         rows.handOverInvites(profileId, heirProfileId);
         rows.handOverFamilyInvites(profileId, heirProfileId);
         rows.deleteProfile(profileId);
+    }
+
+    /** 고마워요가 지울 응원을 가리키므로(fk_cheers_reply_to) 답장 연결을 먼저 끊는다. */
+    @Override
+    public void eraseRecords(UUID profileId, Collection<UUID> cheerIds) {
+        if (!cheerIds.isEmpty()) {
+            rows.unlinkReplies(cheerIds);
+            rows.deleteCheers(cheerIds);
+        }
+        rows.deleteSlots(List.of(profileId));
     }
 
     /** 가족 초대에 미리 받아 둔 동의의 동의자 칸도 비운다. 초대와 동의는 살아 있다. */

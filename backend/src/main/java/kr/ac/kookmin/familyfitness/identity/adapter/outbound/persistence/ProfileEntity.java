@@ -181,8 +181,16 @@ public class ProfileEntity {
         return heightCm;
     }
 
+    public void setHeightCm(@Nullable BigDecimal heightCm) {
+        this.heightCm = heightCm;
+    }
+
     public @Nullable BigDecimal getWeightKg() {
         return weightKg;
+    }
+
+    public void setWeightKg(@Nullable BigDecimal weightKg) {
+        this.weightKg = weightKg;
     }
 
     public @Nullable String getSupportMode() {

@@ -25,11 +25,13 @@ public class Profile {
     private LocalDate birthDate;
     private Sex sex;
 
+    /** 프로필에 적어 둔 키(건강정보). 보호자가 동의를 거두면 비운다. */
     @Nullable
-    private final BigDecimal heightCm;
+    private BigDecimal heightCm;
 
+    /** 프로필에 적어 둔 몸무게(건강정보). 보호자가 동의를 거두면 비운다. */
     @Nullable
-    private final BigDecimal weightKg;
+    private BigDecimal weightKg;
 
     @Nullable
     private UUID userId;
@@ -206,9 +208,18 @@ public class Profile {
         supportMode = mode;
     }
 
-    /** 둘 다 true 면 새로 동의(시각·동의자 갱신), 하나라도 false 면 철회(과거 시각은 유지). */
+    /**
+     * 둘 다 true 면 새로 동의(시각·동의자 갱신), 하나라도 false 면 철회(과거 시각은 유지). 철회하면 프로필에 적어 둔 키와 몸무게도
+     * 비운다. 측정, 운동 같은 다른 기록은 서비스가 같은 트랜잭션에서 지운다({@code ProfileRecordsDeleting}).
+     */
     void recordConsent(GuardianConsent decision, UUID byUserId, Instant at) {
-        consent = decision.isComplete() ? ConsentRecord.granted(at, byUserId) : consent.revoke(at);
+        if (decision.isComplete()) {
+            consent = ConsentRecord.granted(at, byUserId);
+            return;
+        }
+        consent = consent.revoke(at);
+        heightCm = null;
+        weightKg = null;
     }
 
     /**
