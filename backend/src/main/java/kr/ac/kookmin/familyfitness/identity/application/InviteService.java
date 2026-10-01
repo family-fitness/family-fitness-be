@@ -1,6 +1,5 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -24,27 +23,34 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class InviteService {
-    private static final int MAX_GENERATE_ATTEMPTS = 10;
-
     private final FamilyRepository families;
+    private final InviteCodes codes;
     private final AppProperties props;
     private final IdentityClock clock;
     private final ClaimAttemptLimiter attempts;
-    private final SecureRandom random = new SecureRandom();
 
     public InviteService(
-            FamilyRepository families, AppProperties props, IdentityClock clock, ClaimAttemptLimiter attempts) {
+            FamilyRepository families,
+            InviteCodes codes,
+            AppProperties props,
+            IdentityClock clock,
+            ClaimAttemptLimiter attempts) {
         this.families = families;
+        this.codes = codes;
         this.props = props;
         this.clock = clock;
         this.attempts = attempts;
     }
 
-    /** 살아 있는 코드가 있으면 그 코드를, 없으면 새 코드를 준다. 새 코드는 필요할 때만 만든다(중복 검사가 DB 를 읽는다). */
+    /**
+     * 살아 있는 코드가 있으면 그 코드를, 없으면 새 코드를 준다. 새 코드는 필요할 때만 만든다(중복 검사가 DB 를 읽는다).
+     * 새 코드는 가족 초대코드와도 겹치지 않는다({@link InviteCodes}).
+     */
     public Invitation issueInvite(UUID userId, UUID profileId) {
         Family family = families.findByProfileId(profileId);
         if (family == null) throw new ProfileNotFoundException(profileId);
-        ClaimCode code = family.issueInvite(userId, profileId, clock.now(), this::freshCode);
+        Instant now = clock.now();
+        ClaimCode code = family.issueInvite(userId, profileId, now, () -> codes.fresh(now));
         families.save(family);
         return new Invitation(code, shareUrlOf(code));
     }
@@ -107,15 +113,6 @@ public class InviteService {
         if (issuedBy == null) return null;
         Profile issuer = family.profileOrNull(issuedBy);
         return issuer == null ? null : issuer.getDisplayName();
-    }
-
-    private ClaimCode freshCode() {
-        Instant now = clock.now();
-        for (int i = 0; i < MAX_GENERATE_ATTEMPTS; i++) {
-            ClaimCode code = ClaimCode.generate(now, random);
-            if (!families.isClaimCodeTaken(code.code())) return code;
-        }
-        throw new IllegalStateException("초대 코드를 만들지 못했습니다");
     }
 
     private String shareUrlOf(ClaimCode code) {

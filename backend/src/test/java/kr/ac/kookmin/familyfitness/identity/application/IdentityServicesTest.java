@@ -79,7 +79,10 @@ class IdentityServicesTest {
 
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
     private final ClaimAttemptLimiter claimAttempts = new ClaimAttemptLimiter(identityClock);
-    private final InviteService inviteService = new InviteService(families, props, identityClock, claimAttempts);
+    private final InMemoryFamilyInviteRepository familyInvites = new InMemoryFamilyInviteRepository();
+    private final InviteCodes inviteCodes = new InviteCodes(families, familyInvites);
+    private final InviteService inviteService =
+            new InviteService(families, inviteCodes, props, identityClock, claimAttempts);
     private final ProfileSettingsService settingsService =
             new ProfileSettingsService(families, summaries, identityClock);
     /** 미션 id → 가족 id. coaching 이 구현하는 {@link MissionLookup} 의 가짜. */

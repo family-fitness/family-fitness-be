@@ -193,6 +193,32 @@ public class Family {
     }
 
     /**
+     * 가족 초대 발급(초대 먼저). PARENT 만 낸다. 역할만 정하고, 이름과 생년월일은 코드로 들어온 사람이 넣는다.
+     * CHILD 초대는 들어올 아이가 만 14세 미만일 수 있어 보호자 동의(둘 다 true)를 미리 받는다. 없거나 하나라도 false 면
+     * 422 CONSENT_REQUIRED, 동의하는 보호자가 만 14세 미만이면 422 UNDER_14_NOT_ALLOWED 다. PARENT 초대는 동의를 받지 않는다(보내도
+     * 남기지 않는다). 판정 차례: 구성원 아님 403 NOT_SAME_FAMILY, 아이 계정 403 NOT_A_PARENT, 동의, 동의하는 보호자 나이.
+     * 코드는 판정을 다 지난 뒤에만 {@code newCode} 로 만든다(중복 검사가 DB 를 읽는다).
+     */
+    public FamilyInvite issueFamilyInvite(
+            UUID actorUserId,
+            ProfileRole role,
+            @Nullable GuardianConsent guardianConsent,
+            Instant now,
+            LocalDate today,
+            Supplier<ClaimCode> newCode) {
+        Profile actor = requireParent(actorUserId);
+        GuardianConsent consent = null;
+        UUID consentBy = null;
+        if (role == ProfileRole.CHILD) {
+            if (guardianConsent == null || !guardianConsent.isComplete()) throw new GuardianConsentRequiredException();
+            requireGuardianAge(actor.getBirthDate(), today);
+            consent = guardianConsent;
+            consentBy = actorUserId;
+        }
+        return new FamilyInvite(newCode.get(), id, role, consent, consentBy, actor.getId(), now, null, null);
+    }
+
+    /**
      * 초대 코드 사용 전 규칙 검사. 실제 계정 연결은 조건부 UPDATE(동시성)로 저장소가 하므로 여기서는 상태를 바꾸지 않는다.
      * 순서: 코드 없음 → 이미 사용 → 만료 → 이미 이 가족 구성원 → 다른 가족에 프로필이 있음(한 계정 한 가족).
      * {@code accountHasProfile} 은 이 계정에 붙은 프로필이 어느 가족에든 있는가다. 이 가족이면 앞에서 ALREADY_MEMBER 로 끝난다.
