@@ -275,6 +275,87 @@ class FamilyInviteApiTest {
                 .isEqualTo(1);
     }
 
+    // ===== 미리 보기 =====
+
+    @Test
+    @DisplayName("가족 초대코드 미리 보기는 kind FAMILY 와 역할, 가족 이름, 보낸 보호자를 주고 자리 이름과 연령대는 null 이다")
+    void 가족_초대코드_미리_보기() throws Exception {
+        Home home = home();
+        JsonNode invite = read(createInvite(home.owner(), home.familyId(), "CHILD", consent(true, true))
+                .andExpect(status().isCreated()));
+        String code = invite.get("code").asString();
+
+        JsonNode seat = read(preview(devLogin(), code.toLowerCase()).andExpect(status().isOk()));
+
+        assertThat(seat.get("kind").asString()).isEqualTo("FAMILY");
+        assertThat(seat.get("role").asString()).isEqualTo("CHILD");
+        assertThat(seat.get("familyName").asString()).isEqualTo("우리 가족");
+        assertThat(seat.get("profileName").isNull()).isTrue();
+        assertThat(seat.get("ageGroup").isNull()).isTrue();
+        assertThat(seat.get("invitedByName").asString()).isEqualTo("엄마");
+        assertThat(Instant.parse(seat.get("expiresAt").asString()))
+                .isCloseTo(Instant.parse(invite.get("expiresAt").asString()), within(1, ChronoUnit.MILLIS));
+        assertThat(seat.has("profileId")).isFalse();
+        assertThat(seat.has("familyId")).isFalse();
+        String parentCode = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        assertThat(read(preview(devLogin(), parentCode)).get("role").asString()).isEqualTo("PARENT");
+    }
+
+    @Test
+    @DisplayName("자리 초대코드 미리 보기는 kind PROFILE 이고 지금처럼 자리 이름과 역할, 연령대를 준다")
+    void 자리_초대코드_미리_보기는_kind_PROFILE() throws Exception {
+        Home home = home();
+        Map<String, Object> member = new LinkedHashMap<>();
+        member.put("name", "서준");
+        member.put("birthDate", today.minusYears(10).toString());
+        member.put("sex", "M");
+        member.put("role", "CHILD");
+        member.put("guardianConsent", consent(true, true));
+        String childId = read(mvc.perform(json(
+                                auth(post("/api/v1/families/" + home.familyId() + "/profiles"), home.owner()), member))
+                        .andExpect(status().isCreated()))
+                .get("profileId")
+                .asString();
+        String code = read(mvc.perform(auth(post("/api/v1/profiles/" + childId + "/invite"), home.owner())))
+                .get("claimCode")
+                .asString();
+
+        JsonNode seat = read(preview(devLogin(), code).andExpect(status().isOk()));
+
+        assertThat(seat.get("kind").asString()).isEqualTo("PROFILE");
+        assertThat(seat.get("role").asString()).isEqualTo("CHILD");
+        assertThat(seat.get("profileName").asString()).isEqualTo("서준");
+        assertThat(seat.get("ageGroup").asString()).isEqualTo("유소년");
+        assertThat(seat.get("invitedByName").asString()).isEqualTo("엄마");
+    }
+
+    @Test
+    @DisplayName("가족 초대코드 미리 보기: 쓴 코드 409 ALREADY_CLAIMED, 만료 410 CODE_EXPIRED, 취소한 코드 404 CODE_NOT_FOUND")
+    void 가족_초대코드_미리_보기_오류() throws Exception {
+        Home home = home();
+        String used = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        String expired = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        String cancelled = codeOf(createInvite(home.owner(), home.familyId(), "PARENT", null));
+        jdbc.update(
+                "update family_invites set claimed_at = ? where code = ?", OffsetDateTime.now(ZoneOffset.UTC), used);
+        jdbc.update(
+                "update family_invites set expires_at = ? where code = ?",
+                OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1),
+                expired);
+        cancelInvite(home.owner(), home.familyId(), cancelled).andExpect(status().isNoContent());
+        Session newcomer = devLogin();
+
+        preview(newcomer, used)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+        preview(newcomer, expired)
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.error.code").value("CODE_EXPIRED"));
+        preview(newcomer, cancelled)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("CODE_NOT_FOUND"));
+    }
+
     // ===== 도우미 =====
 
     private Session devLogin() throws Exception {
@@ -359,6 +440,10 @@ class FamilyInviteApiTest {
 
     private String codeOf(ResultActions created) throws Exception {
         return read(created.andExpect(status().isCreated())).get("code").asString();
+    }
+
+    private ResultActions preview(Session session, String code) throws Exception {
+        return mvc.perform(auth(get("/api/v1/invites/" + code), session));
     }
 
     private ResultActions listInvites(Session session, String familyId) throws Exception {

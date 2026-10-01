@@ -21,11 +21,15 @@ public class InviteController {
         this.invites = invites;
     }
 
-    /** 없음 404 CODE_NOT_FOUND · 이미 사용 409 ALREADY_CLAIMED · 만료 410 CODE_EXPIRED · 너무 많이 틀림 429 TOO_MANY. */
+    /**
+     * 너무 많이 틀림 429 TOO_MANY, 없음 404 CODE_NOT_FOUND, 이미 사용 409 ALREADY_CLAIMED, 만료 410 CODE_EXPIRED 차례다.
+     * kind 는 가족 초대(FAMILY)인지 자리 초대(PROFILE)인지다. 가족 초대는 profileName 과 ageGroup 이 null 이다.
+     */
     @GetMapping("/{claimCode}")
     public InvitePreviewResponse preview(CurrentUser user, @PathVariable String claimCode) {
         InvitePreview preview = invites.preview(user.userId(), claimCode);
         return new InvitePreviewResponse(
+                preview.kind(),
                 preview.familyName(),
                 preview.profileName(),
                 preview.role(),

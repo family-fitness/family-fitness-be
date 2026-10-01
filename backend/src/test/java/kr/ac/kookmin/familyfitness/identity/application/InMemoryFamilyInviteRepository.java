@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyInviteRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyInvite;
+import org.jspecify.annotations.Nullable;
 
 // application 서비스 시험용 인메모리 가족 초대 저장소. 코드 → 초대.
 class InMemoryFamilyInviteRepository implements FamilyInviteRepository {
@@ -23,6 +24,11 @@ class InMemoryFamilyInviteRepository implements FamilyInviteRepository {
     @Override
     public boolean isCodeTaken(String code) {
         return invites.containsKey(code);
+    }
+
+    @Override
+    public @Nullable FamilyInvite findByCode(String code) {
+        return invites.get(code);
     }
 
     @Override

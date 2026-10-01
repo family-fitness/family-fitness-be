@@ -9,6 +9,7 @@ import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyInvite;
 import kr.ac.kookmin.familyfitness.identity.domain.GuardianConsent;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -43,6 +44,11 @@ public class FamilyInviteRepositoryAdapter implements FamilyInviteRepository {
     @Override
     public boolean isCodeTaken(String code) {
         return rows.existsById(code);
+    }
+
+    @Override
+    public @Nullable FamilyInvite findByCode(String code) {
+        return rows.findById(code).map(FamilyInviteRepositoryAdapter::toDomain).orElse(null);
     }
 
     @Override
