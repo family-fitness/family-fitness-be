@@ -193,6 +193,87 @@ public class Family {
     }
 
     /**
+     * 가족 초대 발급(초대 먼저). PARENT 만 낸다. 역할만 정하고, 이름과 생년월일은 코드로 들어온 사람이 넣는다({@link #join}).
+     * CHILD 초대는 들어올 아이가 만 14세 미만일 수 있어 보호자 동의(둘 다 true)를 미리 받는다. 없거나 하나라도 false 면
+     * 422 CONSENT_REQUIRED, 동의하는 보호자가 만 14세 미만이면 422 UNDER_14_NOT_ALLOWED 다. PARENT 초대는 동의를 받지 않는다(보내도
+     * 남기지 않는다). 판정 차례: 구성원 아님 403 NOT_SAME_FAMILY, 아이 계정 403 NOT_A_PARENT, 동의, 동의하는 보호자 나이.
+     * 코드는 판정을 다 지난 뒤에만 {@code newCode} 로 만든다(중복 검사가 DB 를 읽는다).
+     */
+    public FamilyInvite issueFamilyInvite(
+            UUID actorUserId,
+            ProfileRole role,
+            @Nullable GuardianConsent guardianConsent,
+            Instant now,
+            LocalDate today,
+            Supplier<ClaimCode> newCode) {
+        Profile actor = requireParent(actorUserId);
+        GuardianConsent consent = null;
+        UUID consentBy = null;
+        if (role == ProfileRole.CHILD) {
+            if (guardianConsent == null || !guardianConsent.isComplete()) throw new GuardianConsentRequiredException();
+            requireGuardianAge(actor.getBirthDate(), today);
+            consent = guardianConsent;
+            consentBy = actorUserId;
+        }
+        return new FamilyInvite(newCode.get(), id, role, consent, consentBy, actor.getId(), now, null, null);
+    }
+
+    /**
+     * 가족 초대코드로 들어온다. 들어온 사람이 넣은 정보로 초대의 역할을 가진 프로필을 만들고 그 계정을 붙인다(오너는 아니다).
+     * 초대를 쓴 표시는 조건부 UPDATE(동시성)로 저장소가 한다.
+     *
+     * <p>판정 차례는 자리 초대코드와 같고({@link #prepareClaim}) 정보 판정이 뒤에 붙는다: 이미 사용 409 ALREADY_CLAIMED, 만료 410
+     * CODE_EXPIRED, 이미 이 가족 구성원 409 ALREADY_MEMBER, 다른 가족에 프로필이 있음 409 ALREADY_IN_FAMILY, 이름이나 생년월일이나
+     * 성별이 없음 400 BAD_REQUEST, PARENT 초대인데 만 14세 미만 422 UNDER_14_NOT_ALLOWED.
+     *
+     * <p>CHILD 초대에 미리 받은 보호자 동의를 이 프로필의 동의로 넣고 동의 이력(GRANTED)도 하나 남긴다. 동의한 때는 보호자가 초대를
+     * 만든 때이고, 동의자는 그 보호자 계정이다(그 보호자가 그사이 가족에서 빠졌으면 누가 했는지 모르는 채로 남는다).
+     * 코드는 자리 초대코드처럼 이 프로필에도 남겨, 초대로 붙은 보호자가 참여 방식을 고르기 전에 앱을 닫아도 다시 묻게 한다
+     * ({@link Profile#inviteStatus} CLAIMED).
+     */
+    public Profile join(
+            FamilyInvite invite,
+            UUID userId,
+            boolean accountHasProfile,
+            @Nullable NewMember member,
+            Instant now,
+            LocalDate today) {
+        if (!invite.familyId().equals(id)) throw new IllegalArgumentException("다른 가족의 초대다");
+        invite.requireClaimable(now);
+        if (memberOf(userId) != null) throw new AlreadyMemberException();
+        if (accountHasProfile) throw new AlreadyInFamilyException("다른 가족에 이미 프로필이 있습니다");
+        if (member == null) throw new NewMemberRequiredException();
+        if (member.birthDate().isAfter(today)) throw new IllegalArgumentException("생년월일은 미래일 수 없다");
+        if (invite.role() == ProfileRole.PARENT) requireGuardianAge(member.birthDate(), today);
+        GuardianConsent consent = invite.role() == ProfileRole.CHILD ? invite.guardianConsent() : null;
+        ConsentRecord record = consent != null && consent.isComplete()
+                ? new ConsentRecord(invite.createdAt(), invite.createdAt(), invite.consentByUserId(), null)
+                : ConsentRecord.NONE;
+        Profile profile = new Profile(
+                UUID.randomUUID(),
+                id,
+                userId,
+                invite.role(),
+                false,
+                member.name(),
+                member.birthDate(),
+                member.sex(),
+                member.heightCm(),
+                member.weightKg(),
+                null,
+                invite.code(),
+                now,
+                invite.issuedByProfileId(),
+                record);
+        members.add(profile);
+        if (record.isGiven()) {
+            pendingConsentEvents.add(ConsentEvent.of(
+                    profile.getId(), invite.consentByUserId(), Objects.requireNonNull(consent), invite.createdAt()));
+        }
+        return profile;
+    }
+
+    /**
      * 초대 코드 사용 전 규칙 검사. 실제 계정 연결은 조건부 UPDATE(동시성)로 저장소가 하므로 여기서는 상태를 바꾸지 않는다.
      * 순서: 코드 없음 → 이미 사용 → 만료 → 이미 이 가족 구성원 → 다른 가족에 프로필이 있음(한 계정 한 가족).
      * {@code accountHasProfile} 은 이 계정에 붙은 프로필이 어느 가족에든 있는가다. 이 가족이면 앞에서 ALREADY_MEMBER 로 끝난다.

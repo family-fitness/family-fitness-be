@@ -792,6 +792,147 @@ class FamilyTest {
         assertThat(notEmpty.getKind()).isEqualTo(ErrorKind.CONFLICT);
     }
 
+    @Test
+    @DisplayName("가족 초대로 들어오기 판정 차례: 쓴 코드, 만료, 같은 가족, 다른 가족, 정보 없음, PARENT 인데 만 14세 미만")
+    void 가족_초대로_들어오기_판정_차례() {
+        Family family = newFamily();
+        FamilyInvite invite = family.issueFamilyInvite(
+                parentUserId, ProfileRole.PARENT, null, consentedAt, today, () -> code("AAAAAA"));
+        Instant now = consentedAt.plusSeconds(60);
+        UUID stranger = UUID.randomUUID();
+        NewMember kid = new NewMember("형", today.minusYears(13), Sex.M, null, null);
+        NewMember adult = new NewMember("아빠", LocalDate.of(1986, 1, 1), Sex.M, null, null);
+        FamilyInvite used = new FamilyInvite(
+                invite.code(),
+                invite.familyId(),
+                invite.role(),
+                null,
+                null,
+                invite.issuedByProfileId(),
+                invite.createdAt(),
+                now,
+                UUID.randomUUID());
+
+        assertThat(codeOf(() -> family.join(used, stranger, true, null, now, today)))
+                .isEqualTo("ALREADY_CLAIMED");
+        assertThat(codeOf(() -> family.join(invite, stranger, true, null, now.plus(ClaimCode.TTL), today)))
+                .isEqualTo("CODE_EXPIRED");
+        assertThat(codeOf(() -> family.join(invite, parentUserId, true, null, now, today)))
+                .isEqualTo("ALREADY_MEMBER");
+        assertThat(codeOf(() -> family.join(invite, stranger, true, null, now, today)))
+                .isEqualTo("ALREADY_IN_FAMILY");
+        assertThat(codeOf(() -> family.join(invite, stranger, false, null, now, today)))
+                .isEqualTo("BAD_REQUEST");
+        assertThat(codeOf(() -> family.join(invite, stranger, false, kid, now, today)))
+                .isEqualTo("UNDER_14_NOT_ALLOWED");
+        assertThat(family.getProfiles()).hasSize(1);
+
+        Profile dad = family.join(invite, stranger, false, adult, now, today);
+
+        assertThat(dad.getUserId()).isEqualTo(stranger);
+        assertThat(dad.getRole()).isEqualTo(ProfileRole.PARENT);
+        assertThat(dad.isOwner()).isFalse();
+        assertThat(dad.inviteStatus(now)).isEqualTo(InviteStatus.CLAIMED);
+        assertThat(dad.getClaimCodeIssuedBy()).isEqualTo(family.owner().getId());
+        assertThat(dad.getConsent()).isEqualTo(ConsentRecord.NONE);
+        assertThat(family.drainConsentEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("CHILD 초대의 동의는 초대를 만든 때에 그 보호자가 한 것으로 들어간다. 그 보호자가 빠져 동의자가 비었으면 비운 채로 남긴다")
+    void CHILD_초대의_동의가_아이_프로필로_들어간다() {
+        Family family = newFamily();
+        FamilyInvite invite = family.issueFamilyInvite(
+                parentUserId,
+                ProfileRole.CHILD,
+                new GuardianConsent(true, true),
+                consentedAt,
+                today,
+                () -> code("BBBBBB"));
+        FamilyInvite forgotten = new FamilyInvite(
+                code("CCCCCC"),
+                invite.familyId(),
+                invite.role(),
+                invite.guardianConsent(),
+                null,
+                invite.issuedByProfileId(),
+                invite.createdAt(),
+                null,
+                null);
+        Instant now = consentedAt.plusSeconds(3600);
+
+        Profile first = family.join(
+                invite, UUID.randomUUID(), false, new NewMember("첫째", childBirthDate, Sex.M, null, null), now, today);
+        Profile second = family.join(
+                forgotten,
+                UUID.randomUUID(),
+                false,
+                new NewMember("둘째", childBirthDate, Sex.F, null, null),
+                now,
+                today);
+
+        assertThat(first.getConsent()).isEqualTo(ConsentRecord.granted(consentedAt, parentUserId));
+        assertThat(first.consentGiven(today)).isTrue();
+        assertThat(second.getConsent().byUserId()).isNull();
+        assertThat(second.consentGiven(today)).isTrue();
+        assertThat(family.drainConsentEvents())
+                .extracting(
+                        ConsentEvent::profileId,
+                        ConsentEvent::actorUserId,
+                        ConsentEvent::kind,
+                        ConsentEvent::occurredAt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                first.getId(), parentUserId, ConsentEvent.Kind.GRANTED, consentedAt),
+                        org.assertj.core.groups.Tuple.tuple(
+                                second.getId(), null, ConsentEvent.Kind.GRANTED, consentedAt));
+    }
+
+    @Test
+    @DisplayName("가족 초대는 보호자만 내고, CHILD 초대는 동의가 둘 다 있어야 한다. PARENT 초대에 보낸 동의는 남기지 않는다")
+    void 가족_초대는_보호자만_낸다() {
+        Family family = newFamily();
+        Profile child = addChild(family, "첫째");
+        UUID childUser = UUID.randomUUID();
+        child.claim(childUser, consentedAt);
+
+        assertThrows(
+                NotAParentException.class,
+                () -> family.issueFamilyInvite(
+                        childUser, ProfileRole.PARENT, null, consentedAt, today, () -> code("AAAAAA")));
+        assertThrows(
+                FamilyAccessDeniedException.class,
+                () -> family.issueFamilyInvite(
+                        UUID.randomUUID(), ProfileRole.PARENT, null, consentedAt, today, () -> code("AAAAAA")));
+        assertThrows(
+                GuardianConsentRequiredException.class,
+                () -> family.issueFamilyInvite(
+                        parentUserId,
+                        ProfileRole.CHILD,
+                        new GuardianConsent(true, false),
+                        consentedAt,
+                        today,
+                        () -> code("AAAAAA")));
+        FamilyInvite parentInvite = family.issueFamilyInvite(
+                parentUserId,
+                ProfileRole.PARENT,
+                new GuardianConsent(true, true),
+                consentedAt,
+                today,
+                () -> code("AAAAAA"));
+        assertThat(parentInvite.guardianConsent()).isNull();
+        assertThat(parentInvite.consentByUserId()).isNull();
+        assertThat(parentInvite.issuedByProfileId()).isEqualTo(family.owner().getId());
+    }
+
+    private static String codeOf(org.junit.jupiter.api.function.Executable call) {
+        return assertThrows(DomainException.class, call).getCode();
+    }
+
+    private ClaimCode code(String value) {
+        return new ClaimCode(value, consentedAt.plus(ClaimCode.TTL));
+    }
+
     private Family newFamily() {
         return Family.createWithParent(parentUserId, "우리 가족", "부모", LocalDate.of(1988, 3, 1), Sex.F, today);
     }

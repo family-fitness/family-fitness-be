@@ -79,7 +79,10 @@ class IdentityServicesTest {
 
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
     private final ClaimAttemptLimiter claimAttempts = new ClaimAttemptLimiter(identityClock);
-    private final InviteService inviteService = new InviteService(families, props, identityClock, claimAttempts);
+    private final InMemoryFamilyInviteRepository familyInvites = new InMemoryFamilyInviteRepository();
+    private final InviteCodes inviteCodes = new InviteCodes(families, familyInvites);
+    private final InviteService inviteService =
+            new InviteService(families, familyInvites, inviteCodes, props, identityClock, claimAttempts);
     private final ProfileSettingsService settingsService =
             new ProfileSettingsService(families, summaries, identityClock);
     /** 미션 id → 가족 id. coaching 이 구현하는 {@link MissionLookup} 의 가짜. */
@@ -499,7 +502,13 @@ class IdentityServicesTest {
 
             assertThat(preview)
                     .isEqualTo(new InvitePreview(
-                            "우리 가족", "첫째", ProfileRole.CHILD, AgeGroup.YOUTH, "엄마", code.expiresAt()));
+                            InviteKind.PROFILE,
+                            "우리 가족",
+                            "첫째",
+                            ProfileRole.CHILD,
+                            AgeGroup.YOUTH,
+                            "엄마",
+                            code.expiresAt()));
             // 구성원인지는 보지 않는다 — 보낸 사람도 볼 수 있다
             assertThat(inviteService.preview(parentUser, code.code()).profileName())
                     .isEqualTo("첫째");

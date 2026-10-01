@@ -141,11 +141,17 @@ abstract class AccountDeletionApiTestBase {
                 .andExpect(status().isNoContent());
         personalTouches(mom, momId);
         mvc.perform(as(mom, get("/api/v1/families/" + familyId + "/league"))).andExpect(status().isOk());
+        // 아직 아무도 쓰지 않은 가족 초대(아이 초대는 보호자 동의를 미리 받아 둔다)
+        createFamilyInvite(mom, familyId, "CHILD");
+        createFamilyInvite(mom, familyId, "PARENT");
         assertThat(leftovers.referencing(List.of(familyId, momId, mom.userId())))
                 .containsKeys(
                         "activity_daily.profile_id",
                         "coach_messages.profile_id",
                         "exercise_favorites.profile_id",
+                        "family_invites.consent_by_user_id",
+                        "family_invites.family_id",
+                        "family_invites.issued_by_profile_id",
                         "fitness_tests.profile_id",
                         "league_members.family_id",
                         "mission_feedback.profile_id",
@@ -161,6 +167,8 @@ abstract class AccountDeletionApiTestBase {
         List<UUID> gone = List.of(familyId, momId, mom.userId(), mission);
         assertThat(leftovers.referencing(gone)).isEmpty();
         assertThat(leftovers.mentioning(gone)).isEmpty();
+        assertThat(count("select count(*) from family_invites where family_id = ?", familyId))
+                .isZero();
         expectGoneAccount(mom);
     }
 
@@ -212,6 +220,8 @@ abstract class AccountDeletionApiTestBase {
                                 Map.of("personalData", true, "healthData", true))))
                 .andExpect(status().isOk());
         mvc.perform(as(dad, post("/api/v1/profiles/" + hayun + "/invite"))).andExpect(status().isCreated());
+        // 아빠가 아이 가족 초대를 냈다(보호자 동의를 미리 했다)
+        String dadInvite = createFamilyInvite(dad, familyId, "CHILD");
         // 이 달에 쓴 쉬는 날 카드를 아빠가 쓴 것으로 둔다(오늘은 서준이 이미 움직여 새로 쓸 수 없다)
         jdbc.update("update rest_cards set created_by = ? where family_id = ?", dadId, familyId);
         personalTouches(dad, dadId);
@@ -223,6 +233,8 @@ abstract class AccountDeletionApiTestBase {
                         "coach_runs.approved_by",
                         "coach_runs.requested_by_profile_id",
                         "consent_events.actor_user_id",
+                        "family_invites.consent_by_user_id",
+                        "family_invites.issued_by_profile_id",
                         "missions.created_by",
                         "profile_availability_slots.created_by",
                         "profiles.claim_code_issued_by",
@@ -253,6 +265,13 @@ abstract class AccountDeletionApiTestBase {
                 .isEqualTo(momId);
         assertThat(jdbc.queryForObject("select created_by from rest_cards where family_id = ?", UUID.class, familyId))
                 .isEqualTo(momId);
+        // 아빠가 낸 가족 초대는 살아 있고 오너가 낸 것으로 바뀐다. 미리 한 동의는 누가 했는지만 비운다
+        assertThat(jdbc.queryForObject(
+                        "select issued_by_profile_id from family_invites where code = ?", UUID.class, dadInvite))
+                .isEqualTo(momId);
+        assertThat(jdbc.queryForObject(
+                        "select consent_by_user_id from family_invites where code = ?", UUID.class, dadInvite))
+                .isNull();
         // 동의는 그대로 살아 있다
         assertThat(profileIn(familyId, seojun).get("consentGiven").asBoolean()).isTrue();
         // 아이의 경험치 합계, 레벨, 연속 기록, 운동한 날, 업적이 그대로다
@@ -289,7 +308,77 @@ abstract class AccountDeletionApiTestBase {
         expectGoneAccount(kid);
     }
 
+    @Test
+    @DisplayName("가족 초대코드로 들어온 아이가 탈퇴하면 아이 프로필과 계정이 지워지고, 쓴 초대에서 그 계정 칸만 비운다")
+    void 가족_초대로_들어온_아이가_탈퇴한다() throws Exception {
+        Session mom = reviewLogin("FAMILY");
+        Family family = familyOf(mom);
+        String code = createFamilyInvite(mom, family.familyId(), "CHILD");
+        Session kid = devLogin();
+        UUID kidId = joinByFamilyInvite(kid, code, "막내", today.minusYears(9).toString());
+        cheer(kid, family.familyId(), kidId, family.id("엄마"), "DONE", null, null);
+        personalTouches(kid, kidId);
+        assertThat(leftovers.referencing(List.of(kidId, kid.userId())))
+                .containsKeys(
+                        "cheers.from_profile_id",
+                        "consent_events.profile_id",
+                        "family_invites.claimed_by_user_id",
+                        "profiles.id",
+                        "profiles.user_id");
+
+        withdraw(kid).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(List.of(kidId, kid.userId()))).isEmpty();
+        assertThat(familyOf(mom).ids().keySet()).containsExactly("엄마", "아빠", "하윤", "서준");
+        // 쓴 초대는 남아 같은 코드를 다시 쓰지 못한다
+        assertThat(count("select count(*) from family_invites where code = ? and claimed_at is not null", code))
+                .isEqualTo(1);
+        mvc.perform(as(devLogin(), json(post("/api/v1/profiles/claim"), joinBody(code, "또", "2015-01-01"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ALREADY_CLAIMED"));
+        expectGoneAccount(kid);
+    }
+
     // ===== 구성원 내보내기 =====
+
+    @Test
+    @DisplayName("오너가 가족 초대코드로 들어온 보호자를 내보내면, 그 사람이 낸 초대는 오너가 낸 것으로 바뀌고 계정은 남는다")
+    void 오너가_가족_초대로_들어온_보호자를_내보낸다() throws Exception {
+        Session mom = reviewLogin("FAMILY");
+        Family family = familyOf(mom);
+        UUID familyId = family.familyId();
+        String code = createFamilyInvite(mom, familyId, "PARENT");
+        Session uncle = devLogin();
+        UUID uncleId = joinByFamilyInvite(uncle, code, "삼촌", "1990-05-05");
+        String uncleInvite = createFamilyInvite(uncle, familyId, "CHILD");
+        mvc.perform(as(uncle, json(put("/api/v1/profiles/" + uncleId + "/availability"), slots())))
+                .andExpect(status().isOk());
+        assertThat(leftovers.referencing(List.of(uncleId)))
+                .containsKeys("family_invites.issued_by_profile_id", "profile_availability_slots.profile_id");
+        assertThat(leftovers.referencing(List.of(uncle.userId())))
+                .containsKeys("family_invites.claimed_by_user_id", "family_invites.consent_by_user_id");
+
+        remove(mom, familyId, uncleId).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(List.of(uncleId))).isEmpty();
+        // 계정은 남되 이 가족에 남긴 흔적(초대를 쓴 계정, 미리 한 동의)은 비운다
+        assertThat(leftovers.referencing(List.of(uncle.userId())))
+                .containsOnlyKeys("users.id", "refresh_tokens.user_id");
+        assertThat(jdbc.queryForObject(
+                        "select issued_by_profile_id from family_invites where code = ?", UUID.class, uncleInvite))
+                .isEqualTo(family.id("엄마"));
+        mvc.perform(as(uncle, get("/api/v1/me")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nextStep").value("CREATE_FAMILY"));
+        assertThat(familyOf(mom).ids().keySet()).containsExactly("엄마", "아빠", "하윤", "서준");
+        // 남은 초대는 그대로 쓸 수 있고, 미리 한 동의는 누가 했는지 모르는 채로 아이 프로필에 들어간다
+        Session kid = devLogin();
+        UUID kidId =
+                joinByFamilyInvite(kid, uncleInvite, "조카", today.minusYears(7).toString());
+        assertThat(profileIn(familyId, kidId).get("consentGiven").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("select consent_by_user_id from profiles where id = ?", UUID.class, kidId))
+                .isNull();
+    }
 
     @Test
     @DisplayName("오너가 아이를 내보내면 아이 프로필과 아이의 기록이 지워지고, 남는 아이의 경험치와 연속 기록은 그대로다")
@@ -540,6 +629,28 @@ abstract class AccountDeletionApiTestBase {
                                 Map.of("claimCode", body.get("inviteCode").asString()))))
                 .andExpect(status().isOk());
         return dad;
+    }
+
+    /** 가족 초대를 내고 코드를 돌려준다. CHILD 는 보호자 동의를 둘 다 true 로 함께 보낸다. */
+    String createFamilyInvite(Session session, UUID familyId, String role) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("role", role);
+        if (role.equals("CHILD")) body.put("guardianConsent", Map.of("personalData", true, "healthData", true));
+        return read(mvc.perform(as(session, json(post("/api/v1/families/" + familyId + "/invites"), body)))
+                        .andExpect(status().isCreated()))
+                .get("code")
+                .asString();
+    }
+
+    /** 가족 초대코드로 들어와 만든 프로필 id. */
+    UUID joinByFamilyInvite(Session session, String code, String name, String birthDate) throws Exception {
+        return uuid(read(mvc.perform(as(session, json(post("/api/v1/profiles/claim"), joinBody(code, name, birthDate))))
+                        .andExpect(status().isOk()))
+                .get("profileId"));
+    }
+
+    static Map<String, Object> joinBody(String code, String name, String birthDate) {
+        return Map.of("claimCode", code, "name", name, "birthDate", birthDate, "sex", "M");
     }
 
     Session sessionOf(JsonNode body) {

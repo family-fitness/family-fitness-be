@@ -2,14 +2,21 @@ package kr.ac.kookmin.familyfitness.identity.domain;
 
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /**
  * 보호자 동의를 바꾼 한 번의 기록(consent_events 한 줄). 넣기만 하고 고치거나 지우지 않는다.
  * 재동의가 {@link ConsentRecord} 의 철회 시각을 걷어도 철회한 줄은 여기 남는다.
  * {@code personalData} · {@code healthData} 는 보호자가 보낸 값 그대로다(부여면 둘 다 true).
+ * {@code actorUserId} 는 동의한 보호자 계정이다. 가족 초대에 미리 받은 동의인데 그 보호자가 그사이 가족에서 빠졌으면 null 이다.
  */
 public record ConsentEvent(
-        UUID profileId, UUID actorUserId, Kind kind, boolean personalData, boolean healthData, Instant occurredAt) {
+        UUID profileId,
+        @Nullable UUID actorUserId,
+        Kind kind,
+        boolean personalData,
+        boolean healthData,
+        Instant occurredAt) {
     public enum Kind {
         GRANTED,
         REVOKED,
@@ -17,7 +24,7 @@ public record ConsentEvent(
         VOIDED
     }
 
-    static ConsentEvent of(UUID profileId, UUID actorUserId, GuardianConsent decision, Instant at) {
+    static ConsentEvent of(UUID profileId, @Nullable UUID actorUserId, GuardianConsent decision, Instant at) {
         return new ConsentEvent(
                 profileId,
                 actorUserId,
