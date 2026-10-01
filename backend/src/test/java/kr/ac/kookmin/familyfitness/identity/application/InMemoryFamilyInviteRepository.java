@@ -1,7 +1,11 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyInviteRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyInvite;
 
@@ -19,5 +23,21 @@ class InMemoryFamilyInviteRepository implements FamilyInviteRepository {
     @Override
     public boolean isCodeTaken(String code) {
         return invites.containsKey(code);
+    }
+
+    @Override
+    public List<FamilyInvite> liveOf(UUID familyId, Instant now) {
+        return invites.values().stream()
+                .filter(it -> it.familyId().equals(familyId) && it.isLive(now))
+                .sorted(Comparator.comparing(FamilyInvite::createdAt).reversed())
+                .toList();
+    }
+
+    @Override
+    public boolean deleteUnclaimed(UUID familyId, String code) {
+        FamilyInvite invite = invites.get(code);
+        if (invite == null || !invite.familyId().equals(familyId) || invite.isClaimed()) return false;
+        invites.remove(code);
+        return true;
     }
 }

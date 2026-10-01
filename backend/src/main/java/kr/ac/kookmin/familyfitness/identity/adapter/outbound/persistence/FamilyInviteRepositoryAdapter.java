@@ -1,6 +1,9 @@
 package kr.ac.kookmin.familyfitness.identity.adapter.outbound.persistence;
 
 import jakarta.persistence.EntityManager;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyInviteRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.FamilyInvite;
@@ -40,6 +43,18 @@ public class FamilyInviteRepositoryAdapter implements FamilyInviteRepository {
     @Override
     public boolean isCodeTaken(String code) {
         return rows.existsById(code);
+    }
+
+    @Override
+    public List<FamilyInvite> liveOf(UUID familyId, Instant now) {
+        return rows.findByFamilyIdAndClaimedAtIsNullAndExpiresAtAfterOrderByCreatedAtDescCodeAsc(familyId, now).stream()
+                .map(FamilyInviteRepositoryAdapter::toDomain)
+                .toList();
+    }
+
+    @Override
+    public boolean deleteUnclaimed(UUID familyId, String code) {
+        return rows.deleteUnclaimed(familyId, code) > 0;
     }
 
     static FamilyInvite toDomain(FamilyInviteEntity row) {

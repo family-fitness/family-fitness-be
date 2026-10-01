@@ -6,6 +6,8 @@ import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.FamilyInviteService;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,5 +42,21 @@ public class FamilyInviteController {
                 familyId,
                 Objects.requireNonNull(request.role()),
                 consent == null ? null : consent.toDomain()));
+    }
+
+    /** 아직 쓰지 않았고 만료되지 않은 초대, 최근 것부터. 판정 차례는 만들기와 같다(404 FAMILY_NOT_FOUND, 403 두 가지). */
+    @GetMapping
+    public FamilyInviteListResponse list(CurrentUser user, @PathVariable UUID familyId) {
+        return FamilyInviteListResponse.of(invites.live(user.userId(), familyId));
+    }
+
+    /**
+     * 초대 취소. 그 가족 보호자면 누가 냈든 취소한다. 대소문자는 가리지 않는다. 그 가족에 쓰지 않은 그 코드가 없으면(없는 코드, 쓴
+     * 코드, 다른 가족 코드) 404 INVITE_NOT_FOUND.
+     */
+    @DeleteMapping("/{code}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancel(CurrentUser user, @PathVariable UUID familyId, @PathVariable String code) {
+        invites.cancel(user.userId(), familyId, code);
     }
 }
