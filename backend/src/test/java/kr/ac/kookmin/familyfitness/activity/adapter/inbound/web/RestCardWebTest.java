@@ -128,7 +128,8 @@ class RestCardWebTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private String path() {

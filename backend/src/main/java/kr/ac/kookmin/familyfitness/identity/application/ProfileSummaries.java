@@ -29,7 +29,8 @@ public class ProfileSummaries {
                 profile.getSupportMode(),
                 profile.measurable(today),
                 profile.consentRequired(today),
-                profile.consentGiven(today));
+                profile.consentGiven(today),
+                profile.isOwner());
     }
 
     public ProfileDetails details(Profile profile) {

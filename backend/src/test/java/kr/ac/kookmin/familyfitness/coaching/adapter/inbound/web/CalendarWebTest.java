@@ -145,7 +145,8 @@ class CalendarWebTest {
                 null,
                 true,
                 child,
-                true);
+                true,
+                false);
     }
 
     private ResultActions calendar(UUID user, UUID profileId, LocalDate from, LocalDate to) throws Exception {

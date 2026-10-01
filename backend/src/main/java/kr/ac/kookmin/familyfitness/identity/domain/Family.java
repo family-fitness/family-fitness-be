@@ -257,6 +257,39 @@ public class Family {
         return profile;
     }
 
+    /**
+     * 가족을 만든 보호자(profiles.is_owner). 가족마다 한 사람이다. 구성원이 빠질 때 그 사람을 가리키던 기록(미션을 만든 사람, 쉬는 날
+     * 카드를 쓴 사람 등)을 이 프로필로 돌린다. 오너가 없는 가족은 만들 수 없으므로 없으면 데이터가 깨진 것이다.
+     */
+    public Profile owner() {
+        return members.stream()
+                .filter(Profile::isOwner)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("오너가 없는 가족: " + id));
+    }
+
+    /**
+     * 구성원 내보내기 판정. 내보낼 프로필을 돌려준다. 차례: 구성원 아님 403 NOT_SAME_FAMILY → 오너 아님 403 NOT_FAMILY_OWNER →
+     * 이 가족 프로필 아님 404 PROFILE_NOT_FOUND → 자기 프로필 409 CANNOT_REMOVE_SELF(자기는 탈퇴로 나간다).
+     */
+    public Profile memberToRemove(UUID actorUserId, UUID profileId) {
+        Profile actor = requireMember(actorUserId);
+        if (!actor.isOwner()) throw new NotFamilyOwnerException();
+        Profile target = profile(profileId);
+        if (target.getId().equals(actor.getId())) throw new CannotRemoveSelfException();
+        return target;
+    }
+
+    /**
+     * 이 프로필의 계정이 탈퇴할 때 가족도 지우는가. 오너가 아니면 그 사람만 빠지고 가족은 남는다(false). 오너는 혼자 남았을 때만
+     * 가족까지 지우고(true), 다른 프로필이 하나라도 있으면 409 FAMILY_NOT_EMPTY 다. 계정 없는 아이 프로필도 다른 프로필로 센다.
+     */
+    public boolean leavesNothingBehind(Profile leaving) {
+        if (!leaving.isOwner()) return false;
+        if (members.size() > 1) throw new FamilyNotEmptyException();
+        return true;
+    }
+
     /** 모아 둔 동의 이력을 꺼내고 비운다. 저장소가 저장할 때 한 번 부른다. */
     public List<ConsentEvent> drainConsentEvents() {
         List<ConsentEvent> drained = List.copyOf(pendingConsentEvents);

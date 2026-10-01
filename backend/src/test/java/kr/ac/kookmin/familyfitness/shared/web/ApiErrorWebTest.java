@@ -3,9 +3,9 @@ package kr.ac.kookmin.familyfitness.shared.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -102,7 +102,7 @@ class ApiErrorWebTest {
     @Test
     @DisplayName("없는 메서드는 405, 없는 경로는 404, 받을 수 없는 Accept 는 406")
     void 없는_메서드는_405_없는_경로는_404_받을_수_없는_Accept_는_406() throws Exception {
-        mvc.perform(delete("/api/v1/me").header(HttpHeaders.AUTHORIZATION, bearer()))
+        mvc.perform(put("/api/v1/me").header(HttpHeaders.AUTHORIZATION, bearer()))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.error.code").value("METHOD_NOT_ALLOWED"));
         mvc.perform(get("/api/v1/no-such-path").header(HttpHeaders.AUTHORIZATION, bearer()))

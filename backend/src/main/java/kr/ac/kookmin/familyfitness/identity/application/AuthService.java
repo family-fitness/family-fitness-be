@@ -10,6 +10,7 @@ import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentity;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentityProvider;
 import kr.ac.kookmin.familyfitness.identity.application.port.RefreshTokenRepository;
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.AccountNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.RefreshToken;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
@@ -148,6 +149,16 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthSession session(UUID userId) {
+        return session(userId, null);
+    }
+
+    /**
+     * GET /me. 계정이 없으면(탈퇴함) 401 UNAUTHORIZED 다. 액세스 토큰은 탈퇴 뒤에도 만료까지 서명 검사를 지나므로 여기서 계정을 찾아
+     * 본다. 없는 계정을 가족 없는 계정(CREATE_FAMILY)으로 보여 주면 화면이 지운 계정으로 가족 만들기를 시작한다.
+     */
+    @Transactional(readOnly = true)
+    public AuthSession me(UUID userId) {
+        if (users.findById(userId) == null) throw new AccountNotFoundException();
         return session(userId, null);
     }
 

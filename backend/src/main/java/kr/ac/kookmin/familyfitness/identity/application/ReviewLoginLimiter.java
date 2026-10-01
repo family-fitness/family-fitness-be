@@ -118,6 +118,11 @@ public class ReviewLoginLimiter {
         made.addLast(new Made(clock.now(), keyOf(clientIp), kind, userId, inviteCode));
     }
 
+    /** 탈퇴한 계정을 다시 줄 후보에서 뺀다. 지운 계정으로 들이면 토큰 기록을 넣다가 외래 키에 걸린다. */
+    public synchronized void forget(UUID userId) {
+        made.removeIf(it -> it.userId().equals(userId));
+    }
+
     private @Nullable Made latestMadeBy(String key, ReviewLoginKind kind) {
         var it = made.descendingIterator();
         while (it.hasNext()) {
