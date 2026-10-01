@@ -40,9 +40,13 @@ public class ProfileController {
                 invitation.claimCode().code(), invitation.claimCode().expiresAt(), invitation.shareUrl());
     }
 
+    /**
+     * 초대코드 쓰기. 자리 초대코드는 그 자리에 계정을 붙이고, 가족 초대코드는 함께 보낸 이름, 생년월일, 성별로 초대의 역할을 가진
+     * 프로필을 만들어 붙인다. 응답 모양과 nextStep 은 두 코드가 같다(PARENT 는 SUPPORT_MODE, CHILD 는 HOME).
+     */
     @PostMapping("/claim")
     public ClaimResponse claim(CurrentUser user, @Valid @RequestBody ClaimRequest request) {
-        ClaimResult result = invites.claim(user.userId(), request.claimCode());
+        ClaimResult result = invites.claim(user.userId(), request.claimCode(), request.newMember());
         return new ClaimResponse(result.profileId(), result.familyId(), result.role(), result.nextStep());
     }
 

@@ -41,8 +41,11 @@ class AvailabilityServiceTest {
     private final InMemoryFamilyRepository families = new InMemoryFamilyRepository();
     private final ProfileSummaries summaries = new ProfileSummaries(identityClock);
     private final FamilyService familyService = new FamilyService(families, summaries, identityClock);
+    private final InMemoryFamilyInviteRepository familyInvites = new InMemoryFamilyInviteRepository();
     private final InviteService inviteService = new InviteService(
             families,
+            familyInvites,
+            new InviteCodes(families, familyInvites),
             new AppProperties(
                     "Asia/Seoul",
                     "https://app.example.com/",

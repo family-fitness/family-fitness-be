@@ -111,6 +111,8 @@ public class CoachRunPipeline {
      * 대상 한 명(주행자)의 하루를 AI 에 요청한다(결정 2). 다른 구성원은 보내지 않는다 — 응원으로 보내면 AI 가 일간 참여자로 붙이고
      * (ai:coach/compose.py 일간 참여자 = 주행자 + 응원), 여럿을 보내면 AI 잠금(ref 가 하나라도 겹치면 409)에 걸린다.
      * AI 로 이름 · 생년월일은 나가지 않는다. 대상의 보호자 동의가 그 사이 거둬졌으면 예외 → FAILED(CONSENT_REQUIRED).
+     * 키와 몸무게(height_cm, weight_kg)는 측정 기록이 있으면 가장 최근 회차의 값이다. 측정 기록이 없으면 편성 요청에 실어 온 값을 쓴다.
+     * 어느 쪽이든 값이 비면 가입 때 적은 값으로 채운다({@link AiProfileFactory}).
      * constraints: 하루 한 번(days_per_week 1) · minutes · 주간 미션 없음(weekly_minutes null) · quiet ·
      * small_space(HOME 이면 true — AI 는 home_ok 클립만 남긴다, ai:video/catalog.py _fits) ·
      * no_props true(FE 목도 도구 없는 클립만 쓴다) · focus_factor(보호자가 키워 주고 싶은 역량 — AI develop 은 아직 이 칸을 몰라
@@ -129,14 +131,17 @@ public class CoachRunPipeline {
         ProfileDetails subject = subjectOf(run);
         CoachRunConditions conditions = requireConditions(run);
         LatestFitness latest = fitnessQuery.latestOf(subject.profileId());
-        AiProfile profile = AiProfileFactory.of(
-                subject,
-                latest == null ? Map.of() : latest.measurements(),
-                latest == null ? null : latest.heightCm(),
-                latest == null ? null : latest.weightKg(),
-                latest == null ? null : latest.bodyFatPct(),
-                latest == null ? null : latest.waistCm(),
-                time.today());
+        AiProfile profile = latest == null
+                ? AiProfileFactory.of(
+                        subject, Map.of(), conditions.heightCm(), conditions.weightKg(), null, null, time.today())
+                : AiProfileFactory.of(
+                        subject,
+                        latest.measurements(),
+                        latest.heightCm(),
+                        latest.weightKg(),
+                        latest.bodyFatPct(),
+                        latest.waistCm(),
+                        time.today());
         LocalDate runDate = requireRunDate(run);
         return new CoachRunRequest(
                 List.of(new CoachRunRequest.Participant(profile, CoachRoles.DRIVER)),

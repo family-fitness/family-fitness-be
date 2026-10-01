@@ -256,7 +256,9 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 conditions == null || conditions.focusFactor() == null
                         ? null
                         : conditions.focusFactor().name(),
-                conditions == null ? null : conditions.withParent());
+                conditions == null ? null : conditions.withParent(),
+                conditions == null ? null : conditions.heightCm(),
+                conditions == null ? null : conditions.weightKg());
         entity.setLockKey(run.lockKey());
         entity.setFailureCode(codeName(run.getFailureCode()));
         return entity;
@@ -377,7 +379,9 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 Boolean.TRUE.equals(e.getQuiet()),
                 place == null ? null : CoachPlace.valueOf(place),
                 focusFactor == null ? null : FitnessFactor.valueOf(focusFactor),
-                Boolean.TRUE.equals(e.getWithParent()));
+                Boolean.TRUE.equals(e.getWithParent()),
+                e.getHeightCm(),
+                e.getWeightKg());
     }
 
     private CoachProposalItem toDomain(CoachRunProposalItemEntity e, List<MissionSession> itemSessions) {

@@ -12,7 +12,7 @@ public interface FitnessQuery {
     @Nullable
     LatestFitness latestOf(UUID profileId);
 
-    /** 가족 중 측정 기록이 한 명이라도 있는가 (`NO_MEASURED_MEMBER` 판정). */
+    /** 주어진 프로필 가운데 측정 기록이 있는 사람이 한 명이라도 있는가. */
     boolean hasAnyTest(Collection<UUID> profileIds);
 
     /**

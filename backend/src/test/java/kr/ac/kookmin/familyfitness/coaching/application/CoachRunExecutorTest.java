@@ -6,6 +6,7 @@ import static kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase.WARMUP;
 import static kr.ac.kookmin.familyfitness.coaching.support.InMemoryExerciseClipRepository.clip;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +39,7 @@ import kr.ac.kookmin.familyfitness.coaching.support.Videos;
 import kr.ac.kookmin.familyfitness.fitness.api.FactorPoint;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.ai.AiBadRequestException;
+import kr.ac.kookmin.familyfitness.shared.ai.AiProfile;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunInProgressException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiRunNotFoundException;
 import kr.ac.kookmin.familyfitness.shared.ai.AiUnavailableException;
@@ -112,6 +114,23 @@ class CoachRunExecutorTest {
                 Fixed.NOW));
     }
 
+    /** 편성 요청에 키(cm)와 몸무게(kg)를 실어 온 실행. 나머지 조건은 20분, 조용히, 집, 보호자 없이다. */
+    private CoachRun runningRunWithBody(UUID subject, @Nullable BigDecimal heightCm, @Nullable BigDecimal weightKg) {
+        return runs.save(CoachRun.start(
+                UUID.randomUUID(),
+                family.familyId,
+                subject,
+                Fixed.TODAY,
+                new CoachRunConditions(20, true, CoachPlace.HOME, null, false, heightCm, weightKg),
+                family.parent.profileId(),
+                Fixed.NOW));
+    }
+
+    /** AI 에 보낸 첫 요청의 주행자 프로필. */
+    private AiProfile firstSentProfile() {
+        return gateway.startRequests.getFirst().profiles().getFirst().profile();
+    }
+
     private static List<UUID> participantIds(CoachProposalItem item) {
         return item.participants().stream().map(ProposalParticipant::profileId).toList();
     }
@@ -155,6 +174,59 @@ class CoachRunExecutorTest {
         assertThat(request.constraints())
                 .isEqualTo(new CoachRunRequest.Constraints(1, 20, null, true, true, true, null, true, List.of()));
         assertThat(request.toString()).doesNotContain("민준");
+    }
+
+    @Test
+    @DisplayName("측정 기록이 없는 아이는 편성 요청에 실어 온 키와 몸무게를 AI 요청에 싣는다. 측정값은 비고 입력 수준은 L1 이다")
+    void 측정_기록이_없으면_요청의_키와_몸무게를_AI_에_싣는다() {
+        fitness.latest.clear();
+        CoachRun run = runningRunWithBody(family.child.profileId(), new BigDecimal("125.5"), new BigDecimal("26"));
+
+        executor.execute(run.getId());
+
+        assertThat(gateway.startRequests).hasSize(1);
+        AiProfile sent = firstSentProfile();
+        assertThat(sent.heightCm()).isEqualTo(125.5);
+        assertThat(sent.weightKg()).isEqualTo(26.0);
+        assertThat(sent.measurements()).isEmpty();
+        assertThat(sent.inputLevel()).isEqualTo("L1");
+        assertThat(runs.findById(run.getId()).getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+    }
+
+    @Test
+    @DisplayName("측정 기록이 있는 아이는 요청에 키와 몸무게가 실려 와도 가장 최근 측정 회차의 값을 AI 에 싣는다")
+    void 측정_기록이_있으면_기록의_키와_몸무게를_쓴다() {
+        // 기본 측정 회차의 키는 140.5cm, 몸무게는 35.0kg 이다(FakeFitness)
+        CoachRun run = runningRunWithBody(family.child.profileId(), new BigDecimal("150"), new BigDecimal("40"));
+
+        executor.execute(run.getId());
+
+        AiProfile sent = firstSentProfile();
+        assertThat(sent.heightCm()).isEqualTo(140.5);
+        assertThat(sent.weightKg()).isEqualTo(35.0);
+        assertThat(sent.measurements()).containsKeys("012", "028");
+        assertThat(sent.inputLevel()).isEqualTo("L2");
+    }
+
+    @Test
+    @DisplayName("측정 기록이 없는 아이의 요청에 키나 몸무게가 빠졌으면 그 값만 가입 때 적은 값으로 채운다")
+    void 요청에_빠진_키와_몸무게는_가입_때_값으로_채운다() {
+        ProfileDetails kid =
+                family.addChild("하늘", LocalDate.of(2018, 4, 2), new BigDecimal("118"), new BigDecimal("22.5"));
+
+        executor.execute(runningRunWithBody(kid.profileId(), null, null).getId());
+        executor.execute(
+                runningRunWithBody(kid.profileId(), new BigDecimal("120"), null).getId());
+
+        assertThat(gateway.startRequests).hasSize(2);
+        AiProfile signupOnly =
+                gateway.startRequests.get(0).profiles().getFirst().profile();
+        assertThat(signupOnly.heightCm()).isEqualTo(118.0);
+        assertThat(signupOnly.weightKg()).isEqualTo(22.5);
+        AiProfile heightFromRequest =
+                gateway.startRequests.get(1).profiles().getFirst().profile();
+        assertThat(heightFromRequest.heightCm()).isEqualTo(120.0);
+        assertThat(heightFromRequest.weightKg()).isEqualTo(22.5);
     }
 
     /** day 에 시작하는 하루짜리 직접 짜기 미션. 칸마다 영상 하나(videoIds 차례). */
@@ -827,6 +899,34 @@ class CoachRunExecutorTest {
                 .singleElement()
                 .extracting(CoachProposalItem::title)
                 .isEqualTo("유연성 키우기 20분");
+    }
+
+    @Test
+    @DisplayName("측정 기록이 없는 아이도 라벨로만 짜라는 이벤트면 AI 를 부르지 않고 그 연령대 클립으로 전신 미션을 낸다")
+    void 측정_기록이_없는_아이도_라벨로만_짜면_전신_미션을_낸다() {
+        fitness.latest.clear();
+        String eg = "Eg3GpTv7z8s";
+        List.of(
+                        clip(eg, 144, 182, "나비자세", WARMUP, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH),
+                        clip(eg, 500, 560, "팔 펴기", MAIN, FitnessFactor.STRENGTH, AgeGroup.YOUTH),
+                        clip(eg, 1426, 1466, "다리 뒤 늘리기", COOLDOWN, FitnessFactor.FLEXIBILITY, AgeGroup.YOUTH))
+                .forEach(it -> clips.clips.put(it.clipId(), it));
+        CoachRun run = runningRunWithBody(family.child.profileId(), new BigDecimal("140"), new BigDecimal("33"));
+
+        executor.on(new CoachRunRequested(run.getId(), true));
+
+        assertThat(gateway.startRequests).isEmpty();
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getFailureCode()).isNull();
+        assertThat(saved.getSteps().get(0).summary()).isEqualTo("측정 없음, 짚을 요인 없음 → 전신");
+        assertThat(saved.getSteps().get(1).summary())
+                .startsWith("AI 를 부르지 않음(" + LabelBasedProposalPlanner.AI_LIMIT_REACHED + ")");
+        CoachProposalItem item = saved.getProposals().getFirst();
+        assertThat(item.title()).isEqualTo("전신 기르기 20분");
+        assertThat(item.sessions().stream().map(MissionSession::title).toList())
+                .containsExactly("나비자세", "팔 펴기", "다리 뒤 늘리기");
+        assertThat(participantIds(item)).containsExactly(family.child.profileId());
     }
 
     @Test

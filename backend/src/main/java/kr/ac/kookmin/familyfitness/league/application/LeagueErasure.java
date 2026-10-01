@@ -8,7 +8,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 가족이 지워질 때 리그 참가 기록을 지운다. identity 가 지우는 트랜잭션 안에서 동기로 듣는다. 리그는 가족 단위라 구성원 한 사람이
- * 빠질 때({@code ProfileDeleting})는 할 일이 없다. 달성률은 저장하지 않고 조회 때 남은 식구로 다시 센다.
+ * 빠지거나({@code ProfileDeleting}) 아이의 동의를 거둘 때({@code ProfileRecordsDeleting})는 할 일이 없다. 이번 달 달성률은 저장하지
+ * 않고 조회 때 남은 식구와 남은 기록으로 다시 센다. 정산한 달은 정산 때 굳힌 값을 그대로 둔다.
  */
 @Component
 public class LeagueErasure {

@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.coaching.support;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -53,6 +54,25 @@ public class Family {
     /** 계정 없는 아이를 더한다(동의 살아 있음). */
     public ProfileDetails addChild(String name, LocalDate birthDate) {
         ProfileDetails added = details(name, ProfileRole.CHILD, birthDate, Sex.F, null, null);
+        addedChildren.add(added);
+        return added;
+    }
+
+    /** 계정 없는 아이를 가입 때 적은 키(cm)와 몸무게(kg)와 함께 더한다(동의 살아 있음). */
+    public ProfileDetails addChild(
+            String name, LocalDate birthDate, @Nullable BigDecimal heightCm, @Nullable BigDecimal weightKg) {
+        ProfileDetails added = new ProfileDetails(
+                UUID.randomUUID(),
+                familyId,
+                null,
+                name,
+                ProfileRole.CHILD,
+                birthDate,
+                Sex.F,
+                heightCm,
+                weightKg,
+                null,
+                true);
         addedChildren.add(added);
         return added;
     }

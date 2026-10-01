@@ -199,15 +199,15 @@ class NotificationWriterTest {
     @DisplayName("업적 — 아이 프로필이면 한 건(본문은 지난 말), 부모 프로필이 받은 업적은 알리지 않는다")
     void 업적() {
         Instant earnedAt = Instant.parse("2026-09-28T16:00:00Z");
-        AchievementEarned kidBadge = new AchievementEarned(kid, "STREAK_3", "사흘 이어서", "3일 이어서 움직여요", earnedAt);
+        AchievementEarned kidBadge = new AchievementEarned(kid, "STREAK_3", "3일 연속", "3일 연속 운동해요", earnedAt);
         assertThat(writer.achievement(kidBadge)).isEqualTo(1);
         assertThat(writer.achievement(kidBadge)).isZero();
-        assertThat(writer.achievement(new AchievementEarned(mom, "FIRST_STEP", "첫걸음", "운동 한 칸을 처음 끝내요", earnedAt)))
+        assertThat(writer.achievement(new AchievementEarned(mom, "FIRST_STEP", "첫걸음", "운동 1개를 처음 완료해요", earnedAt)))
                 .isZero();
 
         assertThat(repository.rows)
                 .extracting(Notification::profileId, Notification::title, Notification::body, Notification::date)
-                .containsExactly(tuple(kid, "새 업적: 사흘 이어서", "3일 이어서 움직였어요", today));
+                .containsExactly(tuple(kid, "새 업적: 3일 연속", "3일 연속 운동했어요", today));
     }
 
     @Nested
@@ -309,8 +309,8 @@ class NotificationWriterTest {
                             Notification::body,
                             Notification::aboutProfileId)
                     .containsExactlyInAnyOrder(
-                            tuple(mom, "서준 키와 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid),
-                            tuple(dad, "서준 키와 몸무게를 새로 재 볼까요", "지난번에 잰 지 30일", kid));
+                            tuple(mom, "서준 키와 몸무게를 다시 측정해 볼까요?", "마지막 측정 후 30일", kid),
+                            tuple(dad, "서준 키와 몸무게를 다시 측정해 볼까요?", "마지막 측정 후 30일", kid));
         }
 
         @Test

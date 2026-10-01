@@ -14,8 +14,8 @@ import org.jspecify.annotations.Nullable;
  * PRAISE         「은영이 스티커를 붙여 줬어요」 · 스티커가 없거나 모르는 스티커면 「은영이 칭찬을 보냈어요」 · 본문 = 한마디
  *                — 보낸 보호자의 프로필 이름이다. 「엄마」 · 「아빠」 로 박아 부르지 않는다
  * MISSION_READY  「새 운동이 생겼어요」                     · 본문 = 미션 제목
- * ACHIEVEMENT    「새 업적 — 사흘 이어서」                 · 본문 = 업적 설명을 지난 말로(「3일 이어서 움직였어요」)
- * REMEASURE      「서준 키 · 몸무게를 새로 재 볼까요」      · 본문 = 「지난번에 잰 지 30일」
+ * ACHIEVEMENT    「새 업적: 3일 연속」                     · 본문 = 업적 설명을 과거형으로(「3일 연속 운동했어요」)
+ * REMEASURE      「서준 키와 몸무게를 다시 측정해 볼까요?」 · 본문 = 「마지막 측정 후 30일」
  * </pre>
  *
  * 남는 말이라 「오늘」 을 넣지 않는다. 「오래됐어요」 · 「안 했어요」 처럼 탓하는 말도 쓰지 않는다(ASKS 4장 · FE 규칙 11).
@@ -71,11 +71,11 @@ public final class NotificationCopy {
     }
 
     public static String remeasureTitle(String kidName) {
-        return kidName + " 키와 몸무게를 새로 재 볼까요";
+        return kidName + " 키와 몸무게를 다시 측정해 볼까요?";
     }
 
     public static String remeasureBody(long daysSinceLastTest) {
-        return "지난번에 잰 지 " + daysSinceLastTest + "일";
+        return "마지막 측정 후 " + daysSinceLastTest + "일";
     }
 
     /** 업적 설명을 지난 말로. 알림은 이미 일어난 일이라 「받아요」 가 오면 아직 안 받은 것처럼 읽힌다. */

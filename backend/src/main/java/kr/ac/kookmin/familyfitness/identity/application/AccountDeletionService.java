@@ -22,8 +22,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 계정 탈퇴(DELETE /me)와 오너의 구성원 내보내기(DELETE /families/{familyId}/profiles/{profileId}).
  *
  * <p>외래 키에 ON DELETE CASCADE 가 없다. 그래서 한 트랜잭션 안에서 {@link ProfileDeleting} 이나 {@link FamilyDeleting} 을 발행해
- * 다른 모듈이 자기 행을 먼저 지우게 하고, 이벤트가 돌아오면 identity 가 응원, 운동할 수 있는 시간, 동의 이력, 프로필, 가족, 계정을
- * 지운다. 어느 단계에서든 실패하면 트랜잭션 전체가 되돌아가 아무것도 지워지지 않는다.
+ * 다른 모듈이 자기 행을 먼저 지우게 하고, 이벤트가 돌아오면 identity 가 응원, 운동할 수 있는 시간, 동의 이력, 가족 초대, 프로필,
+ * 가족, 계정을 지운다. 어느 단계에서든 실패하면 트랜잭션 전체가 되돌아가 아무것도 지워지지 않는다.
+ *
+ * <p>가족 초대(family_invites)는 가족을 지울 때 함께 지운다. 한 사람만 빠질 때는 그 사람이 낸 초대를 오너가 낸 것으로 돌리고, 그
+ * 사람 계정이 미리 한 동의와 쓴 초대에서 계정 칸만 비운다(초대는 살아 있고, 쓴 코드는 다시 쓰지 못한다).
  *
  * <p>탈퇴는 계정에 붙은 프로필로 갈린다.
  * <ul>
@@ -100,8 +103,11 @@ public class AccountDeletionService {
         events.publishEvent(new ProfileDeleting(family.getId(), leaving.getId(), leaving.getUserId(), heir, cheers));
         erasure.eraseProfile(leaving.getId(), heir, cheers);
         UUID account = leaving.getUserId();
-        if (account != null) erasure.forgetConsentActor(account);
-        forgetDeletedMissionsOnCheers(family.getId());
+        if (account != null) {
+            erasure.forgetConsentActor(account);
+            erasure.forgetInviteClaimer(account);
+        }
+        DeletedMissionsOnCheers.forget(erasure, missions, family.getId());
     }
 
     private void eraseFamily(Family family) {
@@ -109,16 +115,6 @@ public class AccountDeletionService {
                 family.getProfiles().stream().map(Profile::getId).toList();
         events.publishEvent(new FamilyDeleting(family.getId(), profileIds));
         erasure.eraseFamily(family.getId(), profileIds);
-    }
-
-    /**
-     * 남는 응원의 missionId 가 지운 미션을 가리키면 비운다. coaching 이 그 사람만 참여한 미션을 통째로 지웠을 수 있다. 미션 표는
-     * coaching 것이라 미션이 남아 있는지는 {@link MissionLookup} 으로 묻는다.
-     */
-    private void forgetDeletedMissionsOnCheers(UUID familyId) {
-        for (UUID missionId : erasure.missionsOnCheers(familyId)) {
-            if (!missions.isFamilyMission(familyId, missionId)) erasure.forgetMissionOnCheers(familyId, missionId);
-        }
     }
 
     /** 커밋된 뒤에 돌린다. 되돌린 탈퇴의 계정을 심사용 계정 후보에서 빼지 않게. 트랜잭션 밖이면 곧바로. */

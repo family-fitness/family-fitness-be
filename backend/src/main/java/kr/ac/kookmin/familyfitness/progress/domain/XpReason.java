@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * SESSION_DONE  「운동을 했어요」
  * MISSION_DONE  「운동을 다 했어요」
  * STICKER       「은영이 붙여 준 스티커」(붙인 사람의 프로필 이름) · 붙인 사람을 모르면 「가족이 붙여 준 스티커」
- * REMEASURE     「키 · 몸무게를 새로 쟀어요」
+ * REMEASURE     「키와 몸무게를 다시 측정했어요」
  * </pre>
  */
 public final class XpReason {
@@ -33,7 +33,7 @@ public final class XpReason {
         return switch (kind) {
             case SESSION_DONE -> "운동을 했어요";
             case MISSION_DONE -> "운동을 다 했어요";
-            case REMEASURE -> "키와 몸무게를 새로 쟀어요";
+            case REMEASURE -> "키와 몸무게를 다시 측정했어요";
             case STICKER -> {
                 String who = senderCall == null || senderCall.isBlank() ? UNKNOWN_SENDER : senderCall;
                 yield who + iGa(who) + " 붙여 준 스티커";
