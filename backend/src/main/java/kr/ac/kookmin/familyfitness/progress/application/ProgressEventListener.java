@@ -60,7 +60,7 @@ public class ProgressEventListener {
      * testedOn 이 가장 이른 회차 하나를 뺀 회차마다 +20(결정 27, fe:src/mocks/progress.ts 의 {@code tests.slice(0, -1)}).
      * 적립 대상은 이벤트가 알려 준 「새로 다시 잰 회차」 이고, 원장 키는 그 회차 id, occurred_on 은 그 회차의 testedOn 이다.
      * 지난 날짜를 나중에 적어 가장 이른 회차가 바뀌면 그때까지 가장 이르던 회차가 이때 +20 을 받는다.
-     * 처음 다시 잰 회차가 생기면 업적 「자란 만큼 다시」.
+     * 처음 다시 잰 회차가 생기면 업적 「다시 측정」.
      */
     @EventListener
     @Transactional

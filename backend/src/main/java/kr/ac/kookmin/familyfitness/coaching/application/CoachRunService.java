@@ -25,14 +25,12 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ExerciseVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.InvalidRunDateException;
 import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
-import kr.ac.kookmin.familyfitness.coaching.domain.NoMeasuredMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
-import kr.ac.kookmin.familyfitness.fitness.api.FitnessQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
@@ -59,7 +57,6 @@ public class CoachRunService {
     private final ExerciseVideoRepository videos;
     private final FamilyAccess familyAccess;
     private final ProfileQuery profileQuery;
-    private final FitnessQuery fitnessQuery;
     private final ApplicationEventPublisher events;
     private final AppTime time;
     private final CoachRunTimeLimit timeLimit;
@@ -72,7 +69,6 @@ public class CoachRunService {
             ExerciseVideoRepository videos,
             FamilyAccess familyAccess,
             ProfileQuery profileQuery,
-            FitnessQuery fitnessQuery,
             ApplicationEventPublisher events,
             AppTime time,
             CoachRunTimeLimit timeLimit,
@@ -83,7 +79,6 @@ public class CoachRunService {
         this.videos = videos;
         this.familyAccess = familyAccess;
         this.profileQuery = profileQuery;
-        this.fitnessQuery = fitnessQuery;
         this.events = events;
         this.time = time;
         this.timeLimit = timeLimit;
@@ -98,8 +93,9 @@ public class CoachRunService {
     /**
      * RUNNING 으로 저장하고 이벤트만 발행한다. AI 호출은 커밋 후 비동기. 판단 차례:
      * 1) 보호자만(403 NOT_A_PARENT) 2) 지난 날짜면 422 INVALID_DATE 3) 대상이 이 가족 구성원이 아니면 422 NOT_FAMILY_MEMBER
-     * 4) 대상의 보호자 동의가 없으면 422 CONSENT_REQUIRED 5) 대상이 측정 대상(만 4세 이상)인데 측정 기록이 없으면 422 NO_MEASURED_MEMBER
-     * 6) 같은 (대상, 날짜)의 RUNNING 이 있으면 409 RUN_IN_PROGRESS(결정 1) 7) 심사용 계정이 오늘 {@link ReviewRunQuota} 한도를 넘기면 429 TOO_MANY.
+     * 4) 대상의 보호자 동의가 없으면 422 CONSENT_REQUIRED
+     * 5) 같은 (대상, 날짜)의 RUNNING 이 있으면 409 RUN_IN_PROGRESS(결정 1) 6) 심사용 계정이 오늘 {@link ReviewRunQuota} 한도를 넘기면 429 TOO_MANY.
+     * 측정 기록이 없는 대상도 막지 않는다. AI 는 나이, 성별과 요청에 실어 온 키, 몸무게로 짠다({@link CoachRunPipeline#prepare}).
      * 심사용 계정을 모두 합친 오늘 AI 몫이 끝났으면 막지 않고, AI 를 부르지 않는 라벨 편성으로 넘긴다(이벤트의 labelsOnly).
      * 잠금은 coach_runs.lock_key 유니크 인덱스라 동시에 들어온 두 요청도 하나만 통과한다. {@link CoachRunTimeLimit} 보다 오래된
      * RUNNING 은 서버가 끝내지 못한 실행이라 FAILED 로 바꾸고 잠금을 푼다.
@@ -116,9 +112,6 @@ public class CoachRunService {
         ProfileSummary subject = profileQuery.findSummary(subjectId);
         if (subject == null || !subject.familyId().equals(familyId)) throw new NotFamilyMemberException(subjectId);
         ParticipantConsent.require(subject);
-        if (subject.measurable() && !fitnessQuery.hasAnyTest(List.of(subjectId))) {
-            throw new NoMeasuredMemberException(subjectId);
-        }
 
         var now = time.now();
         String lockKey = CoachRun.lockKeyOf(subjectId, date);

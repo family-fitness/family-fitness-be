@@ -121,7 +121,7 @@
 | 422 | `UNDER_14_NOT_ALLOWED` | 만 14세 미만이 가족을 만들거나 · PARENT 로 들어가거나 · 동의를 기록함. PARENT 생일을 만 14세 미만으로 고침 |
 | 422 | `UNDER_14_NOT_ALLOWED` | 가족 초대코드로 들어오기: PARENT 초대인데 넣은 생년월일이 만 14세 미만 |
 | 422 | `NOT_MEASURABLE` · `ITEM_NOT_FOR_AGE_GROUP` | 측정 — 만 4세 미만 · 연령대 항목 아님 |
-| 422 | `NO_MEASURED_MEMBER` · `INVALID_DATE` · `NOT_FAMILY_MEMBER` | 편성 · 미션 · 응원 · 쉬는 날 · 리그. `INVALID_DATE` 는 지난 날짜 · 틀린 날짜 · 앞 달 |
+| 422 | `INVALID_DATE`, `NOT_FAMILY_MEMBER` | 편성, 미션, 응원, 쉬는 날, 리그. `INVALID_DATE` 는 지난 날짜, 틀린 날짜, 앞 달이다 |
 | 422 | `MISSION_NOT_ACTIVE` · `TOO_SHORT` | 칸 끝 · 옛 타이머 — 오늘이 기간 밖. 칸 끝 — 인정 초가 칸 시간의 절반 미만 |
 | 422 | `INVALID_METRIC` · `TARGET_NOT_REACHED` | 활동 기록(목표 지표가 다름) · 보호자 확인(걸음수 목표 미도달) |
 | 422 | `NOT_APPLICABLE` | 아이 프로필의 참여 방식을 바꿈 |
@@ -149,7 +149,7 @@
   - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 공단 영상을 AI 새 표 776편으로 고침 — 질환자용 근골격계운동 114편 끔 · 제목 끝 「-1」 「-2」 뗌(`V162`) · 다시 AI 새 표 732편으로 고침 — 오십견 · 요통 같은 질환용 영상 44편 끔 · 요인이 비었던 131편에 요인(`V163`) · 다시 AI 새 표 452편으로 고침 — 기준표에서 빠진 어르신 · 헬스장 · 수영장 · 기구 · 둘 이상 영상 280편 끔, 어르신은 성인(공통) 영상을 받음(`V164`) · AI 담당자 코드의 한 파일 표(910줄)로 다시 실음 — 「공통」 영상을 청소년에게도, 요인 · 단계가 둘인 영상은 줄마다 후보로, 인용 이름은 AI 표 값(`V165`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP(IPv6 /56)마다 한 시간 30번 · 새 계정은 모두 합쳐 한 시간 300개 뒤로는 그 IP 가 만든 계정으로 들임, prod 는 X-Forwarded-For 를 읽음) · 심사용 계정 로그인 본문 `{kind}` — `FAMILY`(기본, 체험 가족) · `FRESH`(가족 없는 새 계정) · `INVITED`(체험 가족 아빠 자리 초대코드를 응답 `inviteCode` 로), 한도가 찬 뒤 다시 내주는 계정은 같은 kind 만.
   - 탈퇴(BE-40): 계정 탈퇴 `DELETE /me`, 오너의 구성원 내보내기 `DELETE /families/{familyId}/profiles/{profileId}`, `ProfileSummary.isOwner`. 탈퇴한 계정의 토큰은 `/me` 에서 401 이다.
   - 초대 먼저(BE-42): 보호자가 역할만 정해 내는 가족 초대(`POST /families/{familyId}/invites`, 목록 `GET`, 취소 `DELETE /families/{familyId}/invites/{code}`, 테이블 `family_invites` `V170`). 코드로 들어온 사람이 `POST /profiles/claim` 에 이름, 생년월일, 성별을 함께 보내 자기 프로필을 만든다. 초대코드 미리 보기 응답에 `kind` 칸을 추가했다. 휴대폰 없는 아이처럼 보호자가 정보를 미리 입력해 두는 프로필의 초대코드는 그대로다.
-- 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler` · `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`).
+- 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler`, `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`), 편성의 422 `NO_MEASURED_MEMBER`(BE-43. 측정 기록이 없는 아이도 키와 몸무게로 편성을 받는다).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
 - 명세와 다르게 정한 것: 코치 제안 `participants[]` 에 편성 역할 `coachRole`(주행자 · 동반자 · 응원)을 두고 `role` 은 프로필 역할(PARENT/CHILD). 영상 목록 항목에 `badges`. 쉬는 날 경로는 `rest-cards`, 칸 끝은 `/sessions/{seq}/complete`, 구간 목록은 `/exercises`(FE 요청서 0장 합의의 설계안 이름).
   - **전환기 별칭**: 지금 FE 는 `rest-days` · `/sessions/{seq}/done` · `/clips` 를 부른다(fe:src/lib/api/queries.ts). 그 이름으로 부르면 실제 BE 에서 404 가 나서(칸 끝 기록 실패 · 쉬는 날 카드 · 운동 찾기), 계약 이름은 그대로 두고 FE 이름도 **같은 핸들러**로 받는다. 요청 · 응답 · 권한 · 오류 코드가 계약 이름과 똑같다. OpenAPI 에는 `deprecated` 로 싣는다(`OpenApiConfig.TRANSITIONAL_ALIASES`). FE 가 계약 이름으로 옮기면 걷는다. 목록은 아래 「전환기 별칭」 표. 같은 성격의 선례: 응원 `emoji`(↔ `stickerId`), 쉬는 날 요청 `restDate`(↔ `date`), 경험치 줄 `reason` · `at`(5장).
@@ -671,12 +671,14 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### POST /api/v1/families/{familyId}/coach/runs — 보호자
 한 번의 편성 = **아이 한 명의 하루**(FE 요청서 1장 ②). triggerType 은 `MANUAL`. 자동 편성은 없다.
-요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?}`
+요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?, heightCm?(30~230), weightKg?(5~250)}`
 - `minutes` 가 없을 때만 `minutesPerSession` 을 쓴다(옛 서버용으로 FE 가 같이 보낸다). 둘 다 없으면 400 — 기본 분을 서버가 고르지 않는다.
 - `quiet` · `withParent` 가 없으면 false. `place` 는 `HOME` · `OUTDOOR` · 없음(장소를 가리지 않음). `focusFactor` 는 요인 이름(한글 또는 영문) 또는 null — null 이면 코치가 가장 낮은 요인을 고른다.
 - 옛 칸 `weekStart` · `daysPerWeek` 는 받지 않는다(모르는 칸은 무시).
+- `heightCm`(cm)과 `weightKg`(kg)는 대상의 키와 몸무게다. 넣지 않아도 된다. 범위는 측정 등록과 같고, 벗어나면 400 `BAD_REQUEST` 다. 소수 둘째 자리부터는 반올림해 한 자리로 저장한다.
+- 측정 기록이 없는 아이도 편성을 받는다. 만 4세 이상이어도 422 를 내지 않는다. 이런 아이는 이 두 값을 AI 요청의 `height_cm`, `weight_kg` 로 보낸다(8장). 측정 기록이 있는 아이는 두 값을 저장만 하고, AI 에는 가장 최근 측정 회차의 값을 보낸다.
 응답 202 `{coachRunId, status:"RUNNING", pollAfterMs:1500}`.
-판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 422 `NO_MEASURED_MEMBER`(대상이 측정 대상(만 4세 이상)인데 측정 기록이 없음. 만 4세 미만은 측정 없이 진행) → 409 `RUN_IN_PROGRESS` → 429 `TOO_MANY`(심사용 계정만, 하루(KST) 20번을 넘김).
+판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 409 `RUN_IN_PROGRESS` → 429 `TOO_MANY`(심사용 계정만, 하루(KST) 20번을 넘김).
 잠금
 - (대상, 날짜)에 RUNNING 이 있을 때만 409 `RUN_IN_PROGRESS`. `coach_runs.lock_key`(RUNNING 동안만 `profileId|date`) 유니크 인덱스라 동시에 들어온 두 요청도 하나만 통과한다.
 - 심사용 계정(`POST /auth/review-login` 이 만든 계정)은 편성을 하루(KST)에 20번까지 시작한다. 21번째는 실행을 만들기 전에 429 `TOO_MANY` 다. 누구나 만들 수 있는 계정이 AI(LLM) 편성을 끝없이 돌리지 못하게 하려는 것이다. 통과한 요청만 세고 셈은 서버 메모리에 둔다. 구글 계정은 세지 않는다.
@@ -985,7 +987,9 @@ AI 쪽 원문은 `family-fitness-ai/docs/인터페이스-명세.md` 다. 아래�
                  "recent_video_ids": [<영상 id>, ...]}}
 ```
 - `profile_refs` 는 편성 대상 한 명뿐이다. 가족 전원을 보내지 않으므로 AI 의 「1~4명」 제한과 형제 사이 409 가 생기지 않는다. 동의가 없는 프로필은 싣지 않는다.
-- 키 · 몸무게 · 측정값은 대상의 가장 최근 측정 회차 값이다. 그 회차에 체지방률 · 허리둘레를 적었으면 `measurements` 에 `003` · `004` 로 같이 싣는다(AI 가 BMI · 허리둘레-신장비와 함께 3등급 판정에 쓴다). `measurements` 가 비면 칸을 null 로 보낸다.
+- 측정 기록이 있으면 키, 몸무게, 측정값은 대상의 가장 최근 측정 회차 값이다. 그 회차에 체지방률과 허리둘레를 적었으면 `measurements` 에 `003`, `004` 로 같이 싣는다(AI 가 BMI, 허리둘레-신장비와 함께 3등급 판정에 쓴다). `measurements` 가 비면 칸을 null 로 보낸다.
+- 측정 기록이 없으면 편성 요청의 `heightCm`, `weightKg` 를 `height_cm`, `weight_kg` 로 보낸다. 요청에 빠진 값은 가입 때 적은 값(프로필의 키와 몸무게)으로 채운다. 측정 기록이 있으면 요청의 두 값은 쓰지 않는다. 그 회차에 키나 몸무게가 비었을 때만 가입 때 적은 값으로 채운다.
+- `input_level` 은 측정값이 있으면 `L2`, 측정값 없이 키와 몸무게가 둘 다 있으면 `L1`, 그 밖에는 `L0` 이다. AI(origin/main)는 측정값이 없으면 대상 요인을 고르지 않고 나이, 성별, 조건으로 전신 편성을 짠다. 지금 AI 는 키와 몸무게를 받기만 하고 편성 내용에는 쓰지 않는다.
 - `recent_video_ids`: 대상이 편성 날 앞 14일(start_date−14 ~ start_date−1) 동안 시작한 미션의 칸 영상 id(유튜브 id 또는 공단 파일 이름, 예 `0AUDLJ08S_00351`). 최근 미션부터, 같은 id 는 한 번, 최대 150개다(20분 편성은 하루 7칸이라 14일이면 98개 — 잘리지 않는다. 60개일 때는 9일쯤에 넘쳐 목록에서 빠진 오래된 영상이 새 영상처럼 먼저 뽑혔다). AI 도 150개까지 읽는다(AI `schemas.RECENT_LIMIT`). 60개까지만 읽는 AI 버전은 뒤쪽 오래된 id 를 버린다. 승인해 미션이 된 칸만 센다(승인 전 제안은 넣지 않는다). 없으면 빈 배열이다. AI 는 후보를 고를 때 이 영상들을 뒤로 미루고, 같은 요인 · 단계 · 연령에 맞는 다른 후보가 모자랄 때만 다시 쓴다(규칙 편성 · LLM 편성 후보 모두). 이 칸을 모르는 AI 는 받아서 버린다. 대체 편성도 같은 목록을 같은 규칙으로 쓴다(아래 「결과 처리」).
 - `focus_factor`(보호자가 키워 주고 싶은 역량)와 `with_companion` 은 AI develop 의 `ConstraintsIn` 에 아직 없어 AI 가 받아서 버린다 — 그동안 http 모드에서는 이 값이 편성에 반영되지 않는다. 대체 편성 · 스텁은 둘 다 반영한다.
   - AI 로컬 브랜치 `feature/AI-kspo-video-api`(`b070698`, 아직 병합 전)가 두 칸을 받는다. `focus_factor` 는 측정으로 고른 가장 낮은 요인보다 먼저 대상 요인이 되고(처방 근거 · 규칙 편성 · LLM 편성 모두), `with_companion` 은 참여자를 늘리지 않고 LLM 문구에만 쓴다. 병합 · 배포 뒤부터 http 모드에도 반영된다.

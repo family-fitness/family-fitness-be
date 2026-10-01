@@ -79,7 +79,7 @@ class ProgressRulesTest {
     void 최근_줄_문장() {
         assertThat(XpReason.of(XpKind.SESSION_DONE, null)).isEqualTo("운동을 했어요");
         assertThat(XpReason.of(XpKind.MISSION_DONE, null)).isEqualTo("운동을 다 했어요");
-        assertThat(XpReason.of(XpKind.REMEASURE, null)).isEqualTo("키와 몸무게를 새로 쟀어요");
+        assertThat(XpReason.of(XpKind.REMEASURE, null)).isEqualTo("키와 몸무게를 다시 측정했어요");
         assertThat(XpReason.of(XpKind.STICKER, "엄마")).isEqualTo("엄마가 붙여 준 스티커");
         assertThat(XpReason.of(XpKind.STICKER, "아빠")).isEqualTo("아빠가 붙여 준 스티커");
         assertThat(XpReason.of(XpKind.STICKER, "서준")).isEqualTo("서준이 붙여 준 스티커");
@@ -132,7 +132,7 @@ class ProgressRulesTest {
     }
 
     @Test
-    @DisplayName("움직임 업적 — 움직였으면 첫걸음, 연속 3 · 7, 분 30 · 100 · 300 은 넘은 만큼, 여섯 가지 힘은 주지 않는다")
+    @DisplayName("움직임 업적 — 움직였으면 첫걸음, 연속 3 · 7, 분 30 · 100 · 300 은 넘은 만큼, 여섯 가지 체력 요인은 주지 않는다")
     void 움직임_업적() {
         assertThat(new MoveFacts(1, 10, false, false, false).reached()).containsExactly(Achievement.FIRST_STEP);
         assertThat(new MoveFacts(7, 100, true, true, true).reached())

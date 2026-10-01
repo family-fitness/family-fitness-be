@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  * SESSION_DONE  그날 운동을 했다(칸들의 합)                   「운동을 했어요」
  * MISSION_DONE  그날 운동을 했고 하나 이상 끝까지 했다(그날 합) 「운동을 다 했어요」
  * STICKER       칭찬 스티커 한 장 — fromProfileId 가 붙인 사람  「○○가 붙여 준 스티커」
- * REMEASURE     다시 잰 회차 하나                              「키 · 몸무게를 새로 쟀어요」
+ * REMEASURE     다시 잰 회차 하나                              「키와 몸무게를 다시 측정했어요」
  * </pre>
  *
  * <p><b>reason · at 은 전환기 칸이다.</b> 지금 FE(fe:src/lib/api/types.ts XpEvent {@code {reason, amount, at}})는 문장과

@@ -128,6 +128,33 @@ class OpenApiDocsTest {
     }
 
     @Test
+    @DisplayName("편성 요청의 키와 몸무게는 null 을 싣는 number 이고, 범위는 측정 등록과 같다(키 30~230, 몸무게 5~250)")
+    void 편성_요청의_키와_몸무게는_측정_등록과_같은_범위다() {
+        for (String schema : List.of("StartCoachRunRequest", "RegisterFitnessTestRequest")) {
+            JsonNode height = property(schema, "heightCm");
+            JsonNode weight = property(schema, "weightKg");
+            assertThat(typesOf(height)).as(schema + ".heightCm").containsExactlyInAnyOrder("number", "null");
+            assertThat(typesOf(weight)).as(schema + ".weightKg").containsExactlyInAnyOrder("number", "null");
+            assertThat(height.path("minimum").asDouble())
+                    .as(schema + ".heightCm 최솟값")
+                    .isEqualTo(30.0);
+            assertThat(height.path("maximum").asDouble())
+                    .as(schema + ".heightCm 최댓값")
+                    .isEqualTo(230.0);
+            assertThat(weight.path("minimum").asDouble())
+                    .as(schema + ".weightKg 최솟값")
+                    .isEqualTo(5.0);
+            assertThat(weight.path("maximum").asDouble())
+                    .as(schema + ".weightKg 최댓값")
+                    .isEqualTo(250.0);
+        }
+        assertThat(property("StartCoachRunRequest", "heightCm")
+                        .path("description")
+                        .asString())
+                .contains("측정 기록이 없는 대상만");
+    }
+
+    @Test
     @DisplayName("인증 등급은 회차에 하나다 — 항목 줄에 grade 가 없고, latest 의 certification 은 null 을 싣는 참조다")
     void 인증_등급은_회차에_하나다() {
         JsonNode itemProperties =
