@@ -234,11 +234,11 @@ class ReviewLoginKindApiTest {
     }
 
     @Test
-    @DisplayName("세 kind 모두 한 IP 한도를 같이 센다 — 섞어 불러도 30번을 넘기면 429")
+    @DisplayName("세 kind 모두 한 IP 한도를 같이 센다 — 섞어 불러도 60번을 넘기면 429")
     void 세_kind_가_IP_한도를_합쳐_센다() throws Exception {
         String ip = freshIp();
         String[] kinds = {"FAMILY", "FRESH", "INVITED"};
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 60; i++) {
             reviewLogin(ip, "{\"kind\":\"" + kinds[i % 3] + "\"}").andExpect(status().isOk());
         }
 
