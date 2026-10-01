@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -103,6 +104,13 @@ public class CoachRunEntity {
 
     @Column(name = "with_parent")
     private @Nullable Boolean withParent;
+
+    /** 편성 요청에 실어 온 대상의 키(cm)와 몸무게(kg)(V171). 안 보냈거나 V171 앞에 만든 행이면 null 이다. */
+    @Column(name = "height_cm", precision = 4, scale = 1)
+    private @Nullable BigDecimal heightCm;
+
+    @Column(name = "weight_kg", precision = 4, scale = 1)
+    private @Nullable BigDecimal weightKg;
 
     /** RUNNING 동안만 'profileId|runDate'. 유니크 인덱스 ux_coach_runs_lock_key 가 (프로필, 날짜) 잠금이다. */
     @Column(name = "lock_key", length = 60)
@@ -336,6 +344,14 @@ public class CoachRunEntity {
         return withParent;
     }
 
+    public @Nullable BigDecimal getHeightCm() {
+        return heightCm;
+    }
+
+    public @Nullable BigDecimal getWeightKg() {
+        return weightKg;
+    }
+
     /** 편성 요청(대상 · 날짜 · 조건). 행을 처음 만들 때만 쓴다. */
     public void setRequest(
             @Nullable UUID subjectProfileId,
@@ -343,13 +359,17 @@ public class CoachRunEntity {
             @Nullable Boolean quiet,
             @Nullable String place,
             @Nullable String focusFactor,
-            @Nullable Boolean withParent) {
+            @Nullable Boolean withParent,
+            @Nullable BigDecimal heightCm,
+            @Nullable BigDecimal weightKg) {
         this.subjectProfileId = subjectProfileId;
         this.runDate = runDate;
         this.quiet = quiet;
         this.place = place;
         this.focusFactor = focusFactor;
         this.withParent = withParent;
+        this.heightCm = heightCm;
+        this.weightKg = weightKg;
     }
 
     public @Nullable String getLockKey() {
