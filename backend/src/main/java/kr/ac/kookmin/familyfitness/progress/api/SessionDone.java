@@ -9,8 +9,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * 한 사람이 칸 하나를 끝냈다. coaching 이 칸 끝에서 만들어 {@link ProgressRecorder#sessionDone} 에 넘긴다.
  *
- * @param phase 칸 단계. 업적 「준비부터 정리까지」 를 가른다
- * @param factor 칸이 기르는 체력 요인. 없으면 null. 업적 「여섯 가지 힘」 판정에 쓰려고 원장에 같이 남긴다
+ * @param phase 칸 단계. 업적 「준비운동부터 정리운동까지」 를 가른다
+ * @param factor 운동 1개가 기르는 체력 요인. 없으면 null. 업적 「여섯 가지 체력 요인」 판정에 쓰려고 원장에 같이 남긴다
  * @param missionCompleted 이 칸으로 이 사람의 미션이 끝났는가(참여자 상태가 COMPLETED)
  * @param verifiedBy 이 사람의 미션이 확인된 방법. 아직 안 끝났으면 null
  * @param completedOn 칸을 끝낸 날(KST). 서버가 받은 날이다(결정 22)

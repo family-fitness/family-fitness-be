@@ -233,7 +233,7 @@ class ProgressServiceTest {
         }
 
         @Test
-        @DisplayName("다시 잰 회차마다 +20 — 원장 키 · 날짜는 이벤트가 알려 준 그 회차 것, 처음 다시 잰 회차에 「자란 만큼 다시」")
+        @DisplayName("다시 잰 회차마다 +20 — 원장 키 · 날짜는 이벤트가 알려 준 그 회차 것, 처음 다시 잰 회차에 「다시 측정」")
         void 다시_재기() {
             UUID first = UUID.randomUUID();
             LocalDate firstOn = today.minusDays(60);
@@ -286,7 +286,7 @@ class ProgressServiceTest {
 
             assertThat(earnedEvents)
                     .containsExactly(new AchievementEarned(
-                            kid, "FIRST_STEP", "첫걸음", "운동 한 칸을 처음 끝내요", earnedAt(kid, Achievement.FIRST_STEP)));
+                            kid, "FIRST_STEP", "첫걸음", "운동 1개를 처음 완료해요", earnedAt(kid, Achievement.FIRST_STEP)));
         }
 
         @Test
@@ -302,8 +302,8 @@ class ProgressServiceTest {
         }
 
         @Test
-        @DisplayName("준비부터 정리까지 — 그날 끝낸 칸에 준비 · 본 · 정리가 다 있으면. 여러 운동에 걸쳐도 된다")
-        void 준비부터_정리까지() {
+        @DisplayName("준비운동부터 정리운동까지 — 그날 끝낸 칸에 준비 · 본 · 정리가 다 있으면. 여러 운동에 걸쳐도 된다")
+        void 준비운동부터_정리운동까지() {
             move(kid, UUID.randomUUID(), 1, Phase.WARMUP, today.minusDays(1), 1);
             move(kid, UUID.randomUUID(), 1, Phase.MAIN, today, 2);
             move(kid, UUID.randomUUID(), 1, Phase.COOLDOWN, today, 1);
@@ -336,8 +336,8 @@ class ProgressServiceTest {
         }
 
         @Test
-        @DisplayName("사흘 이어서 — 잡힌 날 기준 셈. 잡히지 않은 날은 건너뛰고, 잡힌 날을 빼먹으면 끊긴다")
-        void 사흘_이어서() {
+        @DisplayName("3일 연속 — 잡힌 날 기준 셈. 잡히지 않은 날은 건너뛰고, 잡힌 날을 빼먹으면 끊긴다")
+        void 연속_3일() {
             // 월(21) · 수(23) · 목(24) 에 움직였고 화(22)는 잡히지 않았다
             planned.put(kid, Set.of(LocalDate.of(2026, 9, 21), LocalDate.of(2026, 9, 23), today));
             activity.addActiveMinutes(kid, LocalDate.of(2026, 9, 21), ActivitySource.TIMER, 5);
@@ -438,7 +438,7 @@ class ProgressServiceTest {
                             tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
                             tuple(XpKind.STICKER, dad, 10, today, "철수가 붙여 준 스티커"),
                             tuple(XpKind.SESSION_DONE, null, 10, today, "운동을 했어요"),
-                            tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키와 몸무게를 새로 쟀어요"),
+                            tuple(XpKind.REMEASURE, null, 20, today.minusDays(1), "키와 몸무게를 다시 측정했어요"),
                             tuple(XpKind.STICKER, mom, 10, today, "은영이 붙여 준 스티커"));
             // 여섯째 줄(그제 운동 5 + 5 + 20)은 다섯 줄 밖이다
             assertThat(query.view(userId, kid).xp()).isEqualTo(90);

@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 /**
  * 여정 A 서준이네 — 엄마(만든 사람) · 서준 11(계정 없음) · 아빠(D2 초대코드로 합류, 주말만).
  * D1(9/30) ~ D7(10/6) 매일 서준 하루 편성 → 승인 → 칸을 모두 끝냄. 주말(D4 · D5)에는 아빠가 같이 한다.
- * 첫걸음 · 사흘 이어서 · 일주일 이어서 · 주말에도 · 가족과 함께 · 누적 100분 업적과 07:30 알림, 10월 리그 방을 본다.
+ * 첫걸음, 3일 연속, 7일 연속, 주말에도, 가족과 함께, 누적 100분 업적과 07:30 알림, 10월 리그 방을 본다.
  * 시각을 마음대로 바꿀 수 있는 Clock 으로 바꾸고, 날을 넘길 때 예약 작업(07:30 알림 · 리그 정산)을 직접 부른다. AI 는 스텁이다.
  */
 @SpringBootTest
@@ -78,7 +78,7 @@ class AJourneyTest {
     LeagueSettlementScheduler league;
 
     @Test
-    @DisplayName("서준이네 일주일: 날마다 편성하고 끝내면 첫걸음 · 사흘 · 주말에도 · 가족과 함께 · 누적 100분 · 일주일 업적이 차례로 붙는다")
+    @DisplayName("서준이네 일주일: 날마다 편성하고 끝내면 첫걸음, 3일 연속, 주말에도, 가족과 함께, 누적 100분, 7일 연속 업적이 차례로 붙는다")
     void 서준이네_일주일_정상_흐름() throws Exception {
         CLOCK.set(at(D1, 6, 0));
         String mom = devLogin("qa-A-mom");
@@ -196,7 +196,7 @@ class AJourneyTest {
         }
         String after = progress(mom, seojun);
         assertThat((Integer) read(after, "$.streakDays")).isEqualTo(6);
-        assertThat(earnedAt(after, "STREAK_3")).as("사흘 업적은 처음 받은 때 그대로").isEqualTo(streak3At);
+        assertThat(earnedAt(after, "STREAK_3")).as("3일 연속 업적은 처음 받은 때 그대로").isEqualTo(streak3At);
         assertEarned(after, "STREAK_7", false);
 
         // 잡힌 날을 빼먹으면 끊긴다

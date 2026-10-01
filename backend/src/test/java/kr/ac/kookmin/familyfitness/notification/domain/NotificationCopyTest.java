@@ -34,15 +34,15 @@ class NotificationCopyTest {
 
     @ParameterizedTest(name = "{0} → {1}")
     @CsvSource({
-        "운동 한 칸을 처음 끝내요, 운동 한 칸을 처음 끝냈어요",
-        "3일 이어서 움직여요, 3일 이어서 움직였어요",
-        "'준비, 본운동, 정리를 한 번에 다 해요', '준비, 본운동, 정리를 한 번에 다 했어요'",
-        "모두 합쳐 30분 움직여요, 모두 합쳐 30분 움직였어요",
+        "운동 1개를 처음 완료해요, 운동 1개를 처음 완료했어요",
+        "3일 연속 운동해요, 3일 연속 운동했어요",
+        "'준비운동, 본운동, 정리운동을 한 번에 다 해요', '준비운동, 본운동, 정리운동을 한 번에 다 했어요'",
+        "모두 합쳐 30분 운동해요, 모두 합쳐 30분 운동했어요",
         "토요일이나 일요일에 운동해요, 토요일이나 일요일에 운동했어요",
         "보호자와 같은 날 운동해요, 보호자와 같은 날 운동했어요",
-        "키와 몸무게를 새로 재요, 키와 몸무게를 새로 쟀어요",
+        "키와 몸무게를 다시 측정해요, 키와 몸무게를 다시 측정했어요",
         "칭찬 스티커를 처음 받아요, 칭찬 스티커를 처음 받았어요",
-        "여섯 가지 힘을 기르는 운동을 다 해 봐요, 여섯 가지 힘을 기르는 운동을 다 해 봤어요",
+        "여섯 가지 체력 요인을 기르는 운동을 다 해 봐요, 여섯 가지 체력 요인을 기르는 운동을 다 해 봤어요",
         "이미 지난 말이에요, 이미 지난 말이에요"
     })
     @DisplayName("업적 설명은 지난 말로 — 앞에서부터 처음 맞는 끝말 하나만 바꾸고, 맞는 것이 없으면 그대로(목 PAST)")
@@ -63,9 +63,9 @@ class NotificationCopyTest {
         assertThat(NotificationCopy.praiseTitle("아빠", null)).isEqualTo("아빠가 칭찬을 보냈어요");
         assertThat(NotificationCopy.praiseTitle("엄마", "모르는것")).isEqualTo("엄마가 칭찬을 보냈어요");
         assertThat(NotificationCopy.missionReadyTitle()).isEqualTo("새 운동이 생겼어요");
-        assertThat(NotificationCopy.achievementTitle("사흘 이어서")).isEqualTo("새 업적: 사흘 이어서");
-        assertThat(NotificationCopy.remeasureTitle("서준")).isEqualTo("서준 키와 몸무게를 새로 재 볼까요");
-        assertThat(NotificationCopy.remeasureBody(30)).isEqualTo("지난번에 잰 지 30일");
+        assertThat(NotificationCopy.achievementTitle("3일 연속")).isEqualTo("새 업적: 3일 연속");
+        assertThat(NotificationCopy.remeasureTitle("서준")).isEqualTo("서준 키와 몸무게를 다시 측정해 볼까요?");
+        assertThat(NotificationCopy.remeasureBody(30)).isEqualTo("마지막 측정 후 30일");
     }
 
     @Test

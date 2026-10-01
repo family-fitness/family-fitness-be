@@ -290,15 +290,15 @@ class NotificationWebTest {
     void 업적_알림() throws Exception {
         Instant earnedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         tx.executeWithoutResult(status -> {
-            events.publishEvent(new AchievementEarned(kid, "FIRST_STEP", "첫걸음", "운동 한 칸을 처음 끝내요", earnedAt));
-            events.publishEvent(new AchievementEarned(mom, "FIRST_STEP", "첫걸음", "운동 한 칸을 처음 끝내요", earnedAt));
+            events.publishEvent(new AchievementEarned(kid, "FIRST_STEP", "첫걸음", "운동 1개를 처음 완료해요", earnedAt));
+            events.publishEvent(new AchievementEarned(mom, "FIRST_STEP", "첫걸음", "운동 1개를 처음 완료해요", earnedAt));
         });
 
         list(kid)
                 .andExpect(jsonPath("$.items", hasSize(1)))
                 .andExpect(jsonPath("$.items[0].kind").value("ACHIEVEMENT"))
                 .andExpect(jsonPath("$.items[0].title").value("새 업적: 첫걸음"))
-                .andExpect(jsonPath("$.items[0].body").value("운동 한 칸을 처음 끝냈어요"));
+                .andExpect(jsonPath("$.items[0].body").value("운동 1개를 처음 완료했어요"));
         assertThat(count(mom)).isZero();
     }
 
@@ -364,8 +364,8 @@ class NotificationWebTest {
         list(dad)
                 .andExpect(jsonPath("$.items", hasSize(1)))
                 .andExpect(jsonPath("$.items[0].kind").value("REMEASURE"))
-                .andExpect(jsonPath("$.items[0].title").value("서준 키와 몸무게를 새로 재 볼까요"))
-                .andExpect(jsonPath("$.items[0].body").value("지난번에 잰 지 30일"))
+                .andExpect(jsonPath("$.items[0].title").value("서준 키와 몸무게를 다시 측정해 볼까요?"))
+                .andExpect(jsonPath("$.items[0].body").value("마지막 측정 후 30일"))
                 .andExpect(jsonPath("$.items[0].aboutProfileId").value(kid.toString()))
                 .andExpect(jsonPath("$.items[0].date").isEmpty());
         assertThat(count(mom)).isEqualTo(1);
@@ -429,9 +429,9 @@ class NotificationWebTest {
                 Notification.missionReady(kid, mission, "어제 운동", today.minusDays(1), kst(today.minusDays(1), 7)));
         notifications.insertIfAbsent(Notification.missionReady(kid, mission, "오늘 운동", today, kst(today, 7)));
         notifications.insertIfAbsent(Notification.achievement(
-                kid, "MIN_30", "30분", "모두 합쳐 30분 움직여요", today.minusDays(15), kst(today.minusDays(15), 12)));
+                kid, "MIN_30", "30분", "모두 합쳐 30분 운동해요", today.minusDays(15), kst(today.minusDays(15), 12)));
         notifications.insertIfAbsent(Notification.achievement(
-                kid, "MIN_100", "100분", "모두 합쳐 100분 움직여요", today.minusDays(14), kst(today.minusDays(14), 12)));
+                kid, "MIN_100", "100분", "모두 합쳐 100분 운동해요", today.minusDays(14), kst(today.minusDays(14), 12)));
 
         list(kid)
                 .andExpect(jsonPath("$.items", hasSize(2)))
