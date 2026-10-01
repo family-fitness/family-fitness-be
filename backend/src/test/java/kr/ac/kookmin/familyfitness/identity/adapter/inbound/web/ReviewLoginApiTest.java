@@ -227,10 +227,10 @@ class ReviewLoginApiTest {
     }
 
     @Test
-    @DisplayName("같은 IP 에서 한 시간에 30번을 넘기면 429 TOO_MANY 이고 계정을 만들지 않는다 — 다른 IP 는 그대로 된다")
-    void 같은_IP_에서_30번을_넘기면_429() throws Exception {
+    @DisplayName("같은 IP 에서 한 시간에 60번을 넘기면 429 TOO_MANY 이고 계정을 만들지 않는다 — 다른 IP 는 그대로 된다")
+    void 같은_IP_에서_60번을_넘기면_429() throws Exception {
         String ip = freshIp();
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 60; i++) {
             reviewLogin(ip).andExpect(status().isOk());
         }
         Integer before = jdbc.queryForObject("select count(*) from users where provider = 'REVIEW'", Integer.class);

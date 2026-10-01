@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>한 계정이 하루에 {@link #MAX_CHATS_PER_DAY} 번을 넘기면 429 TOO_MANY 다.
  *   <li>심사용 계정을 모두 합쳐 하루에 {@link #MAX_CHATS_OF_ALL_PER_DAY} 번을 넘기면, 그날 남은 심사용 대화는 모두 429 TOO_MANY 다. 계정은
- *       한 IP 에서 한 시간에 30개까지 만들 수 있어 계정마다 한도만으로는 부족하다.
+ *       한 IP 에서 한 시간에 60개까지 만들 수 있어 계정마다 한도만으로는 부족하다.
  * </ul>
  * 편성과 달리 모두 합친 한도를 넘기면 429 로 막는다. AI 에 「LLM 없이 자료 문장만으로 답하라」 고 부탁할 칸이 없고, FE 에 대화 화면이 없어
  * 누가 한도를 채워도 심사위원이 화면에서 막히는 곳이 없다. 구글 계정은 세지 않는다.

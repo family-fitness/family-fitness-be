@@ -42,9 +42,9 @@ class ReviewLoginForwardedForTest {
     }
 
     @Test
-    @DisplayName("믿을 프록시(Next 서버)를 거친 요청은 X-Forwarded-For 의 브라우저 IP 마다 따로 센다 — 한 사람이 30번을 넘겨도 다른 사람은 된다")
+    @DisplayName("믿을 프록시(Next 서버)를 거친 요청은 X-Forwarded-For 의 브라우저 IP 마다 따로 센다 — 한 사람이 60번을 넘겨도 다른 사람은 된다")
     void 프록시를_거친_요청은_브라우저_IP_마다_센다() throws Exception {
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 60; i++) {
             assertThat(reviewLogin("198.51.100.1")).isEqualTo(200);
         }
 
