@@ -146,7 +146,8 @@ class LeagueWebTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private ResultActions league(UUID userId, String query) throws Exception {

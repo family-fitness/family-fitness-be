@@ -47,7 +47,8 @@ public final class FitnessFakes {
                 null,
                 measurable,
                 consentRequired,
-                consentGiven);
+                consentGiven,
+                false);
     }
 
     /** 계정이 붙은 보호자(PARENT) 프로필 요약. 호출 계정이 부모인 경우를 흉내 낸다. */
@@ -64,7 +65,8 @@ public final class FitnessFakes {
                 null,
                 true,
                 false,
-                true);
+                true,
+                false);
     }
 
     /** 계정이 붙은 자녀(CHILD) 프로필 요약. 호출 계정이 아이 본인 계정인 경우를 흉내 낸다. */
@@ -81,7 +83,8 @@ public final class FitnessFakes {
                 null,
                 true,
                 true,
-                true);
+                true,
+                false);
     }
 
     public static ProfileDetails detailsOf(UUID profileId, UUID familyId, LocalDate birthDate) {

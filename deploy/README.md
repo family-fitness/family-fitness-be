@@ -98,8 +98,9 @@ ssh -i ~/.ssh/familyfitness-deploy ubuntu@$IP sudo bash /tmp/deploy/server-setup
 그다음 서버에서 `.env` 의 빈 칸을 채운다: `sudo -u ubuntu nano /opt/familyfitness/.env`
 
 - `APP_FRONTEND_BASE_URL`: FE 주소(`https://d249o1o9c1vnhc.cloudfront.net`)
+- `APP_CORS_ALLOWED_ORIGINS`: FE 주소(`https://d249o1o9c1vnhc.cloudfront.net`). 꼭 적는다. FE 의 Next 서버를 거쳐 와도 브라우저가 붙인 `Origin` 헤더가 그대로 넘어와서, 빠지면 POST 가 모두 403 「Invalid CORS request」 로 막힌다. 심사용 로그인과 구글 로그인이 이 때문에 안 된 적이 있다(2026-10-01).
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: FE 와 같은 구글 OAuth 클라이언트
-- AI 서버가 사설 IP 에서 받게 되면 `APP_AI_BASE_URL=http://<ff-ai 사설 IP>:8000`
+- `APP_AI_BASE_URL=http://<ff-ai 사설 IP>:8000`. 빠지면 app 이 자기 안의 localhost:8000 을 불러 AI 편성이 늘 대체 편성으로 짜인다.
 
 ### 4. GitHub Secrets
 

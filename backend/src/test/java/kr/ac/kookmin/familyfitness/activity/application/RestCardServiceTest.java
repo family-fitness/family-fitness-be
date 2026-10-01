@@ -97,7 +97,8 @@ class RestCardServiceTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private RestCardsView use(String date) {

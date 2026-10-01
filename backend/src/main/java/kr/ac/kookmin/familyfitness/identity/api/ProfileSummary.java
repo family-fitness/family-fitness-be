@@ -28,7 +28,9 @@ public record ProfileSummary(
         /* 보호자 동의가 있어야 하는가 — 만 14세 미만이거나, 동의를 거둔 채다(거둔 동의는 만 14세가 지나도 풀리지 않는다) */
         boolean consentRequired,
         /* 동의가 살아 있는가. 동의가 필요 없으면(만 14세 이상이고 거둔 채가 아님) true */
-        boolean consentGiven) {
+        boolean consentGiven,
+        /* 가족을 만든 보호자인가(profiles.is_owner). 가족마다 한 사람이고, 이 사람만 구성원을 내보낼 수 있다 */
+        boolean isOwner) {
     @JsonIgnore
     public boolean isParent() {
         return role == ProfileRole.PARENT;

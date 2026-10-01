@@ -81,6 +81,7 @@ class OpenApiDocsTest {
         // null 이 아닌 칸은 건드리지 않는다
         assertThat(typesOf(property("ProfileSummary", "profileId"))).containsExactly("string");
         assertThat(typesOf(property("ProfileSummary", "role"))).containsExactly("string");
+        assertThat(typesOf(property("ProfileSummary", "isOwner"))).containsExactly("boolean");
         assertThat(typesOf(property("MissionView", "missionId"))).containsExactly("string");
         assertThat(typesOf(property("XpLineView", "amount"))).containsExactly("integer");
     }
@@ -222,6 +223,20 @@ class OpenApiDocsTest {
         // 다른 컨트롤러와 겹치는 메서드 이름(list · favorite)은 계약 경로 쪽만 springdoc 이 뒤붙임으로 가른다
         assertThat(operationId("/api/v1/clips", "get")).isEqualTo("list_transitional");
         assertThat(operationId("/api/v1/clips/{exerciseId}/favorite", "post")).isEqualTo("favorite_transitional");
+    }
+
+    @Test
+    @DisplayName("탈퇴와 구성원 내보내기는 본문 없는 204 로 실린다")
+    void 탈퇴와_구성원_내보내기는_204_다() {
+        JsonNode withdraw = docs.path("paths").path("/api/v1/me").path("delete");
+        JsonNode remove = docs.path("paths")
+                .path("/api/v1/families/{familyId}/profiles/{profileId}")
+                .path("delete");
+
+        assertThat(withdraw.path("operationId").asString()).isEqualTo("withdraw");
+        assertThat(withdraw.path("responses").has("204")).isTrue();
+        assertThat(remove.path("operationId").asString()).isEqualTo("removeMember");
+        assertThat(remove.path("responses").has("204")).isTrue();
     }
 
     @Test

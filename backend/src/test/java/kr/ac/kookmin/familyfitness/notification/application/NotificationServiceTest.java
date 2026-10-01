@@ -68,7 +68,8 @@ class NotificationServiceTest {
                 null,
                 true,
                 child,
-                true);
+                true,
+                false);
     }
 
     private Notification done(int minutesAgo) {

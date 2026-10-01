@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.identity.application.AccountDeletionService;
 import kr.ac.kookmin.familyfitness.identity.application.CheerService;
 import kr.ac.kookmin.familyfitness.identity.application.CreatedFamily;
 import kr.ac.kookmin.familyfitness.identity.application.FamilyProfiles;
@@ -12,6 +13,7 @@ import kr.ac.kookmin.familyfitness.identity.application.SendCheerCommand;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,10 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class FamilyController {
     private final FamilyService families;
     private final CheerService cheers;
+    private final AccountDeletionService deletion;
 
-    public FamilyController(FamilyService families, CheerService cheers) {
+    public FamilyController(FamilyService families, CheerService cheers, AccountDeletionService deletion) {
         this.families = families;
         this.cheers = cheers;
+        this.deletion = deletion;
     }
 
     @PostMapping
@@ -68,6 +72,16 @@ public class FamilyController {
     public FamilyProfilesResponse profiles(CurrentUser user, @PathVariable UUID familyId) {
         FamilyProfiles result = families.profilesOf(user.userId(), familyId);
         return new FamilyProfilesResponse(result.familyId(), result.familyName(), result.profiles());
+    }
+
+    /**
+     * 구성원 내보내기. 오너만 부른다. 그 프로필과 그 사람의 기록을 지우고, 프로필에 붙은 계정은 남긴다(가족 없는 계정이 된다).
+     * 오너가 아니면 403 NOT_FAMILY_OWNER, 이 가족 프로필이 아니면 404 PROFILE_NOT_FOUND, 자기 프로필이면 409 CANNOT_REMOVE_SELF.
+     */
+    @DeleteMapping("/{familyId}/profiles/{profileId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeMember(CurrentUser user, @PathVariable UUID familyId, @PathVariable UUID profileId) {
+        deletion.removeMember(user.userId(), familyId, profileId);
     }
 
     @PostMapping("/{familyId}/cheers")

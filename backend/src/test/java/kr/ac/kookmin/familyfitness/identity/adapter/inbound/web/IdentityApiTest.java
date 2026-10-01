@@ -1414,4 +1414,37 @@ class IdentityApiTest {
                         UUID.fromString(teenId)))
                 .containsExactly("REVOKED", "GRANTED");
     }
+
+    @Test
+    @DisplayName("가족을 만든 보호자만 isOwner 가 true 다. /me 의 profiles 와 가족 구성원 목록에 같이 실린다")
+    void 가족을_만든_보호자만_isOwner_가_true_다() throws Exception {
+        Session owner = devLogin();
+        JsonNode created = createFamily(owner);
+        assertThat(created.get("ownerProfile").get("isOwner").asBoolean()).isTrue();
+        String familyId = created.get("familyId").asString();
+        JsonNode dad = read(addMember(owner, familyId, "아빠", LocalDate.of(1985, 4, 2), "PARENT")
+                .andExpect(status().isCreated()));
+        assertThat(dad.get("isOwner").asBoolean()).isFalse();
+        addMember(owner, familyId, "첫째", today.minusYears(9), "CHILD", new boolean[] {true, true})
+                .andExpect(status().isCreated());
+        String code = read(invite(owner, dad.get("profileId").asString()).andExpect(status().isCreated()))
+                .get("claimCode")
+                .asString();
+        Session dadUser = devLogin();
+        claim(dadUser, code).andExpect(status().isOk());
+
+        mvc.perform(auth(get("/api/v1/me"), owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profiles[0].isOwner").value(true));
+        mvc.perform(auth(get("/api/v1/me"), dadUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profiles[0].isOwner").value(false));
+        JsonNode listed = read(mvc.perform(auth(get("/api/v1/families/" + familyId + "/profiles"), dadUser))
+                .andExpect(status().isOk()));
+        Map<String, Boolean> owners = new LinkedHashMap<>();
+        listed.get("profiles")
+                .forEach(it ->
+                        owners.put(it.get("name").asString(), it.get("isOwner").asBoolean()));
+        assertThat(owners).containsExactly(Map.entry("엄마", true), Map.entry("아빠", false), Map.entry("첫째", false));
+    }
 }

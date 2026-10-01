@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.kookmin.familyfitness.identity.application.port.FamilyRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.AccountNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.AlreadyInFamilyException;
 import kr.ac.kookmin.familyfitness.identity.domain.ClaimCode;
 import kr.ac.kookmin.familyfitness.identity.domain.ConcurrentFamilyChangeException;
@@ -32,6 +33,9 @@ import org.springframework.stereotype.Repository;
 public class FamilyRepositoryAdapter implements FamilyRepository {
     /** V143 — 한 계정은 프로필 하나에만 붙는다. */
     private static final String ONE_FAMILY_INDEX = "uq_profiles_user";
+
+    /** V1 프로필이 붙는 계정. 탈퇴한 계정의 토큰으로 가족을 만들거나 초대코드를 쓰면 이 외래 키에 걸린다. */
+    private static final String ACCOUNT_KEY = "fk_profiles_user";
 
     private final FamilyJpaRepository familyJpa;
     private final ProfileJpaRepository profileJpa;
@@ -155,13 +159,14 @@ public class FamilyRepositoryAdapter implements FamilyRepository {
     /**
      * 곧바로 flush 해 유니크 위반을 여기서 받는다(flush · 수정 쿼리는 Spring Data 프록시를 거쳐 예외가 번역된다).
      * uq_profiles_user 위반은 사전 검사(profilesOfUser)를 함께 지나친 동시 요청이 같은 계정을 두 프로필에 붙이려 한 것이라
-     * ALREADY_IN_FAMILY 로 바꾼다. 다른 제약 위반은 그대로 던진다. 위반 뒤 트랜잭션은 롤백 전용이 되므로 예외로 끝낸다.
+     * ALREADY_IN_FAMILY 로 바꾼다. fk_profiles_user 위반은 붙이려는 계정이 없는 것(탈퇴한 계정의 토큰)이라 401 UNAUTHORIZED 로
+     * 바꾼다. 다른 제약 위반은 그대로 던진다. 위반 뒤 트랜잭션은 롤백 전용이 되므로 예외로 끝낸다.
      */
     private static RuntimeException translated(DataIntegrityViolationException e) {
         String message = e.getMostSpecificCause().getMessage();
-        if (message != null && message.toLowerCase(Locale.ROOT).contains(ONE_FAMILY_INDEX)) {
-            return new AlreadyInFamilyException("다른 가족에 이미 프로필이 있습니다");
-        }
+        String lower = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        if (lower.contains(ONE_FAMILY_INDEX)) return new AlreadyInFamilyException("다른 가족에 이미 프로필이 있습니다");
+        if (lower.contains(ACCOUNT_KEY)) return new AccountNotFoundException();
         return e;
     }
 

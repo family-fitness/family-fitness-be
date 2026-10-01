@@ -133,7 +133,8 @@ class SessionCompleteWebTest {
                 null,
                 consentGiven,
                 child,
-                consentGiven);
+                consentGiven,
+                false);
     }
 
     /** 오늘(또는 그 날) 하루짜리 직접 짜기: 준비 1분 · 본 2분. 엄마 · 아이가 같이 한다. */

@@ -130,7 +130,8 @@ class ExerciseWebTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     /** @param params 이름 · 값을 번갈아 */

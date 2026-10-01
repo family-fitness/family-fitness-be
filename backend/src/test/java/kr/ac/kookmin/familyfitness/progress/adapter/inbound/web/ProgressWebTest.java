@@ -144,7 +144,8 @@ class ProgressWebTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private ResultActions read(UUID userId, UUID profileId) throws Exception {

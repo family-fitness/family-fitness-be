@@ -163,7 +163,8 @@ abstract class SessionCompletionRaceTestBase {
                 null,
                 true,
                 child,
-                true);
+                true,
+                false);
     }
 
     @Test
