@@ -72,16 +72,16 @@ class NotificationTest {
         assertThat(ready.aboutProfileId()).isEqualTo(kid);
         assertThat(ready.dedupeKey()).isEqualTo("ready-" + mission + "-2026-09-29");
 
-        Notification badge = Notification.achievement(kid, "STREAK_3", "사흘 이어서", "3일 이어서 움직여요", day, at);
-        assertThat(badge.title()).isEqualTo("새 업적: 사흘 이어서");
-        assertThat(badge.body()).isEqualTo("3일 이어서 움직였어요");
+        Notification badge = Notification.achievement(kid, "STREAK_3", "3일 연속", "3일 연속 운동해요", day, at);
+        assertThat(badge.title()).isEqualTo("새 업적: 3일 연속");
+        assertThat(badge.body()).isEqualTo("3일 연속 운동했어요");
         assertThat(badge.date()).isEqualTo(day);
         assertThat(badge.dedupeKey()).isEqualTo("badge-" + kid + "-STREAK_3");
 
         Notification remeasure = Notification.remeasure(mom, kid, "서준", day.minusDays(31), day, at);
         assertThat(remeasure.profileId()).isEqualTo(mom);
-        assertThat(remeasure.title()).isEqualTo("서준 키와 몸무게를 새로 재 볼까요");
-        assertThat(remeasure.body()).isEqualTo("지난번에 잰 지 31일");
+        assertThat(remeasure.title()).isEqualTo("서준 키와 몸무게를 다시 측정해 볼까요?");
+        assertThat(remeasure.body()).isEqualTo("마지막 측정 후 31일");
         assertThat(remeasure.aboutProfileId()).isEqualTo(kid);
         assertThat(remeasure.date()).isNull();
         assertThat(remeasure.dedupeKey()).isEqualTo("remeasure-" + kid + "-2026-08-29");
