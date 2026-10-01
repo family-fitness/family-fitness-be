@@ -54,15 +54,24 @@ public class IdentityErasureAdapter implements IdentityErasureRepository {
         rows.handOverSlots(profileId, heirProfileId);
         rows.deleteConsentEvents(List.of(profileId));
         rows.handOverInvites(profileId, heirProfileId);
+        rows.handOverFamilyInvites(profileId, heirProfileId);
         rows.deleteProfile(profileId);
     }
 
+    /** 가족 초대에 미리 받아 둔 동의의 동의자 칸도 비운다. 초대와 동의는 살아 있다. */
     @Override
     public void forgetConsentActor(UUID userId) {
         rows.forgetConsentGiver(userId);
         rows.forgetConsentEventActor(userId);
+        rows.forgetFamilyInviteConsentGiver(userId);
     }
 
+    @Override
+    public void forgetInviteClaimer(UUID userId) {
+        rows.forgetFamilyInviteClaimer(userId);
+    }
+
+    /** 가족 초대는 프로필(낸 보호자)을 가리키므로 프로필보다 먼저 지운다. 쓴 초대도 이 가족의 기록이라 함께 지운다. */
     @Override
     public void eraseFamily(UUID familyId, Collection<UUID> profileIds) {
         rows.unlinkRepliesOfFamily(familyId);
@@ -71,6 +80,7 @@ public class IdentityErasureAdapter implements IdentityErasureRepository {
             rows.deleteSlots(profileIds);
             rows.deleteConsentEvents(profileIds);
         }
+        rows.deleteFamilyInvites(familyId);
         rows.forgetInvitersOfFamily(familyId);
         rows.deleteProfilesOfFamily(familyId);
         rows.deleteFamily(familyId);
@@ -80,6 +90,7 @@ public class IdentityErasureAdapter implements IdentityErasureRepository {
     public void eraseAccount(UUID userId) {
         rows.deleteRefreshTokens(userId);
         forgetConsentActor(userId);
+        forgetInviteClaimer(userId);
         rows.deleteUser(userId);
     }
 }

@@ -27,19 +27,27 @@ public interface IdentityErasureRepository {
 
     /**
      * 한 사람의 identity 행을 지운다. 응원, 그 사람의 운동할 수 있는 시간, 동의 이력, 프로필 행 차례다. 남는 사람의 운동할 수 있는
-     * 시간을 이 사람이 적었으면, 이 사람이 보낸 초대코드가 남아 있으면 {@code heirProfileId} 가 한 것으로 돌린다.
+     * 시간을 이 사람이 적었으면, 이 사람이 보낸 초대코드(자리 초대코드와 가족 초대)가 남아 있으면 {@code heirProfileId} 가 한 것으로
+     * 돌린다.
      */
     void eraseProfile(UUID profileId, UUID heirProfileId, Collection<UUID> cheerIds);
 
     /**
-     * 이 계정이 남긴 동의 기록에서 계정을 지운다(profiles.consent_by_user_id, consent_events.actor_user_id 를 비운다). 동의는 그대로
-     * 살아 있고, 누가 했는지만 모르는 채로 남는다(V145 가 옮겨 넣은 철회 줄과 같다).
+     * 이 계정이 남긴 동의 기록에서 계정을 지운다(profiles.consent_by_user_id, consent_events.actor_user_id,
+     * family_invites.consent_by_user_id 를 비운다). 동의는 그대로 살아 있고, 누가 했는지만 모르는 채로 남는다(V145 가 옮겨 넣은
+     * 철회 줄과 같다). 가족 초대에 미리 한 동의도 그 초대로 아이가 들어오면 동의자 없이 들어간다.
      */
     void forgetConsentActor(UUID userId);
 
-    /** 가족 하나를 지운다. 응원, 운동할 수 있는 시간, 동의 이력, 프로필, 가족 행 차례다. */
+    /** 이 계정이 쓴 가족 초대에서 계정 칸(family_invites.claimed_by_user_id)을 비운다. 쓴 표시(claimed_at)는 남아 코드를 다시 쓰지 못한다. */
+    void forgetInviteClaimer(UUID userId);
+
+    /** 가족 하나를 지운다. 응원, 운동할 수 있는 시간, 동의 이력, 가족 초대, 프로필, 가족 행 차례다. */
     void eraseFamily(UUID familyId, Collection<UUID> profileIds);
 
-    /** 계정을 지운다. 리프레시 토큰 기록, 동의 기록의 계정 칸, 계정 행 차례다. 이 계정에 붙은 프로필은 먼저 지워 둬야 한다. */
+    /**
+     * 계정을 지운다. 리프레시 토큰 기록, 동의 기록의 계정 칸, 쓴 가족 초대의 계정 칸, 계정 행 차례다. 이 계정에 붙은 프로필은 먼저
+     * 지워 둬야 한다.
+     */
     void eraseAccount(UUID userId);
 }

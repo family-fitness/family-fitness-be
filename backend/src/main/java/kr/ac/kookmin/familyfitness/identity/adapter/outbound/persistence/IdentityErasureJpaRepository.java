@@ -89,6 +89,28 @@ public interface IdentityErasureJpaRepository extends Repository<FamilyEntity, U
     int forgetInvitersOfFamily(UUID familyId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(
+            value = "update family_invites set issued_by_profile_id = :heir where issued_by_profile_id = :profileId",
+            nativeQuery = true)
+    int handOverFamilyInvites(UUID profileId, UUID heir);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(
+            value = "update family_invites set consent_by_user_id = null where consent_by_user_id = :userId",
+            nativeQuery = true)
+    int forgetFamilyInviteConsentGiver(UUID userId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(
+            value = "update family_invites set claimed_by_user_id = null where claimed_by_user_id = :userId",
+            nativeQuery = true)
+    int forgetFamilyInviteClaimer(UUID userId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "delete from family_invites where family_id = :familyId", nativeQuery = true)
+    int deleteFamilyInvites(UUID familyId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "delete from profiles where id = :profileId", nativeQuery = true)
     int deleteProfile(UUID profileId);
 
