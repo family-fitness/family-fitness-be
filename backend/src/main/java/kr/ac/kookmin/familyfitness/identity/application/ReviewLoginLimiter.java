@@ -20,7 +20,8 @@ import org.springframework.stereotype.Component;
  * 가짜 보호자 계정까지 계정 둘). 누가 반복해서 부르면 DB 가 끝없이 찬다. kind({@link ReviewLoginKind}) 세 가지를 한도 하나로 합쳐 센다.
  * 한도는 둘이다. 최근 {@link #WINDOW} 안에
  * <ul>
- *   <li>같은 IP 에서 {@link #MAX_LOGINS} 번 — 심사위원 한 사람이 넉넉히 쓰는 양. 넘기면 429 TOO_MANY.
+ *   <li>같은 IP 에서 {@link #MAX_LOGINS} 번. 심사위원 여럿이 한 와이파이(같은 공인 IP)에서 저마다 세 kind 와 「아이 입장으로
+ *       둘러보기」 를 몇 번씩 눌러도 남는 양이다(30번이면 열 명이 저마다 서너 번 누를 때 찬다). 넘기면 429 TOO_MANY.
  *   <li>IP 와 상관없이 새 계정을 모두 합쳐 {@code maxTotal}(기본 {@link #MAX_TOTAL})개 — IP 를 바꿔 가며 부르거나(X-Forwarded-For 를
  *       꾸며 넣는 것 포함) 한 시간에 쌓이는 계정 수를 여기서 누른다. 이 한도에 닿아도 429 를 주지 않는다 — 누구 한 사람이 한도를 채워
  *       모든 심사위원을 한 시간 동안 막지 못하게. 대신
@@ -49,7 +50,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ReviewLoginLimiter {
-    static final int MAX_LOGINS = 30;
+    static final int MAX_LOGINS = 60;
     static final int MAX_TOTAL = 300;
     static final Duration WINDOW = Duration.ofHours(1);
 

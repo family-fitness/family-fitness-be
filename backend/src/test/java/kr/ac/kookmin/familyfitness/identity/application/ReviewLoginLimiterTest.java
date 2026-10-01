@@ -30,8 +30,8 @@ class ReviewLoginLimiterTest {
     }
 
     @Test
-    @DisplayName("한 IP 가 한 시간에 30번까지 되고 31번째는 막힌다. 다른 IP 는 따로 센다")
-    void 한_IP_는_한_시간에_30번까지() {
+    @DisplayName("한 IP 가 한 시간에 60번까지 되고 61번째는 막힌다. 다른 IP 는 따로 센다")
+    void 한_IP_는_한_시간에_60번까지() {
         for (int i = 0; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("1.1.1.1", FAMILY);
 
         assertThatThrownBy(() -> limiter.acquire("1.1.1.1", FAMILY)).isInstanceOf(TooManyReviewLoginsException.class);
@@ -55,7 +55,7 @@ class ReviewLoginLimiterTest {
         assertThat(limiter.acquire("10.0.0.5", FAMILY).reuse()).isEqualTo(later);
         assertThat(limiter.acquire("10.0.1.7", FAMILY).reuse()).isEqualTo(made.get(207));
 
-        // 나눠 줄 때도 IP 마다 30번은 그대로 센다
+        // 나눠 줄 때도 IP 마다 60번은 그대로 센다
         for (int i = 2; i < ReviewLoginLimiter.MAX_LOGINS; i++) limiter.acquire("10.0.0.5", FAMILY);
         assertThatThrownBy(() -> limiter.acquire("10.0.0.5", FAMILY)).isInstanceOf(TooManyReviewLoginsException.class);
 

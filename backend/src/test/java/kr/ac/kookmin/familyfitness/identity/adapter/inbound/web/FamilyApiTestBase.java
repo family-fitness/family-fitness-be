@@ -101,7 +101,7 @@ abstract class FamilyApiTestBase {
         return sessionOf(body);
     }
 
-    /** 심사용 계정 로그인. IP 마다 한 시간 30번 한도가 있어 부를 때마다 다른 IP 로 부른다. */
+    /** 심사용 계정 로그인. IP 마다 한 시간 60번 한도가 있어 부를 때마다 다른 IP 로 부른다. */
     Session reviewLogin(String kind) throws Exception {
         return sessionOf(reviewLoginBody(kind));
     }

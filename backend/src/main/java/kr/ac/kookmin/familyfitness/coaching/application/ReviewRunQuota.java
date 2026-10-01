@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>한 계정이 하루에 {@link #MAX_RUNS_PER_DAY} 번을 넘기면 429 TOO_MANY 다.
  *   <li>심사용 계정을 모두 합쳐 하루에 {@link #MAX_AI_RUNS_PER_DAY} 번 AI 로 짰으면, 그날 남은 심사용 편성은 AI 를 부르지 않고
- *       라벨 대체 편성({@link LabelBasedProposalPlanner})으로 짠다({@link Planner#LABELS}). 계정은 한 IP 에서 한 시간에 30개까지
+ *       라벨 대체 편성({@link LabelBasedProposalPlanner})으로 짠다({@link Planner#LABELS}). 계정은 한 IP 에서 한 시간에 60개까지
  *       만들 수 있어(ReviewLoginLimiter) 계정마다 한도만으로는 LLM 호출이 한 시간에 수백 번까지 쌓인다. 여기서 429 로 막으면 누구 한 사람이
  *       한도를 채워 그날 모든 심사위원의 편성을 막을 수 있어서, 막지 않고 LLM 없이 짜는 쪽으로 돌린다.
  * </ul>
