@@ -19,7 +19,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * 계정 탈퇴(DELETE /me).
+ * 계정 탈퇴(DELETE /me)와 오너의 구성원 내보내기(DELETE /families/{familyId}/profiles/{profileId}).
  *
  * <p>외래 키에 ON DELETE CASCADE 가 없다. 그래서 한 트랜잭션 안에서 {@link ProfileDeleting} 이나 {@link FamilyDeleting} 을 발행해
  * 다른 모듈이 자기 행을 먼저 지우게 하고, 이벤트가 돌아오면 identity 가 응원, 운동할 수 있는 시간, 동의 이력, 프로필, 가족, 계정을
@@ -33,6 +33,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * </ul>
  * 계정의 리프레시 토큰 기록도 지운다. 액세스 토큰은 상태 없는 JWT 라 만료까지 서명 검사를 지나지만, 계정을 찾는 곳(/me 등)이
  * 401 UNAUTHORIZED 로 돌린다({@link AccountNotFoundException}).
+ *
+ * <p>내보내기는 오너만 한다. 그 프로필과 그 사람의 기록을 지우고, 프로필에 붙은 계정은 남긴다. 그 계정은 가족 없는 계정이 되어
+ * /me 의 nextStep 이 CREATE_FAMILY 가 되고, 리프레시 토큰도 그대로다.
  */
 @Service
 @Transactional
@@ -71,6 +74,16 @@ public class AccountDeletionService {
         }
         erasure.eraseAccount(userId);
         afterCommit(() -> reviewLogins.forget(userId));
+    }
+
+    /**
+     * 구성원 내보내기. 판정 차례: 가족 없음 404 FAMILY_NOT_FOUND → 구성원 아님 403 NOT_SAME_FAMILY → 오너 아님 403 NOT_FAMILY_OWNER
+     * → 이 가족 프로필 아님 404 PROFILE_NOT_FOUND → 자기 프로필 409 CANNOT_REMOVE_SELF({@link Family#memberToRemove}).
+     */
+    public void removeMember(UUID userId, UUID familyId, UUID profileId) {
+        if (families.findById(familyId) == null) throw new FamilyNotFoundException(familyId);
+        Family family = lockedFamily(familyId);
+        eraseMember(family, family.memberToRemove(userId, profileId));
     }
 
     /** 가족 행을 잠근 뒤 다시 읽는다. 잠그기 전에 읽은 식구 목록은 그 사이 붙은 구성원을 빠뜨릴 수 있다. */

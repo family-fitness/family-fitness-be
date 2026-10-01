@@ -269,6 +269,18 @@ public class Family {
     }
 
     /**
+     * 구성원 내보내기 판정. 내보낼 프로필을 돌려준다. 차례: 구성원 아님 403 NOT_SAME_FAMILY → 오너 아님 403 NOT_FAMILY_OWNER →
+     * 이 가족 프로필 아님 404 PROFILE_NOT_FOUND → 자기 프로필 409 CANNOT_REMOVE_SELF(자기는 탈퇴로 나간다).
+     */
+    public Profile memberToRemove(UUID actorUserId, UUID profileId) {
+        Profile actor = requireMember(actorUserId);
+        if (!actor.isOwner()) throw new NotFamilyOwnerException();
+        Profile target = profile(profileId);
+        if (target.getId().equals(actor.getId())) throw new CannotRemoveSelfException();
+        return target;
+    }
+
+    /**
      * 이 프로필의 계정이 탈퇴할 때 가족도 지우는가. 오너가 아니면 그 사람만 빠지고 가족은 남는다(false). 오너는 혼자 남았을 때만
      * 가족까지 지우고(true), 다른 프로필이 하나라도 있으면 409 FAMILY_NOT_EMPTY 다. 계정 없는 아이 프로필도 다른 프로필로 센다.
      */

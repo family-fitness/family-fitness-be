@@ -226,6 +226,20 @@ class OpenApiDocsTest {
     }
 
     @Test
+    @DisplayName("탈퇴와 구성원 내보내기는 본문 없는 204 로 실린다")
+    void 탈퇴와_구성원_내보내기는_204_다() {
+        JsonNode withdraw = docs.path("paths").path("/api/v1/me").path("delete");
+        JsonNode remove = docs.path("paths")
+                .path("/api/v1/families/{familyId}/profiles/{profileId}")
+                .path("delete");
+
+        assertThat(withdraw.path("operationId").asString()).isEqualTo("withdraw");
+        assertThat(withdraw.path("responses").has("204")).isTrue();
+        assertThat(remove.path("operationId").asString()).isEqualTo("removeMember");
+        assertThat(remove.path("responses").has("204")).isTrue();
+    }
+
+    @Test
     @DisplayName("로그인 계정 인자(CurrentUser)는 어느 주소에도 user 쿼리 파라미터로 나가지 않는다")
     void 어느_주소에도_user_쿼리_파라미터가_없다() {
         List<String> withUser = new ArrayList<>();

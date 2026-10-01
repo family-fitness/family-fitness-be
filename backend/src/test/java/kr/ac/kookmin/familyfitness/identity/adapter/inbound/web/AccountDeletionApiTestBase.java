@@ -14,8 +14,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.StreamSupport;
@@ -42,7 +44,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 탈퇴(DELETE /me). 실제 API 로 기록을 쌓은 뒤 지우고,
+ * 탈퇴(DELETE /me)와 구성원 내보내기(DELETE /families/{familyId}/profiles/{profileId}). 실제 API 로 기록을 쌓은 뒤 지우고,
  * 지운 사람을 가리키는 행이 DB 어디에도 남지 않는지 information_schema 로 모든 표를 훑어 본다({@link Leftovers}).
  * H2 용 시험과 PostgreSQL 용 시험이 이 클래스를 상속한다.
  *
@@ -287,6 +289,161 @@ abstract class AccountDeletionApiTestBase {
         expectGoneAccount(kid);
     }
 
+    // ===== 구성원 내보내기 =====
+
+    @Test
+    @DisplayName("오너가 아이를 내보내면 아이 프로필과 아이의 기록이 지워지고, 남는 아이의 경험치와 연속 기록은 그대로다")
+    void 오너가_아이를_내보낸다() throws Exception {
+        Session mom = reviewLogin("FAMILY");
+        Family family = familyOf(mom);
+        UUID seojun = family.id("서준");
+        JsonNode hayunBefore = progress(mom, family.id("하윤"));
+
+        remove(mom, family.familyId(), seojun).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(List.of(seojun))).isEmpty();
+        assertThat(familyOf(mom).ids().keySet()).containsExactly("엄마", "아빠", "하윤");
+        assertSameProgress(progress(mom, family.id("하윤")), hayunBefore);
+    }
+
+    @Test
+    @DisplayName("오너가 계정 있는 보호자를 내보내면 프로필과 기록은 지워지고 계정은 남아 가족 없는 계정(CREATE_FAMILY)이 된다")
+    void 오너가_계정_있는_보호자를_내보낸다() throws Exception {
+        Session dad = invitedDad();
+        Family family = familyOf(dad);
+        UUID dadId = family.id("아빠");
+        UUID hayun = family.id("하윤");
+        UUID forHayun = createMission(dad, family.familyId(), "하윤 줄넘기", List.of(hayun));
+        cheer(dad, family.familyId(), dadId, hayun, "PRAISE", "star", null);
+        Session owner = bearerSession(ownerUserOf(family.familyId()));
+
+        remove(owner, family.familyId(), dadId).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(List.of(dadId))).isEmpty();
+        assertThat(count("select count(*) from users where id = ?", dad.userId()))
+                .isEqualTo(1);
+        mvc.perform(as(dad, get("/api/v1/me")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nextStep").value("CREATE_FAMILY"))
+                .andExpect(jsonPath("$.profiles").isEmpty())
+                .andExpect(jsonPath("$.selfProfileId").isEmpty());
+        mvc.perform(json(post("/api/v1/auth/refresh"), Map.of("refreshToken", dad.refreshToken())))
+                .andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select created_by from missions where id = ?", UUID.class, forHayun))
+                .isEqualTo(family.id("엄마"));
+        assertThat(familyOf(owner).ids().keySet()).containsExactly("엄마", "하윤", "서준");
+    }
+
+    @Test
+    @DisplayName("편성 대상인 아이를 내보내면 편성은 지워지고, 함께 한 보호자의 미션은 직접 만든 미션으로 남는다")
+    void 편성_대상을_내보내면_함께_한_보호자의_미션은_남는다() throws Exception {
+        Session dad = invitedDad();
+        Family family = familyOf(dad);
+        UUID dadId = family.id("아빠");
+        UUID seojun = family.id("서준");
+        UUID run = planAndApprove(dad, family.familyId(), seojun, true);
+        UUID mission = jdbc.queryForObject("select id from missions where coach_run_id = ?", UUID.class, run);
+        complete(dad, mission, dadId);
+        Session owner = bearerSession(ownerUserOf(family.familyId()));
+
+        remove(owner, family.familyId(), seojun).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(List.of(seojun, run))).isEmpty();
+        JsonNode left =
+                read(mvc.perform(as(dad, get("/api/v1/missions/" + mission))).andExpect(status().isOk()));
+        assertThat(left.get("origin").asString()).isEqualTo("MANUAL");
+        assertThat(left.get("coachRunId").isNull()).isTrue();
+        assertThat(list(left.get("participants"))).singleElement().satisfies(it -> {
+            assertThat(uuid(it.get("profileId"))).isEqualTo(dadId);
+            assertThat(it.get("doneSessions").size()).isPositive();
+        });
+    }
+
+    @Test
+    @DisplayName(
+            "내보내기: 오너가 아니면 403 NOT_FAMILY_OWNER, 다른 가족이면 403 NOT_SAME_FAMILY, 이 가족 프로필이 아니면 404, 자기 프로필이면 409 CANNOT_REMOVE_SELF")
+    void 내보내기는_오너만_다른_식구에게만_한다() throws Exception {
+        Session dad = invitedDad();
+        Family family = familyOf(dad);
+        UUID familyId = family.familyId();
+        Session owner = bearerSession(ownerUserOf(familyId));
+        Session stranger = devLogin();
+        Session otherMom = reviewLogin("FAMILY");
+        UUID otherKid = familyOf(otherMom).id("하윤");
+        Map<String, Long> before = leftovers.referencing(everyone(family, dad));
+
+        remove(dad, familyId, family.id("하윤"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_FAMILY_OWNER"));
+        remove(stranger, familyId, family.id("하윤"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_SAME_FAMILY"));
+        remove(owner, familyId, otherKid)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+        remove(owner, familyId, UUID.randomUUID())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("PROFILE_NOT_FOUND"));
+        remove(owner, UUID.randomUUID(), family.id("하윤"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("FAMILY_NOT_FOUND"));
+        remove(owner, familyId, family.id("엄마"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CANNOT_REMOVE_SELF"));
+
+        assertThat(leftovers.referencing(everyone(family, dad))).isEqualTo(before);
+        assertThat(familyOf(owner).ids()).hasSize(4);
+        assertThat(familyOf(otherMom).ids()).containsKey("하윤");
+    }
+
+    @Test
+    @DisplayName("체험 가족에서 오너가 구성원을 모두 내보낸 뒤 탈퇴하면, 가족에 관한 행이 어느 표에도 남지 않는다")
+    void 체험_가족을_모두_내보내고_탈퇴하면_깨끗하다() throws Exception {
+        Session mom = reviewLogin("FAMILY");
+        Family family = familyOf(mom);
+        UUID familyId = family.familyId();
+        UUID momId = family.id("엄마");
+        UUID hayun = family.id("하윤");
+        planAndApprove(mom, familyId, hayun, true);
+        personalTouches(mom, hayun);
+        mvc.perform(as(mom, get("/api/v1/families/" + familyId + "/league"))).andExpect(status().isOk());
+        Set<UUID> gone = new LinkedHashSet<>(everyone(family, mom));
+        gone.addAll(idsOf("select id from missions where family_id = ?", familyId));
+        gone.addAll(idsOf("select id from cheers where family_id = ?", familyId));
+        gone.addAll(idsOf("select id from coach_runs where family_id = ?", familyId));
+        gone.addAll(idsOf(
+                "select t.id from fitness_tests t join profiles p on p.id = t.profile_id where p.family_id = ?",
+                familyId));
+        gone.addAll(idsOf(
+                "select n.id from notifications n join profiles p on p.id = n.profile_id where p.family_id = ?",
+                familyId));
+        assertThat(leftovers.referencing(gone).keySet())
+                .contains(
+                        "activity_daily.profile_id",
+                        "cheers.from_profile_id",
+                        "coach_messages.profile_id",
+                        "coach_run_proposal_items.coach_run_id",
+                        "consent_events.profile_id",
+                        "fitness_test_items.fitness_test_id",
+                        "mission_session_completions.profile_id",
+                        "mission_sessions.mission_id",
+                        "notifications.profile_id",
+                        "progress_achievements.profile_id",
+                        "progress_xp_events.profile_id",
+                        "rest_cards.family_id");
+
+        for (String name : List.of("아빠", "하윤", "서준")) {
+            remove(mom, familyId, family.id(name)).andExpect(status().isNoContent());
+        }
+        assertThat(familyOf(mom).ids().keySet()).containsExactly("엄마");
+        withdraw(mom).andExpect(status().isNoContent());
+
+        assertThat(leftovers.referencing(gone)).isEmpty();
+        assertThat(leftovers.mentioning(everyone(family, mom))).isEmpty();
+        assertThat(count("select count(*) from profiles where id = ?", momId)).isZero();
+        expectGoneAccount(mom);
+    }
+
     @Test
     @DisplayName("지우는 도중에 실패하면 먼저 지운 다른 모듈의 행까지 모두 되돌아가 아무것도 지워지지 않는다")
     void 지우는_도중에_실패하면_아무것도_지워지지_않는다() throws Exception {
@@ -307,6 +464,8 @@ abstract class AccountDeletionApiTestBase {
             withdraw(dad)
                     .andExpect(status().isInternalServerError())
                     .andExpect(jsonPath("$.error.code").value("INTERNAL_ERROR"));
+            failure.failNext();
+            remove(owner, familyId, family.id("서준")).andExpect(status().isInternalServerError());
             failure.failNext();
             withdraw(alone).andExpect(status().isInternalServerError());
         } finally {
@@ -341,6 +500,10 @@ abstract class AccountDeletionApiTestBase {
 
     ResultActions withdraw(Session session) throws Exception {
         return mvc.perform(as(session, delete("/api/v1/me")));
+    }
+
+    ResultActions remove(Session session, UUID familyId, UUID profileId) throws Exception {
+        return mvc.perform(as(session, delete("/api/v1/families/" + familyId + "/profiles/" + profileId)));
     }
 
     Session devLogin() throws Exception {

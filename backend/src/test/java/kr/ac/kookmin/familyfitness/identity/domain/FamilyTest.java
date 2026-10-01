@@ -755,6 +755,43 @@ class FamilyTest {
         assertThat(dadSeat.getDisplayName()).isEqualTo("새 이름");
     }
 
+    @Test
+    @DisplayName("오너만 구성원을 내보낸다. 다른 보호자는 NOT_FAMILY_OWNER, 자기 프로필은 CANNOT_REMOVE_SELF, 다른 가족 프로필은 PROFILE_NOT_FOUND")
+    void 오너만_다른_구성원을_내보낸다() {
+        Family family = newFamily();
+        Profile owner = family.owner();
+        Profile child = addChild(family, "첫째");
+        Profile dad = addParentSeat(family);
+        UUID dadUser = UUID.randomUUID();
+        dad.claim(dadUser, consentedAt);
+
+        assertThat(family.memberToRemove(parentUserId, child.getId())).isSameAs(child);
+        assertThat(family.memberToRemove(parentUserId, dad.getId())).isSameAs(dad);
+        assertThat(assertThrows(DomainException.class, () -> family.memberToRemove(dadUser, child.getId()))
+                        .getCode())
+                .isEqualTo("NOT_FAMILY_OWNER");
+        assertThat(assertThrows(DomainException.class, () -> family.memberToRemove(parentUserId, owner.getId()))
+                        .getCode())
+                .isEqualTo("CANNOT_REMOVE_SELF");
+        assertThrows(ProfileNotFoundException.class, () -> family.memberToRemove(parentUserId, UUID.randomUUID()));
+        assertThrows(FamilyAccessDeniedException.class, () -> family.memberToRemove(UUID.randomUUID(), child.getId()));
+    }
+
+    @Test
+    @DisplayName("오너가 아닌 사람은 탈퇴해도 가족이 남고, 오너는 혼자일 때만 가족까지 지운다. 다른 프로필이 있으면 FAMILY_NOT_EMPTY")
+    void 오너는_혼자일_때만_가족까지_지운다() {
+        Family alone = newFamily();
+        assertThat(alone.leavesNothingBehind(alone.owner())).isTrue();
+
+        Family family = newFamily();
+        Profile child = addChild(family, "첫째");
+        assertThat(family.leavesNothingBehind(child)).isFalse();
+        DomainException notEmpty =
+                assertThrows(DomainException.class, () -> family.leavesNothingBehind(family.owner()));
+        assertThat(notEmpty.getCode()).isEqualTo("FAMILY_NOT_EMPTY");
+        assertThat(notEmpty.getKind()).isEqualTo(ErrorKind.CONFLICT);
+    }
+
     private Family newFamily() {
         return Family.createWithParent(parentUserId, "우리 가족", "부모", LocalDate.of(1988, 3, 1), Sex.F, today);
     }
