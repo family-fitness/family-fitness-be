@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -26,7 +27,6 @@ import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionOrigin;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.MissionSession;
-import kr.ac.kookmin.familyfitness.coaching.domain.NoMeasuredMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.NotFamilyMemberException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ParticipantConsentRequiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
@@ -36,7 +36,6 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ReviewRunLimitException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
-import kr.ac.kookmin.familyfitness.coaching.support.FakeFitness;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
@@ -51,7 +50,6 @@ import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.shared.domain.ErrorKind;
 import kr.ac.kookmin.familyfitness.shared.domain.FitnessFactor;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
@@ -62,7 +60,6 @@ class CoachRunServiceTest {
     private final Family family = new Family();
     private final Family otherFamily = new Family();
     private final FakeIdentity identity = new FakeIdentity(family, otherFamily);
-    private final FakeFitness fitness = new FakeFitness();
     private final InMemoryMissionRepository missions = new InMemoryMissionRepository();
     private final InMemoryCoachRunRepository runs = new InMemoryCoachRunRepository(missions);
     private final InMemoryExerciseVideoRepository videos = new InMemoryExerciseVideoRepository(Videos.seed());
@@ -78,7 +75,6 @@ class CoachRunServiceTest {
                 videos,
                 identity,
                 identity,
-                fitness,
                 events::add,
                 time,
                 timeLimit,
@@ -96,11 +92,6 @@ class CoachRunServiceTest {
 
     private CoachRunAcceptedView start(StartCoachRunCommand command) {
         return service.start(family.parentUser, family.familyId, command);
-    }
-
-    @BeforeEach
-    void measured() {
-        fitness.measured(family.child.profileId(), new FakeFitness.Item("012", 8.0));
     }
 
     @Test
@@ -173,15 +164,20 @@ class CoachRunServiceTest {
     }
 
     @Test
-    @DisplayName("대상이 안 쟀으면 가족 중 다른 사람이 쟀어도 422 NO_MEASURED_MEMBER")
-    void 대상이_안_쟀으면_NO_MEASURED_MEMBER() {
-        fitness.latest.clear();
-        fitness.measured(family.parent.profileId(), new FakeFitness.Item("028", 40.0));
+    @DisplayName("측정 기록이 없는 아이도 편성을 시작하고, 요청에 실어 온 키와 몸무게를 실행 조건에 남긴다")
+    void 측정_기록이_없는_아이도_시작하고_키와_몸무게를_남긴다() {
+        CoachRunConditions conditions = new CoachRunConditions(
+                20, true, CoachPlace.HOME, null, false, new BigDecimal("125.5"), new BigDecimal("26"));
 
-        assertThat(assertThrows(NoMeasuredMemberException.class, () -> start(today(family.child.profileId())))
-                        .getCode())
-                .isEqualTo("NO_MEASURED_MEMBER");
-        assertThat(runs.runs).isEmpty();
+        CoachRunAcceptedView accepted =
+                start(new StartCoachRunCommand(family.child.profileId(), Fixed.TODAY, conditions));
+
+        assertThat(accepted.status()).isEqualTo(CoachRunStatus.RUNNING);
+        CoachRun run = runs.findById(accepted.coachRunId());
+        assertThat(run.getConditions()).isEqualTo(conditions);
+        assertThat(run.getConditions().heightCm()).isEqualByComparingTo("125.5");
+        assertThat(run.getConditions().weightKg()).isEqualByComparingTo("26");
+        assertThat(events).containsExactly(new CoachRunRequested(run.getId()));
     }
 
     @Test
@@ -196,7 +192,6 @@ class CoachRunServiceTest {
     @DisplayName("같은 (프로필, 날짜)에 RUNNING 이 있으면 409 RUN_IN_PROGRESS — 다른 날 · 형제는 따로 짠다")
     void 같은_프로필_날짜에_RUNNING_이_있으면_RUN_IN_PROGRESS() {
         ProfileDetails sibling = family.addChild("하늘", LocalDate.of(2017, 4, 2));
-        fitness.measured(sibling.profileId(), new FakeFitness.Item("012", 6.0));
         start(today(family.child.profileId()));
 
         CoachRunInProgressException e =
@@ -242,7 +237,6 @@ class CoachRunServiceTest {
                 videos,
                 identity,
                 identity,
-                fitness,
                 events::add,
                 Fixed.time(),
                 timeLimit,
@@ -280,7 +274,6 @@ class CoachRunServiceTest {
                 videos,
                 identity,
                 identity,
-                fitness,
                 events::add,
                 Fixed.time(),
                 timeLimit,

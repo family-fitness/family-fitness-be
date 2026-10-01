@@ -39,7 +39,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * 여정 G — 이탈형. 엄마(36)와 딸(9). 측정 전에는 편성이 422 NO_MEASURED_MEMBER 로 막히고,
+ * 여정 G. 이탈형이다. 엄마(36)와 딸(9). 측정 전에도 키와 몸무게로 편성을 받고,
  * D3 에 재고 D3~D5 편성을 매번 거절한 뒤 D6~D10 다섯 날을 쉬고 D11 에 돌아와 운동한다.
  * 날을 넘길 때 07:30 MISSION_READY 작업을 직접 부른다.
  */
@@ -85,12 +85,22 @@ class DropoutJourneyTest {
     kr.ac.kookmin.familyfitness.notification.application.NotificationScheduler notificationScheduler;
 
     @Test
-    @DisplayName("측정을 하지 않은 아이는 편성이 422 NO_MEASURED_MEMBER 로 막힌다")
-    void 측정_전에는_편성이_막힌다() throws Exception {
+    @DisplayName("측정을 하지 않은 아이도 키와 몸무게를 실어 편성을 받고(202), 그 편성은 승인을 기다리는 제안이 된다")
+    void 측정_전에도_키와_몸무게로_편성을_받는다() throws Exception {
         at(D1, LocalTime.of(19, 0));
         Mom m = newFamily();
-        String body = startPlan(m, 422);
-        assertThat((String) JsonPath.read(body, "$.error.code")).isEqualTo("NO_MEASURED_MEMBER");
+        String started = send(
+                post("/api/v1/families/" + m.familyId + "/coach/runs"),
+                m.mom,
+                "{\"profileId\":\"" + m.daughterId + "\",\"date\":\"" + today()
+                        + "\",\"minutes\":20,\"quiet\":true,\"place\":\"HOME\",\"focusFactor\":null,\"withParent\":false,"
+                        + "\"heightCm\":132,\"weightKg\":28}",
+                202);
+        assertThat((String) JsonPath.read(started, "$.status")).isEqualTo("RUNNING");
+
+        String run = send(get("/api/v1/coach/runs/" + JsonPath.read(started, "$.coachRunId")), m.mom, null, 200);
+        assertThat((String) JsonPath.read(run, "$.status")).isEqualTo("AWAITING_APPROVAL");
+        assertThat(JsonPath.<List<Object>>read(run, "$.proposals")).hasSize(1);
     }
 
     @Test
@@ -104,7 +114,7 @@ class DropoutJourneyTest {
         assertThat((String) JsonPath.read(body, "$.certification.status")).isEqualTo("NO_CRITERIA");
         assertThat((Object) JsonPath.read(body, "$.certification.grade")).isNull();
 
-        // 이제는 편성이 된다
+        // 잰 아이의 편성도 그대로 된다
         String started = startPlan(m, 202);
         assertThat((String) JsonPath.read(started, "$.status")).isEqualTo("RUNNING");
     }
@@ -142,7 +152,8 @@ class DropoutJourneyTest {
     void 닷새_쉬고_돌아와_운동한다() throws Exception {
         at(D1, LocalTime.of(19, 0));
         Mom m = newFamily();
-        startPlan(m, 422);
+        // 재기 전에도 편성은 받는다. 이 제안은 승인하지 않고 둔다
+        startPlan(m, 202);
 
         at(D1.plusDays(2), LocalTime.of(19, 0));
         measure(m);

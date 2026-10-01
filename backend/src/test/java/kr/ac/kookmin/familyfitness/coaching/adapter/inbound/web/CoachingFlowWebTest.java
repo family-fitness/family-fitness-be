@@ -57,7 +57,10 @@ import kr.ac.kookmin.familyfitness.identity.api.NotSameFamilyException;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileDetails;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
+import kr.ac.kookmin.familyfitness.shared.ai.AiGateway;
+import kr.ac.kookmin.familyfitness.shared.ai.AiProfile;
 import kr.ac.kookmin.familyfitness.shared.ai.Citation;
+import kr.ac.kookmin.familyfitness.shared.ai.CoachRunRequest;
 import kr.ac.kookmin.familyfitness.shared.ai.CoachRunResult;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRef;
 import kr.ac.kookmin.familyfitness.shared.domain.ProfileRole;
@@ -66,6 +69,7 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -78,6 +82,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -147,6 +152,10 @@ class CoachingFlowWebTest {
     @MockitoBean
     ActivityQuery activityQuery;
 
+    /** 시험 프로필의 스텁 게이트웨이를 그대로 부르고, AI 로 보낸 편성 요청만 붙잡아 본다. */
+    @MockitoSpyBean
+    AiGateway ai;
+
     private final Family family = new Family();
     private ActivityTotals childTotals = new ActivityTotals(0, 0, 0);
 
@@ -188,7 +197,6 @@ class CoachingFlowWebTest {
         given(profileQuery.findSummary(childId())).willReturn(childSummary);
         given(profileQuery.findSummary(parentId())).willReturn(parentSummary);
         given(profileQuery.findDetails(childId())).willReturn(family.child);
-        given(fitnessQuery.hasAnyTest(any())).willReturn(true);
         given(fitnessQuery.latestOf(childId()))
                 .willReturn(new LatestFitness(
                         childId(),
@@ -221,6 +229,12 @@ class CoachingFlowWebTest {
         return "{\"profileId\":\"" + profileId + "\",\"date\":\"" + date
                 + "\",\"minutes\":20,\"quiet\":true,\"place\":\"HOME\",\"focusFactor\":null,\"withParent\":"
                 + withParent + ",\"minutesPerSession\":20}";
+    }
+
+    /** 측정 기록이 없는 아이의 몸통(FE 9/30 시연). planBody 에 키(cm)와 몸무게(kg)를 더한다. */
+    private String planBodyWithBody(UUID profileId, LocalDate date, String heightCm, String weightKg) {
+        String body = planBody(profileId, date, false);
+        return body.substring(0, body.length() - 1) + ",\"heightCm\":" + heightCm + ",\"weightKg\":" + weightKg + "}";
     }
 
     private MvcResult startPlan(String bearer, String body) throws Exception {
@@ -825,6 +839,81 @@ class CoachingFlowWebTest {
                         .query(Integer.class)
                         .single())
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("측정 기록이 없는 아이도 키와 몸무게를 실어 편성을 받는다(202). 두 값은 실행 행에 남고 AI 요청의 키, 몸무게로 나간다")
+    void 측정_기록이_없는_아이도_키와_몸무게로_편성을_받는다() throws Exception {
+        given(fitnessQuery.latestOf(childId())).willReturn(null);
+        String parent = auth.bearer(family.parentUser);
+
+        MvcResult started = startPlan(parent, planBodyWithBody(childId(), time.today(), "125.5", "26"));
+
+        assertThat(started.getResponse().getStatus()).isEqualTo(202);
+        String runId = extract("\"coachRunId\":\"([^\"]+)\"", started);
+        assertThat(statusOf(runId)).isEqualTo("AWAITING_APPROVAL");
+        Map<String, Object> row = jdbc.sql("select height_cm, weight_kg from coach_runs where id = ?")
+                .param(UUID.fromString(runId))
+                .query()
+                .singleRow();
+        assertThat((BigDecimal) row.get("height_cm")).isEqualByComparingTo("125.5");
+        assertThat((BigDecimal) row.get("weight_kg")).isEqualByComparingTo("26");
+        ArgumentCaptor<CoachRunRequest> sent = ArgumentCaptor.forClass(CoachRunRequest.class);
+        verify(ai).startCoachRun(sent.capture());
+        AiProfile profile = sent.getValue().profiles().getFirst().profile();
+        assertThat(profile.heightCm()).isEqualTo(125.5);
+        assertThat(profile.weightKg()).isEqualTo(26.0);
+        assertThat(profile.measurements()).isEmpty();
+        assertThat(profile.inputLevel()).isEqualTo("L1");
+    }
+
+    @Test
+    @DisplayName("측정 기록이 있는 아이는 요청에 실린 키와 몸무게 대신 측정 기록의 값을 AI 에 보낸다. 요청 값은 실행 행에만 남는다")
+    void 측정_기록이_있는_아이는_기록의_키와_몸무게를_보낸다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+
+        MvcResult started = startPlan(parent, planBodyWithBody(childId(), time.today(), "150", "40"));
+
+        assertThat(started.getResponse().getStatus()).isEqualTo(202);
+        ArgumentCaptor<CoachRunRequest> sent = ArgumentCaptor.forClass(CoachRunRequest.class);
+        verify(ai).startCoachRun(sent.capture());
+        AiProfile profile = sent.getValue().profiles().getFirst().profile();
+        // setUp 의 최근 측정 회차: 키 140.5cm, 몸무게 35.0kg
+        assertThat(profile.heightCm()).isEqualTo(140.5);
+        assertThat(profile.weightKg()).isEqualTo(35.0);
+        assertThat(profile.inputLevel()).isEqualTo("L2");
+    }
+
+    @Test
+    @DisplayName("키와 몸무게가 측정 등록과 같은 범위(키 30~230cm, 몸무게 5~250kg)를 벗어나면 400 이고 실행을 만들지 않는다. 경계 값은 받는다")
+    void 키와_몸무게가_범위를_벗어나면_400() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        LocalDate today = time.today();
+        List<List<String>> outside =
+                List.of(List.of("29.9", "26"), List.of("230.1", "26"), List.of("125", "4.9"), List.of("125", "250.1"));
+
+        for (List<String> values : outside) {
+            mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                            .header(HttpHeaders.AUTHORIZATION, parent)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(planBodyWithBody(childId(), today, values.get(0), values.get(1))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
+        assertThat(jdbc.sql("select count(*) from coach_runs where family_id = ?")
+                        .param(familyId())
+                        .query(Integer.class)
+                        .single())
+                .isZero();
+
+        assertThat(startPlan(parent, planBodyWithBody(childId(), today, "30", "250"))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(202);
+        assertThat(startPlan(parent, planBodyWithBody(childId(), today, "230", "5"))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(202);
     }
 
     @Test
