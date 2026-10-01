@@ -33,6 +33,8 @@ import org.springframework.stereotype.Component;
  *       보여 줄 거리가 남는다. 기준표가 바뀌면 ReviewLoginApiTest 가 깨진다.
  *   <li>서준(만 6세 남, 유아기): 집에서 잴 만한 네 가지와 키, 몸무게. 유아기 등급은 일곱 가지를 다 재야 판정하므로 등급 없이
  *       「더 재면 판정할 수 있는 것」 이 나온다.
+ *   <li>엄마(만 38세 여), 아빠(만 40세 남): 성인 항목 여섯 가지(012, 019, 020, 021, 028, 041)와 키, 몸무게, 허리둘레.
+ *       육각형 여섯 요인이 다 찬다. 성인 등급은 VO2max(035 또는 037)까지 재야 판정하므로 「더 재면 판정할 수 있는 것」 이 나온다.
  * </ul>
  */
 @Component
@@ -76,14 +78,33 @@ public class ReviewFamilyFitness {
     static final BodyMeasures TODDLER_BODY_BEFORE =
             new BodyMeasures(new BigDecimal("117.3"), new BigDecimal("21.2"), null, null);
 
-    /** 엄마. 앉아윗몸앞으로굽히기, 상대악력, 교차윗몸일으키기. */
-    static final Map<String, String> MOM = Map.of("012", "14.0", "028", "52.0", "019", "24");
+    /**
+     * 엄마(만 38세 여). 성인 국민체력100 항목으로 육각형 여섯 요인을 다 쟀다. 전에는 세 요인(012, 028, 019)만 재서 결과 화면
+     * 육각형이 면 없이 점 셋으로만 그려졌다(FE 는 넷 이상이어야 모양을 그린다). 뒤의 수는 AI value_quantiles.csv 성인 여 38세
+     * 칸의 백분위다. 평균 55, 근력이 「잘하고 있는 영역」 이다.
+     */
+    static final Map<String, String> MOM = Map.of(
+            "012", "14.0", // 앉아윗몸앞으로굽히기(cm) 42
+            "019", "25", // 교차윗몸일으키기(회) 46
+            "020", "20", // 20m 왕복오래달리기(회) 54
+            "021", "12.9", // 10m 4회 왕복달리기(초) 51
+            "028", "53.5", // 상대악력(%) 76
+            "041", "0.44"); // 성인체공시간(초) 61
 
     static final BodyMeasures MOM_BODY =
             new BodyMeasures(new BigDecimal("162.0"), new BigDecimal("56.0"), null, new BigDecimal("74.0"));
 
-    /** 아빠. 엄마 종목에 왕복오래달리기를 더했다. */
-    static final Map<String, String> DAD = Map.of("012", "6.0", "028", "63.0", "019", "31", "020", "38");
+    /**
+     * 아빠(만 40세 남). 엄마와 같은 여섯 항목. 뒤의 수는 성인 남 40세 칸의 백분위다. 평균 41, 근지구력이 「지금 키우기 좋은
+     * 영역」 이다.
+     */
+    static final Map<String, String> DAD = Map.of(
+            "012", "6.0", // 32
+            "019", "31", // 20
+            "020", "38", // 56
+            "021", "11.2", // 40
+            "028", "63.0", // 57
+            "041", "0.53"); // 42
 
     static final BodyMeasures DAD_BODY =
             new BodyMeasures(new BigDecimal("175.0"), new BigDecimal("76.0"), null, new BigDecimal("86.0"));
