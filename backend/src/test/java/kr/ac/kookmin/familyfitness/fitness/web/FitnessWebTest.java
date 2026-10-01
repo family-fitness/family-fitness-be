@@ -656,7 +656,8 @@ class FitnessWebTest {
                 parentBase.supportMode(),
                 parentBase.measurable(),
                 parentBase.consentRequired(),
-                parentBase.consentGiven());
+                parentBase.consentGiven(),
+                false);
         when(familyAccess.requireMember(userId, familyId)).thenReturn(parent);
         when(profileQuery.summariesOfFamily(familyId)).thenReturn(List.of(parent, child));
         when(profileQuery.familyName(familyId)).thenReturn("데모네");
@@ -859,7 +860,8 @@ class FitnessWebTest {
                 null,
                 true,
                 false,
-                true);
+                true,
+                false);
         when(familyAccess.requireSameFamilyAsProfile(userId, teenId)).thenReturn(teen);
         when(familyAccess.requireParentOfProfile(userId, teenId)).thenReturn(parentOf(UUID.randomUUID(), familyId));
         when(profileQuery.findDetails(teenId))

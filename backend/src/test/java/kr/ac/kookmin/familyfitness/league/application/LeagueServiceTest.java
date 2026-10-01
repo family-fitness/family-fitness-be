@@ -160,7 +160,8 @@ class LeagueServiceTest {
                 null,
                 true,
                 consentRequired,
-                consentGiven);
+                consentGiven,
+                false);
     }
 
     /** 보호자 한 명과 아이 {@code kids} 명인 가족. */

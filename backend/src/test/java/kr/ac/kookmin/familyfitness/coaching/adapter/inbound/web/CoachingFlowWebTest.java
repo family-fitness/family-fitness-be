@@ -1155,6 +1155,7 @@ class CoachingFlowWebTest {
                 childSummary.supportMode(),
                 false,
                 true,
+                false,
                 false);
         given(profileQuery.summariesOfFamily(familyId()))
                 .willReturn(List.of(

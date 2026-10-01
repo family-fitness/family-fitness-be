@@ -156,7 +156,8 @@ abstract class MissionDeletionRaceTestBase {
                 null,
                 true,
                 child,
-                true);
+                true,
+                false);
     }
 
     @Test

@@ -175,7 +175,8 @@ class NotificationWebTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private ResultActions list(UUID profileId) throws Exception {

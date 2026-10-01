@@ -111,7 +111,8 @@ class NotificationWriterTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private CheerSent cheer(

@@ -117,7 +117,8 @@ class ProgressServiceTest {
                 null,
                 true,
                 role == ProfileRole.CHILD,
-                true);
+                true,
+                false);
     }
 
     private SessionDone done(UUID profileId, UUID missionId, int position, Phase phase, LocalDate on) {

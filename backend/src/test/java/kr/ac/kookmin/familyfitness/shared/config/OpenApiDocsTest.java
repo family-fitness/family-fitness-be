@@ -81,6 +81,7 @@ class OpenApiDocsTest {
         // null 이 아닌 칸은 건드리지 않는다
         assertThat(typesOf(property("ProfileSummary", "profileId"))).containsExactly("string");
         assertThat(typesOf(property("ProfileSummary", "role"))).containsExactly("string");
+        assertThat(typesOf(property("ProfileSummary", "isOwner"))).containsExactly("boolean");
         assertThat(typesOf(property("MissionView", "missionId"))).containsExactly("string");
         assertThat(typesOf(property("XpLineView", "amount"))).containsExactly("integer");
     }

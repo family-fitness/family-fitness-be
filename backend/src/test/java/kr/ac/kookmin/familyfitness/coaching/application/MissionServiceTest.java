@@ -797,6 +797,7 @@ class MissionServiceTest {
                 s.supportMode(),
                 false,
                 true,
+                false,
                 false);
     }
 
