@@ -140,7 +140,9 @@ public class SessionCompletionService {
 
     /**
      * 인정 초. endedAt ≤ startedAt 이면 400. 재생 초가 기기 시각의 간격보다 길면 간격으로 자른다.
-     * 칸 시간(분 × 60)의 절반 미만이면 422 TOO_SHORT(FE 목 {@code activeSeconds < planned × 0.5} 와 같다).
+     * 기준 시간의 절반 미만이면 422 TOO_SHORT(FE {@code doneAtSeconds} 와 같다). 기준 시간은 칸 시간(분 × 60)이고,
+     * 칸에 영상 구간(endSec)이 있으면 칸 시간과 구간 길이 중 짧은 쪽이다. FE 타이머가 영상 길이만큼 돌아서,
+     * 1분 30초 영상을 다 따라 해도 4분 칸의 절반에 못 미쳐 거절되던 것을 막는다.
      * 칸 시간은 long 으로 셈한다 — 상한이 생기기 전에 만든 칸 없는 미션은 분이 아주 커서 int 곱셈이 음수로 넘쳤다(SA-11).
      */
     private static int creditedSeconds(MissionSession session, CompleteSessionCommand command) {
@@ -150,6 +152,10 @@ public class SessionCompletionService {
         long elapsed = Duration.between(command.startedAt(), command.endedAt()).getSeconds();
         long active = Math.min(command.activeSeconds(), elapsed);
         long planned = session.minutes() * 60L;
+        var clip = session.clip();
+        if (clip != null && clip.endSec() != null) {
+            planned = Math.min(planned, clip.endSec() - (long) clip.startSec());
+        }
         if (active * 2 < planned) throw new SessionTooShortException(active, planned);
         return (int) active;
     }
