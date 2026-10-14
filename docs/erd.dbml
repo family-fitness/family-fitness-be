@@ -197,6 +197,8 @@ Table coach_runs {
   with_parent boolean
   lock_key varchar(60)
   failure_code varchar(20)
+  height_cm numeric(4,1)
+  weight_kg numeric(4,1)
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
     (status, created_at) [name: 'ix_coach_runs_status_created']
@@ -520,6 +522,7 @@ Table league_members {
   final_rate smallint
   final_rank smallint
   moved varchar(4)
+  final_score float8
   indexes {
     (round_id, family_id) [pk]
     (family_id, round_month) [unique, name: 'ux_league_members_family_month']
@@ -529,7 +532,8 @@ Table league_members {
 (seat_no >= 1)
 (final_rate is null or (final_rate >= 0 and final_rate <= 100))
 (final_rank is null or final_rank >= 1)
-(moved is null or moved in ('UP', 'STAY', 'DOWN'))'''
+(moved is null or moved in ('UP', 'STAY', 'DOWN'))
+(final_score is null or (final_score >= 0 and final_score <= 1))'''
 }
 
 Table mission_feedback {
@@ -637,6 +641,25 @@ Table video_exercise_labels {
 (age_group in ('TODDLER', 'YOUTH', 'ADOLESCENT', 'ADULT', 'SENIOR'))'''
 }
 
+Table family_invites {
+  code varchar(8) [pk, not null]
+  family_id uuid [not null]
+  role varchar(10) [not null]
+  consent_personal_data boolean
+  consent_health_data boolean
+  consent_by_user_id uuid
+  issued_by_profile_id uuid [not null]
+  created_at timestamptz [not null]
+  expires_at timestamptz [not null]
+  claimed_at timestamptz
+  claimed_by_user_id uuid
+  indexes {
+    (family_id, created_at) [name: 'ix_family_invites_family']
+  }
+  Note: '''(role in ('PARENT', 'CHILD'))
+(role <> 'CHILD' or (consent_personal_data = true and consent_health_data = true))'''
+}
+
 Ref: profiles.family_id > families.id
 Ref: profiles.user_id > users.id
 Ref: profiles.consent_by_user_id > users.id
@@ -687,3 +710,7 @@ Ref: notifications.about_profile_id > profiles.id
 Ref: notifications.from_profile_id > profiles.id
 Ref: notifications.cheer_id > cheers.id
 Ref: video_exercise_labels.clip_id > video_exercises.clip_id
+Ref: family_invites.family_id > families.id
+Ref: family_invites.issued_by_profile_id > profiles.id
+Ref: family_invites.consent_by_user_id > users.id
+Ref: family_invites.claimed_by_user_id > users.id
