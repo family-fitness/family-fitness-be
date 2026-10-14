@@ -153,3 +153,16 @@ bash deploy.sh ghcr.io/family-fitness/family-fitness-be:<되돌릴 커밋 해시
 - Lightsail 자동 스냅샷을 켠다. 서버 디스크 전체(DB 볼륨 포함)를 매일 찍는다. 스냅샷 저장 용량만큼 요금이 붙는다(GB 당 월 0.05달러).
   `aws lightsail enable-add-on --resource-name ff-backend --add-on-request "addOnType=AutoSnapshot,autoSnapshotAddOnRequest={snapshotTimeOfDay=18:00}" --profile ff-backend` (UTC 18시 = 한국 새벽 3시)
 - DB 만 따로 받기: `docker compose exec -T postgres pg_dump -U familyfitness -Fc familyfitness > familyfitness-$(date +%F).dump`
+
+### 이용 지표 집계
+
+`sql/usage-metrics.sql` 이 운영 DB 에서 이용 지표를 뽑는다. 심사용 계정(REVIEW)과 개발용 계정(DEV)이 낀 가족은 모두 빼고,
+개인정보 없이 숫자와 캠페인 이름만 낸다. 기간은 한국 시각 기준으로 `from` 그날 0시부터 `to` 그날 0시 전까지다.
+
+```bash
+docker compose exec -T postgres psql -U familyfitness -d familyfitness \
+  -v from=2026-10-01 -v to=2026-11-01 -f - < sql/usage-metrics.sql
+```
+
+나오는 표: 유입 경로별 가입, AI 제안 승인율(밀려난 제안 제외), 편성 결과(AI, 대체 편성과 까닭, 실패)와 걸린 시간,
+승인된 미션 완료율(아이, 보호자), 가족 운동일 분포, 응원. 편성 결과는 V173, 유입 경로는 V174 뒤의 행부터 찬다.
