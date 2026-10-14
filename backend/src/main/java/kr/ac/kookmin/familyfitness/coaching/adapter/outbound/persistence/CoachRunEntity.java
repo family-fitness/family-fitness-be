@@ -83,6 +83,18 @@ public class CoachRunEntity {
     @Column(name = "failure_code", length = 20)
     private @Nullable String failureCode;
 
+    /** 제안을 누가 짰는지(V173, CoachPlanSource 이름). FAILED 와 V173 앞에 끝난 행은 null. */
+    @Column(name = "plan_source", length = 10)
+    private @Nullable String planSource;
+
+    /** 대체 편성으로 넘어간 까닭(V173). AI 가 짰거나 FAILED 면 null. */
+    @Column(name = "fallback_reason", length = 40)
+    private @Nullable String fallbackReason;
+
+    /** RUNNING 을 벗어난 시각(V173). 아직 RUNNING 이거나 V173 앞에 끝난 행은 null. */
+    @Column(name = "finished_at")
+    private @Nullable Instant finishedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -306,6 +318,25 @@ public class CoachRunEntity {
 
     public void setFailureCode(@Nullable String failureCode) {
         this.failureCode = failureCode;
+    }
+
+    public @Nullable String getPlanSource() {
+        return planSource;
+    }
+
+    public @Nullable String getFallbackReason() {
+        return fallbackReason;
+    }
+
+    public @Nullable Instant getFinishedAt() {
+        return finishedAt;
+    }
+
+    /** 편성이 끝난 모습(V173). 생성자 인자가 이미 많아 따로 받는다. */
+    public void setOutcome(@Nullable String planSource, @Nullable String fallbackReason, @Nullable Instant finishedAt) {
+        this.planSource = planSource;
+        this.fallbackReason = fallbackReason;
+        this.finishedAt = finishedAt;
     }
 
     public Instant getCreatedAt() {

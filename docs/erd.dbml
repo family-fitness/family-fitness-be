@@ -199,6 +199,9 @@ Table coach_runs {
   failure_code varchar(20)
   height_cm numeric(4,1)
   weight_kg numeric(4,1)
+  plan_source varchar(10)
+  fallback_reason varchar(40)
+  finished_at timestamptz
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
     (status, created_at) [name: 'ix_coach_runs_status_created']
@@ -210,7 +213,8 @@ Table coach_runs {
 ((approved_by is null) = (approved_at is null))
 (status <> 'APPROVED' or approved_at is not null)
 (place in ('HOME', 'OUTDOOR'))
-(failure_code in ('NO_CITATIONS', 'AI_FAILED', 'CONSENT_REQUIRED', 'BUSY', 'STALE', 'ERROR'))'''
+(failure_code in ('NO_CITATIONS', 'AI_FAILED', 'CONSENT_REQUIRED', 'BUSY', 'STALE', 'ERROR'))
+(plan_source in ('AI', 'FALLBACK'))'''
 }
 
 Table coach_run_proposal_items {
