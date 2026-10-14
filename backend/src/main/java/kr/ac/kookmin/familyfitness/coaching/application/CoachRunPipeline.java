@@ -12,6 +12,7 @@ import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseClipReposit
 import kr.ac.kookmin.familyfitness.coaching.application.port.ExerciseVideoRepository;
 import kr.ac.kookmin.familyfitness.coaching.application.port.MissionRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlanSource;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRoles;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
@@ -170,9 +171,23 @@ public class CoachRunPipeline {
         return written(runs.attachAiRunIfRunning(run), runId, "AI 접수 기록");
     }
 
-    /** `succeeded` 결과를 제안 항목(칸 포함)으로 바꿔 붙이고 AWAITING_APPROVAL 로 옮긴다. */
+    /** AI 가 짠 `succeeded` 결과를 제안 항목(칸 포함)으로 바꿔 붙이고 AWAITING_APPROVAL 로 옮긴다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void complete(UUID runId, CoachRunResult result) {
+        finishWithProposal(runId, result, CoachPlanSource.AI, null);
+    }
+
+    /**
+     * {@link #planFallback} 으로 짠 대체 편성 결과를 붙인다. reason 은 대체 편성으로 넘어간 까닭(대체 편성 단계 요약에 쓰는 짧은 말)이며
+     * coach_runs.fallback_reason 에 남겨 사용 기록 분석에 쓴다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void completeFallback(UUID runId, CoachRunResult result, String reason) {
+        finishWithProposal(runId, result, CoachPlanSource.FALLBACK, reason);
+    }
+
+    private void finishWithProposal(
+            UUID runId, CoachRunResult result, CoachPlanSource source, @Nullable String fallbackReason) {
         CoachRun run = load(runId);
         if (alreadyFinished(run, "제안")) return;
         CoachRunResult.Proposal proposal = result.proposal();
@@ -190,6 +205,8 @@ public class CoachRunPipeline {
                 jsonMapper.writeValueAsString(proposal),
                 ProposalConverter.summary(result),
                 null,
+                source,
+                fallbackReason,
                 time.now());
         written(runs.finishIfRunning(run), runId, "제안");
     }

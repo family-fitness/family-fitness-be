@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlanSource;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
@@ -138,12 +139,16 @@ class CoachRunExecutorTest {
     /** 대체 편성으로 낸 제안이다 — 두 번째 단계가 「AI 서비스 장애(까닭) → 영상 라벨 기반 편성」 partial 이다. */
     private static void assertFallback(CoachRun saved, String summary) {
         assertFallbackWithStep(saved, "AI 서비스 장애(" + summary + ")");
+        assertThat(saved.getFallbackReason()).isEqualTo(summary);
     }
 
     /** 대체 편성으로 낸 제안이고, 두 번째 단계 요약이 {@code retrieveStep} 으로 시작한다. */
     private static void assertFallbackWithStep(CoachRun saved, String retrieveStep) {
         assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
         assertThat(saved.getFailureCode()).isNull();
+        assertThat(saved.getPlanSource()).isEqualTo(CoachPlanSource.FALLBACK);
+        assertThat(saved.getFallbackReason()).isNotBlank();
+        assertThat(saved.getFinishedAt()).isEqualTo(Fixed.NOW);
         assertThat(saved.getSteps().stream().map(CoachStep::status).toList())
                 .containsExactly("ok", "partial", "ok", "ok");
         assertThat(saved.getSteps().get(1).summary()).startsWith(retrieveStep);
@@ -470,6 +475,35 @@ class CoachRunExecutorTest {
 
         assertThat(gateway.startRequests.getFirst().constraints().focusFactor()).isEqualTo("민첩성");
         assertThat(runs.findById(run.getId()).getProposals().getFirst().title()).isEqualTo("민첩성 키우기 20분");
+    }
+
+    @Test
+    @DisplayName("AI 가 짠 제안은 누가 짰는지를 AI 로, 끝난 시각을 남기고 대체 편성 까닭은 비운다 — 사용 기록 분석에 쓴다")
+    void AI_가_짠_제안은_AI_로_남는다() {
+        CoachRun run = runningRun();
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.AWAITING_APPROVAL);
+        assertThat(saved.getPlanSource()).isEqualTo(CoachPlanSource.AI);
+        assertThat(saved.getFallbackReason()).isNull();
+        assertThat(saved.getFinishedAt()).isEqualTo(Fixed.NOW);
+    }
+
+    @Test
+    @DisplayName("FAILED 로 끝나면 누가 짰는지는 비우고 끝난 시각만 남긴다")
+    void FAILED_면_끝난_시각만_남긴다() {
+        CoachRun run = runningRun();
+        gateway.onPoll = id -> new CoachRunResult(id, "refused", List.of(), null, true, "no_relevant_source");
+
+        executor.execute(run.getId());
+
+        CoachRun saved = runs.findById(run.getId());
+        assertThat(saved.getStatus()).isEqualTo(CoachRunStatus.FAILED);
+        assertThat(saved.getPlanSource()).isNull();
+        assertThat(saved.getFallbackReason()).isNull();
+        assertThat(saved.getFinishedAt()).isEqualTo(Fixed.NOW);
     }
 
     @Test

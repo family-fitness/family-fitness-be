@@ -12,6 +12,7 @@ import kr.ac.kookmin.familyfitness.identity.application.port.RefreshTokenReposit
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.AccountNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.RefreshToken;
+import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
 import kr.ac.kookmin.familyfitness.shared.security.InvalidRefreshTokenException;
@@ -78,9 +79,17 @@ public class AuthService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuthResult loginWithGoogle(String authorizationCode, String redirectUri, @Nullable String claimCode) {
+        return loginWithGoogle(authorizationCode, redirectUri, claimCode, SignupSource.NONE);
+    }
+
+    /** signupSource 는 이번 로그인으로 처음 가입할 때만 계정에 남는다(유입 경로, V174). */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public AuthResult loginWithGoogle(
+            String authorizationCode, String redirectUri, @Nullable String claimCode, SignupSource signupSource) {
         GoogleIdentity identity = google.exchange(authorizationCode, redirectUri);
         return Objects.requireNonNull(tx.execute(status -> {
-            User user = registration.registerOrGet(User.PROVIDER_GOOGLE, identity.subject(), identity.email());
+            User user = registration.registerOrGet(
+                    User.PROVIDER_GOOGLE, identity.subject(), identity.email(), signupSource);
             return login(user.id(), claimCode);
         }));
     }
