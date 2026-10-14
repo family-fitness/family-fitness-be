@@ -1,13 +1,18 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +42,34 @@ class UserRegistrationServiceTest {
         assertThat(saved.provider()).isEqualTo("GOOGLE");
         assertThat(saved.providerUserId()).isEqualTo("google-parent-1");
         assertThat(saved.email()).isEqualTo("parent@example.com");
+    }
+
+    @Test
+    @DisplayName("처음 가입할 때 유입 경로가 있으면 그 계정에 남기고, 없으면 부르지 않는다")
+    void 처음_가입할_때_유입_경로를_남긴다() {
+        when(repository.findByProviderAndProviderUserId("GOOGLE", "google-parent-1"))
+                .thenReturn(null);
+        when(repository.findByProviderAndProviderUserId("GOOGLE", "google-parent-2"))
+                .thenReturn(null);
+        SignupSource source = SignupSource.of("instagram", "paid", "fitness-age");
+
+        User withSource = service.registerOrGet("GOOGLE", "google-parent-1", null, source);
+        service.registerOrGet("GOOGLE", "google-parent-2", null, SignupSource.NONE);
+
+        verify(repository).recordSignupSource(withSource.id(), source);
+        verify(repository, times(1)).recordSignupSource(any(), any());
+    }
+
+    @Test
+    @DisplayName("이미 있는 계정으로 다시 로그인하면 유입 경로를 쓰지 않는다")
+    void 이미_있는_계정은_유입_경로를_쓰지_않는다() {
+        User existing = new User(UUID.randomUUID(), "GOOGLE", "google-parent-1", "parent@example.com");
+        when(repository.findByProviderAndProviderUserId("GOOGLE", "google-parent-1"))
+                .thenReturn(existing);
+
+        service.registerOrGet("GOOGLE", "google-parent-1", null, SignupSource.of("instagram", null, null));
+
+        verify(repository, never()).recordSignupSource(any(), any());
     }
 
     @Test

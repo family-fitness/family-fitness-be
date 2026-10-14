@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
+import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
 import org.jspecify.annotations.Nullable;
@@ -52,6 +53,14 @@ public class UserRepositoryAdapter implements UserRepository {
             existing.setUpdatedAt(now);
         }
         return user;
+    }
+
+    @Override
+    public void recordSignupSource(UUID userId, SignupSource source) {
+        if (source.isEmpty()) return;
+        UserEntity entity = em.find(UserEntity.class, userId);
+        if (entity == null || entity.hasSignupSource()) return;
+        entity.setSignupSource(source.source(), source.medium(), source.campaign());
     }
 
     private static User toDomain(UserEntity entity) {

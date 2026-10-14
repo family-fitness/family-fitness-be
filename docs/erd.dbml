@@ -9,6 +9,9 @@ Table users {
   status varchar(20) [not null]
   created_at timestamptz [not null]
   updated_at timestamptz [not null]
+  signup_utm_source varchar(64)
+  signup_utm_medium varchar(64)
+  signup_utm_campaign varchar(64)
   indexes {
     (provider, provider_user_id) [unique, name: 'uq_users_provider']
   }

@@ -353,8 +353,9 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 - 가족 초대코드로 들어온 보호자도 `inviteStatus` 가 `CLAIMED` 라 같은 규칙을 따른다.
 
 ### POST /api/v1/auth/google — 토큰 없이
-요청 `{authorizationCode●, redirectUri●, claimCode?}`. 구글 인가코드 교환 → id_token 검증 → (provider=GOOGLE, providerUserId=sub) find-or-create. provider 는 google 하나로 고정, 계정 병합 경로 없음.
+요청 `{authorizationCode●, redirectUri●, claimCode?, utmSource?, utmMedium?, utmCampaign?}`. 구글 인가코드 교환 → id_token 검증 → (provider=GOOGLE, providerUserId=sub) find-or-create. provider 는 google 하나로 고정, 계정 병합 경로 없음.
 응답 200 `AuthResponse`.
+- `utmSource` · `utmMedium` · `utmCampaign` 은 FE 가 처음 들어온 주소의 `utm_source` · `utm_medium` · `utm_campaign` 을 기억했다가 싣는 유입 경로다(V174, `users.signup_utm_*`). 이번 로그인으로 **처음 가입할 때만** 남고, 이미 있는 계정이면 버린다(첫 유입 경로가 남는다). 서버가 앞뒤 공백과 제어 문자를 걷고 64자로 자른다. 200자를 넘으면 400 `BAD_REQUEST`. 안 보내도 된다.
 - `nextStep` 은 위 표대로다. 로그인이 코드로 프로필을 붙이지는 않는다(붙이는 것은 `POST /profiles/claim`).
 - 구글 인가코드 교환(외부 HTTP)은 DB 트랜잭션 밖에서 한다. 가입(find-or-create)과 토큰 발급만 한 트랜잭션이다.
 - 로그인마다 새 리프레시 토큰 묶음(family)을 연다. 한 기기의 로그아웃 · 재사용 감지가 다른 기기를 끊지 않는다.
