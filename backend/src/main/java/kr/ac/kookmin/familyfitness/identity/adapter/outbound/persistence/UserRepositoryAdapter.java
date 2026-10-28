@@ -3,12 +3,14 @@ package kr.ac.kookmin.familyfitness.identity.adapter.outbound.persistence;
 import jakarta.persistence.EntityManager;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -53,6 +55,11 @@ public class UserRepositoryAdapter implements UserRepository {
             existing.setUpdatedAt(now);
         }
         return user;
+    }
+
+    @Override
+    public List<UUID> findIdsByProviderCreatedBefore(String provider, Instant before, int limit) {
+        return jpa.findIdsByProviderCreatedBefore(provider, before, Limit.of(limit));
     }
 
     @Override

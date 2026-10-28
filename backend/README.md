@@ -39,6 +39,9 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   **끝나는 날**: prod 는 `app.auth.review-login.until`(기본 `2026-10-31`, 환경변수 `APP_AUTH_REVIEW_LOGIN_UNTIL=YYYY-MM-DD`)까지만 받는다.
   날짜는 Asia/Seoul 기준이고 그날까지 받는다. 다음 날부터는 켜져 있어도 꺼진 것과 같게 404 `NOT_FOUND` 이고 계정을 만들지 않는다 — 끄는 것을 잊어도
   누구나 계정을 만드는 길이 열려 있지 않게. 심사 일정이 바뀌면 이 환경변수로 옮기고 다시 띄운다. local · compose 는 끝나는 날이 없다.
+  **정리**: 만든 지 31일(`app.auth.review-cleanup.retention`)이 지난 심사용 계정은 매일 04:30(`app.auth.review-cleanup.cron`)에 체험 가족과
+  그 기록까지 지운다(`ReviewAccountSweeper`). 같은 계정으로 다시 들어오는 길이 없고 리프레시 토큰이 30일이라, 그 뒤로는 아무도 볼 수 없는
+  데이터이기 때문이다. 탈퇴와 같은 길로 지워 남는 행이 없고, 구글 계정이 초대코드로 들어온 체험 가족은 지우지 않는다. 시험 `ReviewAccountCleanupApiTest`.
   본문 `{"kind": ...}` 로 심사위원이 세 흐름 가운데 하나를 고른다. 로컬 개발용 로그인 상자의 세 계정과 같은 흐름이다(개발용 상자는 그대로 둔다).
   - `FAMILY`(본문이 없거나 kind 가 없을 때도 이것): 새 계정과 체험 가족(엄마 · 아빠 · 하윤 만 11세 · 서준 만 6세, 두 아이는 사흘 전 측정 있음,
     하윤 인증 2등급)을 만들고 엄마로 로그인한다. nextStep `HOME`. 개발용 「은영 · 가족 3명」 과 같다.
@@ -83,14 +86,14 @@ Gradle 을 띄울 JDK(17 이상, 아무 버전)만 깔려 있으면 된다. 빌�
   코치 대화(`POST /coach/chat`)도 대화마다 LLM 이 불릴 수 있어 센다(`ReviewChatQuota`): 심사용 계정마다 하루(KST) 30번, 모두 합쳐 하루 300번.
   넘기면 AI 를 부르기 전에 429 `TOO_MANY` 다. 편성과 달리 모두 합친 한도도 429 로 막는다 — AI 에 LLM 없이 답하라고 부탁할 칸이 없고, FE 에
   대화 화면이 없어 막혀도 심사위원이 보는 곳이 없다.
-  **만든 심사용 계정 · 체험 가족을 지우는 작업은 없다**(계정 지우기 기능 자체가 아직 없다). 쌓이는 양은 한 시간에 새 계정 300개(`INVITED` 는 가짜 보호자 계정까지 둘)에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 kind 하나에 계정 하나씩 더해진 만큼이다.
-  심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끄고(잊어도 끝나는 날 다음 날부터는 404 다), 남은 줄은 `users.provider = 'REVIEW'` 로 골라 치운다.
+  만든 심사용 계정과 체험 가족은 위 **정리**(매일 04:30, 만든 지 31일 뒤)로 지운다. 쌓이는 양은 한 시간에 새 계정 300개(`INVITED` 는 가짜 보호자 계정까지 둘)에, 한도가 찬 뒤로는 IP(IPv6 /56) 하나마다 kind 하나에 계정 하나씩 더해진 만큼이다.
+  심사가 끝나는 날 `APP_AUTH_REVIEW_LOGIN_ENABLED=false` 로 끈다(잊어도 끝나는 날 다음 날부터는 404 다).
   test 프로필은 꺼 두고, 켜는 시험(`ReviewLoginApiTest` · `ReviewLoginKindApiTest` 등)만 켠다.
 - 운영은 `SPRING_PROFILES_ACTIVE=prod` 로 띄운다. Lightsail 서버와 main 자동 배포는 [deploy/README.md](../deploy/README.md). 운영 필수 환경변수: `APP_JWT_SECRET`(32자 이상), `SPRING_DATASOURCE_URL` · `SPRING_DATASOURCE_USERNAME` · `SPRING_DATASOURCE_PASSWORD`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_FRONTEND_BASE_URL`, `APP_CORS_ALLOWED_ORIGINS`, `APP_AI_BASE_URL`.
   `SPRING_DATASOURCE_*` · `APP_JWT_SECRET` · `APP_FRONTEND_BASE_URL`(http(s):// 로 시작하는 FE 주소, 초대 링크 앞머리)은 빠뜨리면 기동이 멈춘다. `GOOGLE_*` · `APP_CORS_ALLOWED_ORIGINS` · `APP_AI_BASE_URL` 은 빠뜨려도 뜨지만 빈 값이나 개발용 기본값(localhost)으로 돌아 로그인 · 브라우저 요청 · AI 편성이 제대로 되지 않는다.
 - 편성 전용 스레드 풀 크기는 `APP_COACH_EXECUTOR_POOL_SIZE`(기본 8) · `APP_COACH_EXECUTOR_QUEUE_CAPACITY`(기본 무제한)로 바꾼다.
 - 알림은 커밋 뒤 알림 전용 스레드 풀에서 쓴다: `app.notification.executor.pool-size`(2) · `app.notification.executor.queue-capacity`(1000). 정해진 시각에 도는 일의 스레드는 `spring.task.scheduling.pool.size`(2)다.
-- 정해진 시각에 도는 일(모두 KST)은 설정으로 바꾼다: 리프레시 토큰 정리 `app.auth.refresh-token-cleanup.cron`(매일 04:00) · 알림 `app.notification.mission-ready-cron`(07:30) · `app.notification.remeasure-cron`(09:00) · 리그 정산 `app.league.settle-cron`(매월 1일 00:10). 표는 [docs/api-contract.md](../docs/api-contract.md) 0장.
+- 정해진 시각에 도는 일(모두 KST)은 설정으로 바꾼다: 리프레시 토큰 정리 `app.auth.refresh-token-cleanup.cron`(매일 04:00) · 심사용 계정 정리 `app.auth.review-cleanup.cron`(매일 04:30) · 알림 `app.notification.mission-ready-cron`(07:30) · `app.notification.remeasure-cron`(09:00) · 리그 정산 `app.league.settle-cron`(매월 1일 00:10). 표는 [docs/api-contract.md](../docs/api-contract.md) 0장.
 
 ### 로그와 IP 보관
 
