@@ -205,6 +205,7 @@ Table coach_runs {
   plan_source varchar(10)
   fallback_reason varchar(40)
   finished_at timestamptz
+  weather_note varchar(120)
   indexes {
     (family_id, week_start) [name: 'ix_coach_runs_family_week']
     (status, created_at) [name: 'ix_coach_runs_status_created']

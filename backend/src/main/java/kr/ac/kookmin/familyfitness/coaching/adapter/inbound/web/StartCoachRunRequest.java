@@ -22,6 +22,7 @@ import org.jspecify.annotations.Nullable;
  * minutesPerSession 은 minutes 가 없을 때만 쓴다(FE 가 옛 서버용으로 같이 보낸다). 옛 weekStart · daysPerWeek 는 받지 않는다(모르는 칸은 무시).
  * quiet · withParent 가 없으면 false, place 가 없으면 장소를 가리지 않는다. focusFactor 는 한글 요인 라벨(예: 유연성) 또는 null.
  * heightCm, weightKg 는 넣지 않아도 된다. 범위는 측정 등록(RegisterFitnessTestRequest)과 같고, 벗어나면 400 이다.
+ * latitude, longitude 는 날씨를 볼 위치다(기기 위치 등). 넣지 않으면 서울시청 기준 날씨를 본다. 우리나라 범위를 벗어나면 400 이다.
  */
 public record StartCoachRunRequest(
         @NotNull @Nullable UUID profileId,
@@ -48,7 +49,19 @@ public record StartCoachRunRequest(
         @DecimalMin("5")
         @DecimalMax("250")
         @Nullable
-        BigDecimal weightKg) {
+        BigDecimal weightKg,
+
+        @Schema(description = "날씨를 볼 위치의 위도, 33~39. 없으면 서울시청(37.5665) 기준. 장소를 집으로 고르면 날씨를 보지 않는다")
+        @DecimalMin("33")
+        @DecimalMax("39")
+        @Nullable
+        BigDecimal latitude,
+
+        @Schema(description = "날씨를 볼 위치의 경도, 124~132. 없으면 서울시청(126.9780) 기준")
+        @DecimalMin("124")
+        @DecimalMax("132")
+        @Nullable
+        BigDecimal longitude) {
 
     /** minutes 도 minutesPerSession 도 없으면 400(입력 오류라 {@link InvalidInputException}). 기본 분을 서버가 고르지 않는다. */
     StartCoachRunCommand toCommand() {
@@ -64,6 +77,8 @@ public record StartCoachRunRequest(
                         focusFactor,
                         Boolean.TRUE.equals(withParent),
                         heightCm,
-                        weightKg));
+                        weightKg),
+                latitude == null ? null : latitude.doubleValue(),
+                longitude == null ? null : longitude.doubleValue());
     }
 }

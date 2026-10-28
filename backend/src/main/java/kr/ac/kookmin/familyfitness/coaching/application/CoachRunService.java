@@ -31,12 +31,14 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ProposalExpiredException;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.VideoMedia;
+import kr.ac.kookmin.familyfitness.coaching.domain.WeatherAdvice;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,7 +64,9 @@ public class CoachRunService {
     private final CoachRunTimeLimit timeLimit;
     private final ReviewRunQuota reviewQuota;
     private final JsonMapper jsonMapper;
+    private final WeatherAdvisor weather;
 
+    /** 날씨를 보지 않는 생성자(시험용). */
     public CoachRunService(
             CoachRunRepository runs,
             MissionRepository missions,
@@ -74,6 +78,33 @@ public class CoachRunService {
             CoachRunTimeLimit timeLimit,
             ReviewRunQuota reviewQuota,
             JsonMapper jsonMapper) {
+        this(
+                runs,
+                missions,
+                videos,
+                familyAccess,
+                profileQuery,
+                events,
+                time,
+                timeLimit,
+                reviewQuota,
+                jsonMapper,
+                WeatherAdvisor.NONE);
+    }
+
+    @Autowired
+    public CoachRunService(
+            CoachRunRepository runs,
+            MissionRepository missions,
+            ExerciseVideoRepository videos,
+            FamilyAccess familyAccess,
+            ProfileQuery profileQuery,
+            ApplicationEventPublisher events,
+            AppTime time,
+            CoachRunTimeLimit timeLimit,
+            ReviewRunQuota reviewQuota,
+            JsonMapper jsonMapper,
+            WeatherAdvisor weather) {
         this.runs = runs;
         this.missions = missions;
         this.videos = videos;
@@ -84,6 +115,7 @@ public class CoachRunService {
         this.timeLimit = timeLimit;
         this.reviewQuota = reviewQuota;
         this.jsonMapper = jsonMapper;
+        this.weather = weather;
     }
 
     /** 제안 원문(proposal_json)에서 notices 만 읽는 모양. 다른 칸은 무시한다. */
@@ -119,8 +151,11 @@ public class CoachRunService {
         if (runs.isLocked(lockKey)) throw new CoachRunInProgressException(subjectId, date);
         ReviewRunQuota.Planner planner = reviewQuota.acquire(userId);
 
+        WeatherAdvice advice =
+                weather.advise(command.conditions(), date, today, command.latitude(), command.longitude());
         CoachRun run = CoachRun.start(
-                UUID.randomUUID(), familyId, subjectId, date, command.conditions(), caller.profileId(), now);
+                        UUID.randomUUID(), familyId, subjectId, date, advice.conditions(), caller.profileId(), now)
+                .noteWeather(advice.note());
         if (!runs.insertRunning(run)) throw new CoachRunInProgressException(subjectId, date);
         int superseded = runs.rejectAwaitingOf(subjectId, date, CoachRun.SUPERSEDED_REASON, now);
         if (superseded > 0) log.info("새 편성으로 기다리던 제안 {}건을 거절했다: run={}", superseded, run.getId());
@@ -288,10 +323,19 @@ public class CoachRunService {
     }
 
     /**
-     * AI 가 제안과 함께 준 알림. 제안 원문(proposal_json — AI · 대체 편성 결과를 그대로 적어 둔 것)의 notices 배열을 읽는다.
-     * 새 칸을 두지 않은 것은 이미 거기 저장되어 있기 때문이다. 제안이 없거나 원문을 읽지 못하면 빈 목록.
+     * 실행 응답의 알림. 맨 앞에 시작할 때 본 날씨 안내(weather_note, V175)를 두고, 이어서 AI 가 제안과 함께 준 알림을 싣는다.
+     * AI 알림은 제안 원문(proposal_json — AI · 대체 편성 결과를 그대로 적어 둔 것)의 notices 배열을 읽는다.
+     * 새 칸을 두지 않은 것은 이미 거기 저장되어 있기 때문이다. 제안이 없거나 원문을 읽지 못하면 AI 알림은 없다.
      */
     private List<String> noticesOf(CoachRun run) {
+        List<String> notices = new ArrayList<>();
+        String weatherNote = run.getWeatherNote();
+        if (weatherNote != null) notices.add(weatherNote);
+        notices.addAll(aiNoticesOf(run));
+        return List.copyOf(notices);
+    }
+
+    private List<String> aiNoticesOf(CoachRun run) {
         String proposalJson = run.getProposalJson();
         if (proposalJson == null) return List.of();
         try {
