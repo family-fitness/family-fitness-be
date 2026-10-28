@@ -158,7 +158,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 50개, 메서드 60개)
+### 주소 목록 (경로 51개, 메서드 61개)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
@@ -187,6 +187,7 @@
 | fitness | GET | `/fitness/items` | 로그인(`profileId` 를 주면 보호자) | 200 |
 | fitness | POST · GET | `/profiles/{profileId}/fitness-tests` | 보호자 · 같은 가족 | 201 · 200 |
 | fitness | GET | `/profiles/{profileId}/fitness-tests/latest` | 같은 가족 | 200 |
+| fitness | GET | `/profiles/{profileId}/fitness-age` | 보호자 | 200 |
 | fitness | GET | `/families/{familyId}/fitness-map` | 같은 가족 | 200 |
 | activity | GET · POST | `/families/{familyId}/rest-cards` | 같은 가족 · 보호자 | 200 · 201 |
 | activity | DELETE | `/families/{familyId}/rest-cards/{restDate}` | 보호자 | 200 |
@@ -629,6 +630,16 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 아이 계정이면 `weightKg` · `bodyFatPct` · `waistCm` · `radar[].percentile` · 항목의 `percentile · band · topPercentText` · `weakest` · `strongest` · `coachDirection` · `certification` 이 null 이다.
 - 「가장 최근」 은 testedOn 이 가장 늦은 회차다. 지난 날짜로 측정을 적으면 방금 적은 회차가 아니라 더 늦은 회차가 나온다.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
+
+### GET /api/v1/profiles/{profileId}/fitness-age — 보호자
+성인(측정일 기준 만 19~64세)의 체력 나이. 가장 최근 측정 회차를 성인 또래 분포 표(V156, 한 살 단위)에 대 보고 셈하며 저장하지 않는다. 아이 계정은 403 `NOT_A_PARENT` 다. 아이 프로필은 체력 나이를 내지 않는다(유소년 측정은 만 11~12세뿐이고 유아기는 개월 단위).
+응답 200 `{status, testedOn|null, age|null, fitnessAge|null, ageGap|null, minItems, range:{min, max}, items:[{itemCode, itemName, unit, value, itemAge, bound}], excludedItems:[{itemCode, itemName, reason}]}`.
+- `status`: `OK` · `NO_TEST`(측정 이력 없음) · `AGE_OUT_OF_RANGE`(측정일 기준 19세 미만 · 65세 이상) · `NOT_ENOUGH_ITEMS`(쓸 수 있는 항목이 `minItems`(2) 개 미만). `fitnessAge` · `ageGap` 은 `OK` 일 때만 있다. `ageGap` = 체력 나이 - 측정일 기준 만 나이(음수면 실제보다 젊다).
+- 쓰는 항목: 나이가 들수록 기록이 한 방향으로 나빠지는 항목만 쓴다. 나이와 그 나이 중앙값(백분위 50)의 스피어만 순위상관이 0.8 이상이고 방향이 「나이 들수록 나빠짐」 이어야 한다. V156 기준으로 012 앉아윗몸앞으로굽히기만 빠지고(남 -0.27, 여 -0.22) `excludedItems` 에 `reason: "NOT_AGE_RELATED"` 로 싣는다. 나머지 성인 항목(019 · 020 · 021 · 022 · 028 · 035 · 037 · 040 · 041)은 0.91 이상이다.
+- `itemAge`: 나이마다 그 기록의 백분위(위 「백분위·등급 계산」 과 같은 셈)를 구해 50 에 가장 가까운 나이. 같은 거리가 여럿이면 평균이라 소수 첫째 자리까지 준다. 19세에서도 백분위가 50 을 넘으면 19 · `bound: "YOUNGER"`, 64세에서도 50 에 못 미치면 64 · `bound: "OLDER"`, 아니면 `"NONE"`. 표본 30명 미만 칸은 쓰지 않는다.
+- `fitnessAge`: `itemAge` 평균을 반올림한 값.
+  예: 남 만 40세가 019 39회 · 020 36회 · 022 210cm · 028 61.4% · 012 10cm → `itemAge` 41.5 · 39.5 · 42.0 · 32.0, `fitnessAge` 39, `ageGap` -1, `excludedItems` 012.
+오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `NOT_A_PARENT`. 시험: `FitnessAgeTableTest` · `FitnessAgeWebTest`.
 
 ### GET /api/v1/families/{familyId}/fitness-map — 같은 가족 (피그잼 F0 `/home` 가족 체력 지도 ★메인)
 홈 화면 한 번의 조회. 응답 200 `{familyId, familyName, members:[{profileId, name, role, ageGroup, sex, hasAccount, supportMode, measurable, consentRequired, consentGiven, headline|null, latest|null:{fitnessTestId, testedOn, overallPercentile|null(항목 백분위 평균), weakest, strongest, coachDirection}}], disclaimer}`.
