@@ -168,14 +168,14 @@ curl -H "$AS" "localhost:8080/api/v1/notifications?profileId=$CHILD"     # 데�
 | 모듈 | 범위 | 주소 |
 |---|---|---|
 | `identity` | 계정 · 가족 · 프로필 · 동의 · 초대 · 응원 · 운동할 수 있는 시간 | `auth/google` · `auth/refresh` · `auth/logout` · `auth/dev-login` · `auth/review-login` · `me` · `families` · `families/{id}/profiles` · `profiles/{id}` · `profiles/{id}/support-mode` · `profiles/{id}/consent` · `profiles/{id}/invite` · `invites/{code}` · `profiles/claim` · `profiles/{id}/availability` · `families/{id}/cheers` |
-| `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 굳힘) · 인증 등급(한 사람에게 하나, 읽을 때 셈) · 결과 · 이력 · 가족 체력 지도 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` |
+| `fitness` | 측정 항목 · 측정 등록(키 · 몸무게 · 체지방률 · 허리둘레 · AI 와 같은 백분위 굳힘) · 인증 등급(한 사람에게 하나, 읽을 때 셈) · 결과 · 이력 · 가족 체력 지도 · 성인 체력 나이와 이력 | `fitness/items` · `profiles/{id}/fitness-tests` · `profiles/{id}/fitness-tests/latest` · `families/{id}/fitness-map` · `profiles/{id}/fitness-age` · `profiles/{id}/fitness-age/history` |
 | `activity` | 일별 활동(초 단위) · 쉬는 날 카드 | `families/{id}/rest-cards` · `families/{id}/rest-cards/{restDate}` |
 | `progress` | 경험치 원장 · 레벨 · 업적 · 이어서 한 날 | `profiles/{id}/progress` |
-| `coaching` | 하루 편성(승인 게이트) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
+| `coaching` | 하루 편성(승인 게이트 · 날씨 반영) · 미션과 칸 · 칸 끝 · 운동 느낌 · 캘린더 · 운동 구간 · 영상 · 대화 · 주간 요약 | `families/{id}/coach/runs` · `families/{id}/coach/runs/latest` · `coach/runs/{id}` · `coach/runs/{id}/approve` · `coach/runs/{id}/reject` · `families/{id}/missions` · `missions/{id}` · `missions/{id}/sessions/{seq}/complete` · `missions/{id}/feedback` · `missions/{id}/participants/{profileId}/confirm` · `missions/{id}/activity/steps` · `missions/{id}/activity/timer` · `families/{id}/calendar` · `exercises` · `exercises/{id}/favorite` · `videos` · `videos/{id}/favorite` · `videos/{id}/progress` · `coach/chat` · `families/{id}/report/weekly` |
 | `league` | 가족 리그(월 단위 달성률 · 순위 점수 · 다섯 티어 · 월초 정산) | `families/{id}/league` |
 | `notification` | 알림함(응원 · 새 운동 · 업적 · 다시 재기) | `notifications` · `notifications/read` |
 
-경로 46개(메서드까지 53개, 전환기 별칭은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
+경로 52개(메서드까지 61개, 전환기 별칭과 개발용 `/dev/clock` 은 세지 않음). 범위 밖: `GET /api/v1/facilities` (공공데이터 출처 미확정).
 FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 · activity/steps · activity/timer · participants/{profileId}/confirm. 걷을지는 결정을 기다린다.
 
 운동 찾기(`GET exercises`)는 실린 운동 구간을 모두 보여 준다. 한 항목은 구간 하나다(공단 영상은 한 편, 유튜브는 동작마다 자른 구간).
@@ -214,6 +214,15 @@ FE 가 부르지 않는 주소 8개: coach/chat · report/weekly · videos 셋 �
 - AI 가 연결 실패 · 시간 초과 · 5xx 이거나 실행 단위로 실패하면(failed · 폴링 만료 · 404) 대체 편성으로 넘어간다. 시작 호출이 409(그 프로필에 AI 실행이 아직 돎)면 3초씩 쉬며 두 번 더 부르고, 그래도 409 면 대체 편성이다. 실패 까닭은 응답의 `failureCode` 다.
   요청 · 응답 모양과 결과 처리 표는 [docs/api-contract.md](../docs/api-contract.md) 8장.
 
+## 날씨 (기상청 단기예보)
+
+편성을 시작할 때 그날 낮(07~20시) 날씨를 본다(`coaching.adapter.outbound.weather.KmaShortTermForecast`). 공공데이터포털 「기상청_단기예보 조회서비스」(15084084)의 `getVilageFcst` 를 부른다.
+
+- 인증키: `KMA_SERVICE_KEY`(포털의 Decoding 키). 비어 있으면 날씨를 보지 않고 편성은 그대로다. 로컬 · 시험은 비어 있다.
+- 위치: 편성 요청의 `latitude` · `longitude`(없으면 서울시청)를 기상청 5km 격자로 바꾼다. 발표 시각은 발표 뒤 15분이 지난 가장 최근 것(02시부터 3시간마다)이다.
+- 판단: 강수형태(비 · 비나 눈 · 눈 · 소나기)가 있거나 강수확률이 60% 이상이면, 장소를 고르지 않은 편성은 집으로 바꾸고 밖을 고른 편성은 주의만 남긴다. 문구는 `coach_runs.weather_note`(`V175`)에 두고 실행 조회의 `notices` 맨 앞에 싣는다.
+- 부하와 실패: 격자 · 발표 시각마다 한 번만 부르고(3시간 메모리 캐시), 실패한 격자는 5분 동안 부르지 않는다. 연결 1초 · 읽기 3초. 무엇이 잘못돼도 편성은 날씨 없이 짠다.
+
 ## 데이터 스크립트 (`scripts/`)
 
 Python 3 만 있으면 된다. Windows 콘솔(cp949)에서 결과를 파일로 받을 때는 `PYTHONIOENCODING=utf-8` 을 앞에 붙인다(`ddl_to_dbml.py` 는 스스로 UTF-8 로 쓴다).
@@ -244,7 +253,7 @@ insert · update · delete · select 는 건너뛴다. 그 밖의 DDL 을 만나
 
 ## 마이그레이션 번호
 
-- 순번을 쓴다. 지금 마지막은 `V166` 이고 다음은 `V167` 부터다(V1 · V2 · V3 다음이 V130 이다).
+- 순번을 쓴다. 지금 마지막은 `V175` 이고 다음은 `V176` 부터다(V1 · V2 · V3 다음이 V130 이다).
 - `V148` 은 비어 있다. V149 가 이미 적용됐으므로 V148 을 새로 쓰면 안 된다(아래 `outOfOrder` 때문에 검증에 실패한다).
 - Flyway `outOfOrder` 가 꺼져 있다. 번호가 낮은 파일이 나중에 머지되면 검증에 실패하니, 마이그레이션이 있는 PR 은 번호 차례대로 머지한다.
 - 적용된 버전 마이그레이션은 고치지 않는다. 바꿀 것이 있으면 새 V 파일을 만든다.
