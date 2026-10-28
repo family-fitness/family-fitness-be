@@ -683,12 +683,16 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### POST /api/v1/families/{familyId}/coach/runs — 보호자
 한 번의 편성 = **아이 한 명의 하루**(FE 요청서 1장 ②). triggerType 은 `MANUAL`. 자동 편성은 없다.
-요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?, heightCm?(30~230), weightKg?(5~250)}`
+요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?, heightCm?(30~230), weightKg?(5~250), latitude?(33~39), longitude?(124~132)}`
 - `minutes` 가 없을 때만 `minutesPerSession` 을 쓴다(옛 서버용으로 FE 가 같이 보낸다). 둘 다 없으면 400 — 기본 분을 서버가 고르지 않는다.
 - `quiet` · `withParent` 가 없으면 false. `place` 는 `HOME` · `OUTDOOR` · 없음(장소를 가리지 않음). `focusFactor` 는 요인 이름(한글 또는 영문) 또는 null — null 이면 코치가 가장 낮은 요인을 고른다.
 - 옛 칸 `weekStart` · `daysPerWeek` 는 받지 않는다(모르는 칸은 무시).
 - `heightCm`(cm)과 `weightKg`(kg)는 대상의 키와 몸무게다. 넣지 않아도 된다. 범위는 측정 등록과 같고, 벗어나면 400 `BAD_REQUEST` 다. 소수 둘째 자리부터는 반올림해 한 자리로 저장한다.
 - 측정 기록이 없는 아이도 편성을 받는다. 만 4세 이상이어도 422 를 내지 않는다. 이런 아이는 이 두 값을 AI 요청의 `height_cm`, `weight_kg` 로 보낸다(8장). 측정 기록이 있는 아이는 두 값을 저장만 하고, AI 에는 가장 최근 측정 회차의 값을 보낸다.
+- 날씨(V175): `place` 가 `HOME` 이 아니면 그날 낮(07~20시) 기상청 단기예보를 본다. 강수형태(비 · 비나 눈 · 눈 · 소나기)가 있거나 강수확률이 60% 이상이면,
+  `place` 가 없을 때는 `HOME` 으로 바꿔 짜고, `OUTDOOR` 면 그대로 두고 주의만 남긴다. 남긴 문구는 실행 행의 `weather_note` 에 두고 조회의 `notices` 맨 앞에 싣는다.
+  `latitude` · `longitude` 는 날씨를 볼 위치(기기 위치 등)이고, 없으면 서울시청 기준이다. 우리나라 범위를 벗어나면 400 `BAD_REQUEST` 다.
+  예보를 읽지 못하면(인증키 없음 · 기상청 오류 · 사흘 뒤보다 먼 날) 날씨 없이 그대로 짠다. 기상청 호출은 연결 1초 · 읽기 3초까지 기다리고, 격자와 발표 시각마다 한 번만 부른다.
 응답 202 `{coachRunId, status:"RUNNING", pollAfterMs:1500}`.
 판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 409 `RUN_IN_PROGRESS` → 429 `TOO_MANY`(심사용 계정만, 하루(KST) 20번을 넘김).
 잠금
@@ -712,7 +716,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - `canApprove` = `AWAITING_APPROVAL` 이고, 호출자가 보호자이고, 만들 항목이 전부 지난 것은 아니고(전부 지났으면 승인이 409), 미션으로 옮길 참여자가 모두 보호자 동의가 있다(없으면 승인이 422 `CONSENT_REQUIRED`).
 - `steps` 는 실행이 끝날 때 한 번에 저장된다(폴링 중에는 비어 있다).
 - `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 서버가 제안을 저장하다 실패 등. AI 409 는 다시 부른 뒤 대체 편성으로 간다). AI 응답을 읽지 못한 것은 `ERROR` 가 아니라 대체 편성으로 간다(8장). 코드라서 화면 문구는 FE 가 정한다.
-- `notices`: AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
+- `notices`: 맨 앞은 시작할 때 본 날씨 안내(있을 때만. 예: 「오늘 비 예보(강수확률 70%)가 있어 집에서 하는 운동으로 짰어요.」), 이어서 AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
 `proposals[]`: `{position, title, rationale|null, targetMetric, targetValue, startDate, endDate, participants:[{profileId, role, coachRole}], video|null:{videoId, title|null, url, startSec|null, badges[], mediaUrl|null, thumbnailUrl|null}, citations:[{index, label, chunkId, url|null}], sessions:[{position, phase, title, factor|null, minutes, clip|null:{videoId, startSec, endSec|null, title|null, mediaUrl|null, thumbnailUrl|null}}]}`.
 - `sessions`: 제안의 칸. 모양은 미션 칸과 같고, 승인하면 그대로 미션 칸으로 복사된다. 칸 `minutes` 는 서버가 채운다(8장 칸 분 배분). 칸 끝의 `seq` 는 이 `position` 이다.
 - `video`: 영상은 videoId 만 저장한다(`V134` 가 `exercise_videos` FK 를 걷었다). `exercise_videos` 에 있는 영상이면 제목 · 배지를 붙이고, 없으면 `title:null` · 유튜브 주소 · `badges:[]`.

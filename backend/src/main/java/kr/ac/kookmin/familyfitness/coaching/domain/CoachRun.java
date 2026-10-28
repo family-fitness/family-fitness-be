@@ -67,6 +67,9 @@ public class CoachRun {
     private @Nullable String fallbackReason;
     private @Nullable Instant finishedAt;
 
+    /** 편성을 시작할 때 본 날씨 안내(V175, {@link WeatherAdvice}). 날씨를 보지 않았거나 비 소식이 없으면 null. */
+    private @Nullable String weatherNote;
+
     private Instant updatedAt;
 
     private CoachRun(
@@ -514,6 +517,21 @@ public class CoachRun {
         this.fallbackReason = fallbackReason;
         this.finishedAt = finishedAt;
         return this;
+    }
+
+    /** weather_note 칸 길이(V175). */
+    public static final int WEATHER_NOTE_MAX = 120;
+
+    /**
+     * 시작할 때 본 날씨 안내를 남긴다({@link WeatherAdvice#note}). 저장소에서 복원할 때도 쓴다. 칸보다 길면 자른다.
+     */
+    public CoachRun noteWeather(@Nullable String note) {
+        this.weatherNote = note == null ? null : take(note, WEATHER_NOTE_MAX);
+        return this;
+    }
+
+    public @Nullable String getWeatherNote() {
+        return weatherNote;
     }
 
     /** 저장소에서 복원. 규칙 검사 없이 상태를 그대로 싣는다. */

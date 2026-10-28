@@ -84,6 +84,9 @@ public class CoachRunEntity {
     private @Nullable String failureCode;
 
     /** 제안을 누가 짰는지(V173, CoachPlanSource 이름). FAILED 와 V173 앞에 끝난 행은 null. */
+    @Column(name = "weather_note", length = 120)
+    private @Nullable String weatherNote;
+
     @Column(name = "plan_source", length = 10)
     private @Nullable String planSource;
 
@@ -333,6 +336,14 @@ public class CoachRunEntity {
     }
 
     /** 편성이 끝난 모습(V173). 생성자 인자가 이미 많아 따로 받는다. */
+    public @Nullable String getWeatherNote() {
+        return weatherNote;
+    }
+
+    public void setWeatherNote(@Nullable String weatherNote) {
+        this.weatherNote = weatherNote;
+    }
+
     public void setOutcome(@Nullable String planSource, @Nullable String fallbackReason, @Nullable Instant finishedAt) {
         this.planSource = planSource;
         this.fallbackReason = fallbackReason;

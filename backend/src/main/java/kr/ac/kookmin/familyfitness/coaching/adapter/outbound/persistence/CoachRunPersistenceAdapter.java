@@ -265,6 +265,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
         entity.setLockKey(run.lockKey());
         entity.setFailureCode(codeName(run.getFailureCode()));
         entity.setOutcome(sourceName(run.getPlanSource()), run.getFallbackReason(), run.getFinishedAt());
+        entity.setWeatherNote(run.getWeatherNote());
         return entity;
     }
 
@@ -385,7 +386,8 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getAiRefusalReason(),
                 codeOf(e.getFailureCode()),
                 e.getUpdatedAt());
-        return run.restoreOutcome(sourceOf(e.getPlanSource()), e.getFallbackReason(), e.getFinishedAt());
+        return run.restoreOutcome(sourceOf(e.getPlanSource()), e.getFallbackReason(), e.getFinishedAt())
+                .noteWeather(e.getWeatherNote());
     }
 
     /** 옛 주간 실행 행(대상이 없음)은 조건도 없다. */

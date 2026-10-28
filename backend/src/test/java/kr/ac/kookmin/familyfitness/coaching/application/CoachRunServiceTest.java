@@ -36,6 +36,7 @@ import kr.ac.kookmin.familyfitness.coaching.domain.ReviewRunLimitException;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionClip;
 import kr.ac.kookmin.familyfitness.coaching.domain.SessionPhase;
 import kr.ac.kookmin.familyfitness.coaching.domain.TriggerType;
+import kr.ac.kookmin.familyfitness.coaching.domain.WeatherOutlook;
 import kr.ac.kookmin.familyfitness.coaching.support.FakeIdentity;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Fixed;
@@ -356,6 +357,88 @@ class CoachRunServiceTest {
         assertThat(service.get(family.parentUser, withNotices.getId()).notices())
                 .containsExactly("또래 영상이 모자라 다른 연령대 영상도 골랐습니다");
         assertThat(service.get(family.parentUser, broken.getId()).notices()).isEmpty();
+    }
+
+    private CoachRunService serviceWithWeather(WeatherAdvisor weather) {
+        AppTime time = Fixed.time();
+        return new CoachRunService(
+                runs,
+                missions,
+                videos,
+                identity,
+                identity,
+                events::add,
+                time,
+                timeLimit,
+                new ReviewRunQuota(reviewAccounts::contains, time),
+                JSON,
+                weather);
+    }
+
+    @Test
+    @DisplayName("그날 비 소식이 있으면 장소를 고르지 않은 편성을 집 운동으로 저장하고, 조회 알림 맨 앞에 까닭을 싣는다")
+    void 비_소식이_있으면_집_운동으로_짜고_알림을_싣는다() {
+        List<Object> asked = new ArrayList<>();
+        CoachRunService rainy = serviceWithWeather(new WeatherAdvisor((lat, lon, date) -> {
+            asked.add(List.of(String.valueOf(lat), String.valueOf(lon), date));
+            return new WeatherOutlook(date, 80, WeatherOutlook.Precipitation.RAIN);
+        }));
+        CoachRunConditions anywhere = new CoachRunConditions(20, false, null, FitnessFactor.AGILITY, false);
+
+        CoachRunAcceptedView accepted = rainy.start(
+                family.parentUser,
+                family.familyId,
+                new StartCoachRunCommand(family.child.profileId(), Fixed.TODAY, anywhere, 35.1798, 129.075));
+
+        CoachRun run = runs.findById(accepted.coachRunId());
+        assertThat(run.getConditions().place()).isEqualTo(CoachPlace.HOME);
+        assertThat(run.getConditions().minutes()).isEqualTo(20);
+        assertThat(run.getWeatherNote()).isEqualTo("오늘 비 예보(강수확률 80%)가 있어 집에서 하는 운동으로 짰어요.");
+        assertThat(asked).containsExactly(List.of("35.1798", "129.075", Fixed.TODAY));
+
+        CoachRun done = Runs.running(
+                        family.familyId,
+                        family.child.profileId(),
+                        Fixed.TODAY.plusDays(1),
+                        family.parent.profileId(),
+                        Fixed.NOW)
+                .noteWeather(run.getWeatherNote());
+        done.complete(
+                List.of(),
+                proposals(),
+                "{\"missions\":[],\"citations\":[],\"notices\":[\"또래 영상이 모자라 다른 연령대 영상도 골랐습니다\"]}",
+                "요약",
+                null,
+                Fixed.NOW);
+        runs.save(done);
+        assertThat(rainy.get(family.parentUser, done.getId()).notices())
+                .containsExactly("오늘 비 예보(강수확률 80%)가 있어 집에서 하는 운동으로 짰어요.", "또래 영상이 모자라 다른 연령대 영상도 골랐습니다");
+    }
+
+    @Test
+    @DisplayName("집을 골랐으면 예보를 부르지 않고, 예보를 읽다 실패해도 편성은 날씨 없이 그대로 시작한다")
+    void 집을_골랐거나_예보가_실패해도_편성은_그대로다() {
+        List<LocalDate> asked = new ArrayList<>();
+        CoachRunService broken = serviceWithWeather(new WeatherAdvisor((lat, lon, date) -> {
+            asked.add(date);
+            throw new IllegalStateException("기상청 응답 오류");
+        }));
+        CoachRunConditions home = new CoachRunConditions(20, false, CoachPlace.HOME, null, false);
+        CoachRunConditions outdoor = new CoachRunConditions(20, false, CoachPlace.OUTDOOR, null, false);
+
+        CoachRunAcceptedView atHome = broken.start(
+                family.parentUser,
+                family.familyId,
+                new StartCoachRunCommand(family.child.profileId(), Fixed.TODAY, home));
+        CoachRunAcceptedView outside = broken.start(
+                family.parentUser,
+                family.familyId,
+                new StartCoachRunCommand(family.child.profileId(), Fixed.TODAY.plusDays(1), outdoor));
+
+        assertThat(asked).containsExactly(Fixed.TODAY.plusDays(1));
+        assertThat(runs.findById(atHome.coachRunId()).getWeatherNote()).isNull();
+        assertThat(runs.findById(outside.coachRunId()).getConditions()).isEqualTo(outdoor);
+        assertThat(runs.findById(outside.coachRunId()).getWeatherNote()).isNull();
     }
 
     @Test
