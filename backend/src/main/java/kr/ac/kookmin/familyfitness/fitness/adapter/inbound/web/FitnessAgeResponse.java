@@ -14,6 +14,7 @@ import org.jspecify.annotations.Nullable;
  * 성인 체력 나이 응답. {@code status} 가 OK 일 때만 {@code fitnessAge} · {@code ageGap} 이 있다.
  * {@code ageGap} 은 체력 나이 - 측정일 기준 만 나이(음수면 실제보다 젊다).
  * {@code items[].itemAge} 는 소수 첫째 자리로 반올림한 항목 나이, {@code bound} 는 표의 끝(19 · 64세)에 걸렸는지다.
+ * {@code missingItems} 는 체력 나이에 쓰는 항목 가운데 재지 않은 항목이다.
  */
 public record FitnessAgeResponse(
         FitnessAgeService.Status status,
@@ -24,7 +25,8 @@ public record FitnessAgeResponse(
         int minItems,
         Range range,
         List<Item> items,
-        List<Excluded> excludedItems) {
+        List<Excluded> excludedItems,
+        List<Missing> missingItems) {
 
     public record Range(int min, int max) {}
 
@@ -35,6 +37,16 @@ public record FitnessAgeResponse(
             BigDecimal value,
             BigDecimal itemAge,
             FitnessAgeTable.Bound bound) {}
+
+    /**
+     * 체력 나이에 쓰는 항목 가운데 이번 회차에 재지 않은 항목. 화면이 「○○도 재 보세요」 안내에 쓴다.
+     * {@code equipment} 는 필요한 공간 · 도구(예: 공간, 악력계)이고, 맨몸으로 재는 항목은 null 이다.
+     */
+    public record Missing(
+            String itemCode,
+            String itemName,
+            String unit,
+            @Nullable String equipment) {}
 
     /** 잰 항목 가운데 나이와 관계가 약해 뺀 항목. reason 은 지금 NOT_AGE_RELATED 하나다. */
     public record Excluded(String itemCode, String itemName, String reason) {}
@@ -65,7 +77,10 @@ public record FitnessAgeResponse(
                 FitnessAgeTable.MIN_ITEMS,
                 new Range(FitnessAgeTable.MIN_AGE, FitnessAgeTable.MAX_AGE),
                 items,
-                excluded);
+                excluded,
+                view.missingItems().stream()
+                        .map(it -> new Missing(it.getCode(), it.getItemName(), it.getUnit(), it.getEquipment()))
+                        .toList());
     }
 
     private static Excluded excluded(FitnessItem item) {

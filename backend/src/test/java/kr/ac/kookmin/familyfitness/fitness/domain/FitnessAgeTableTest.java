@@ -54,6 +54,16 @@ class FitnessAgeTableTest {
         assertThat(table.usable(Sex.M, FitnessItem.SIT_AND_REACH)).isFalse();
         assertThat(table.trend(Sex.M, FitnessItem.SIT_AND_REACH)).isNotNull();
         assertThat(table.usable(Sex.F, FitnessItem.SHUTTLE_RUN)).isFalse();
+        assertThat(table.usableItems(Sex.M)).containsExactly(FitnessItem.SHUTTLE_RUN, FitnessItem.SHUTTLE_RUN_10M_X4);
+        assertThat(table.usableItems(Sex.F)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("측정 센터 기기가 필요한 항목은 눈-손협응력 · VO2max 두 가지 · 반응시간 · 3x3버튼누르기다")
+    void 센터_기기가_필요한_항목() {
+        assertThat(java.util.Arrays.stream(FitnessItem.values()).filter(FitnessItem::needsCenterDevice))
+                .extracting(FitnessItem::getCode)
+                .containsExactlyInAnyOrder("017", "035", "037", "040", "051");
     }
 
     @Test

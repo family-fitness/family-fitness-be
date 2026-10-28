@@ -111,6 +111,14 @@ public final class FitnessAgeTable {
         return columns.containsKey(new Key(sex, item.getCode()));
     }
 
+    /** 이 성별에서 체력 나이에 쓰는 항목 전부. 항목 번호 차례. 측정을 더 하라고 안내할 때 쓴다. */
+    public List<FitnessItem> usableItems(Sex sex) {
+        List<FitnessItem> out = new ArrayList<>();
+        for (FitnessItem item : FitnessItem.values()) if (usable(sex, item)) out.add(item);
+        out.sort(Comparator.comparing(FitnessItem::getCode));
+        return List.copyOf(out);
+    }
+
     /** 나이와 중앙값의 순위상관. 성인 표에 없는 칸이면 null. */
     public @Nullable Double trend(Sex sex, FitnessItem item) {
         return trends.get(new Key(sex, item.getCode()));

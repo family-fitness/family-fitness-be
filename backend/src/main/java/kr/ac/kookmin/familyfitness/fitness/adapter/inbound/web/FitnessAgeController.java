@@ -20,4 +20,10 @@ public class FitnessAgeController {
     public FitnessAgeResponse fitnessAge(CurrentUser user, @PathVariable UUID profileId) {
         return FitnessAgeResponse.of(service.estimate(user.userId(), profileId));
     }
+
+    /** 측정 회차마다의 체력 나이(최근 12회차). 다시 잰 뒤 얼마나 바뀌었는지 본다. */
+    @GetMapping("/api/v1/profiles/{profileId}/fitness-age/history")
+    public FitnessAgeHistoryResponse history(CurrentUser user, @PathVariable UUID profileId) {
+        return FitnessAgeHistoryResponse.of(service.history(user.userId(), profileId));
+    }
 }
