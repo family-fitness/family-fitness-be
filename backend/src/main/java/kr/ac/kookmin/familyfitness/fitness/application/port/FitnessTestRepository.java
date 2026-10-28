@@ -18,6 +18,9 @@ public interface FitnessTestRepository {
     @Nullable
     FitnessTest findLatestByProfileId(UUID profileId);
 
+    /** 프로필마다 testedOn 이 가장 늦은 회차를 한 번에 읽는다(가족 체력 지도). 회차가 없는 프로필은 결과에 없다. */
+    Map<UUID, FitnessTest> findLatestByProfileIds(Collection<UUID> profileIds);
+
     /** testedOn 이 가장 이른 회차. */
     @Nullable
     FitnessTest findEarliestByProfileId(UUID profileId);

@@ -18,6 +18,17 @@ public interface FitnessTestJpaRepository extends JpaRepository<FitnessTestEntit
 
     List<FitnessTestEntity> findByProfileIdOrderByTestedOnDesc(UUID profileId, Limit limit);
 
+    /**
+     * 프로필마다 가장 늦은 회차. (profile_id, tested_on) 이 유니크(uq_fitness_test_date)라 프로필마다 한 행이다.
+     * 항목(fitness_test_items)은 엔티티의 BatchSize 로 회차 여럿을 한 번에 읽는다.
+     */
+    @Query("""
+            select t from FitnessTestEntity t
+            where t.profileId in :profileIds
+              and t.testedOn = (select max(t2.testedOn) from FitnessTestEntity t2 where t2.profileId = t.profileId)
+            """)
+    List<FitnessTestEntity> findLatestOf(Collection<UUID> profileIds);
+
     boolean existsByProfileIdAndTestedOn(UUID profileId, LocalDate testedOn);
 
     boolean existsByProfileIdIn(Collection<UUID> profileIds);

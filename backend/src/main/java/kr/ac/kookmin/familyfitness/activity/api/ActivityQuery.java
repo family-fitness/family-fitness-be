@@ -16,6 +16,16 @@ public interface ActivityQuery {
     /** {@code from}~{@code to} (양끝 포함) 합계. */
     ActivityTotals totals(UUID profileId, LocalDate from, LocalDate to);
 
+    /**
+     * 여러 프로필의 {@link #totals} 를 한 번에 읽는다(주간 요약처럼 식구를 모두 셀 때). 요청한 프로필마다 한 줄이고, 기록이 없으면 0 이다.
+     * 기본 구현은 프로필마다 {@link #totals} 를 부른다.
+     */
+    default Map<UUID, ActivityTotals> totalsOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        Map<UUID, ActivityTotals> out = new LinkedHashMap<>();
+        for (UUID profileId : profileIds) out.put(profileId, totals(profileId, from, to));
+        return Collections.unmodifiableMap(out);
+    }
+
     /** 그날 모든 출처의 활동 분 합계. */
     int activeMinutesOn(UUID profileId, LocalDate activityDate);
 

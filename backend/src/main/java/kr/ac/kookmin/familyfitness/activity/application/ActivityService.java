@@ -80,6 +80,16 @@ public class ActivityService implements ActivityRecorder, ActivityQuery {
         return repository.totals(profileId, from, to);
     }
 
+    /** 기본 구현(프로필마다 한 번)을 쿼리 한 번으로 바꾼다. */
+    @Override
+    @Transactional(readOnly = true)
+    public Map<UUID, ActivityTotals> totalsOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("기간의 끝이 시작보다 앞섭니다: " + from + " ~ " + to);
+        }
+        return repository.totalsOf(profileIds, from, to);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public int activeMinutesOn(UUID profileId, LocalDate activityDate) {
