@@ -139,6 +139,15 @@ docker compose up -d                                        # .env 를 고친 �
 free -m                                                     # 메모리와 스왑
 ```
 
+### 느린 요청 찾기
+
+API 요청 하나가 1초(`app.web.slow-request-threshold`) 이상 걸리면 app 로그에 「느린 요청」 한 줄이 남는다. 주소는 실제 id 대신 경로 틀로 적힌다.
+
+```bash
+docker compose logs --since 168h app | grep '느린 요청'                                   # 지난 7일
+docker compose logs --since 168h app | grep -o '느린 요청 [A-Z]* [^ ]*' | sort | uniq -c | sort -rn   # 주소별 횟수
+```
+
 ### 되돌리기
 
 ```bash

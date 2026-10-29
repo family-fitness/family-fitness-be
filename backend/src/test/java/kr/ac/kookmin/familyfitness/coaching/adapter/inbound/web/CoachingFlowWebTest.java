@@ -221,6 +221,7 @@ class CoachingFlowWebTest {
         given(activityRecorder.overwriteSteps(any(), any(), anyInt()))
                 .willAnswer(inv -> new DailyActivity(
                         inv.getArgument(0), inv.getArgument(1), ActivitySource.MANUAL, inv.getArgument(2), 0));
+        given(activityQuery.totalsOf(any(), any(), any())).willCallRealMethod();
         given(activityQuery.totals(eq(childId()), any(), any())).willAnswer(inv -> childTotals);
         given(activityQuery.totals(eq(parentId()), any(), any())).willReturn(new ActivityTotals(0, 0, 0));
         given(activityQuery.totals(eq(family.cheerParent.profileId()), any(), any()))

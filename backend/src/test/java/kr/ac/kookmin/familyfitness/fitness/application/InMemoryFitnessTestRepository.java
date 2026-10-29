@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.fitness.application;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,16 @@ class InMemoryFitnessTestRepository implements FitnessTestRepository {
                 .filter(it -> it.getProfileId().equals(profileId))
                 .max(Comparator.comparing(FitnessTest::getTestedOn))
                 .orElse(null);
+    }
+
+    @Override
+    public Map<UUID, FitnessTest> findLatestByProfileIds(Collection<UUID> profileIds) {
+        Map<UUID, FitnessTest> out = new HashMap<>();
+        for (UUID profileId : profileIds) {
+            FitnessTest latest = findLatestByProfileId(profileId);
+            if (latest != null) out.put(profileId, latest);
+        }
+        return out;
     }
 
     @Override

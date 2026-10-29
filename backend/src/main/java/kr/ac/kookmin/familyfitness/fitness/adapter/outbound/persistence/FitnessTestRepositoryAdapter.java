@@ -44,6 +44,14 @@ public class FitnessTestRepositoryAdapter implements FitnessTestRepository {
     }
 
     @Override
+    public Map<UUID, FitnessTest> findLatestByProfileIds(Collection<UUID> profileIds) {
+        if (profileIds.isEmpty()) return Map.of();
+        return jpa.findLatestOf(profileIds).stream()
+                .map(FitnessTestRepositoryAdapter::toDomain)
+                .collect(Collectors.toUnmodifiableMap(FitnessTest::getProfileId, it -> it));
+    }
+
+    @Override
     public @Nullable FitnessTest findEarliestByProfileId(UUID profileId) {
         FitnessTestEntity entity = jpa.findFirstByProfileIdOrderByTestedOnAsc(profileId);
         return entity == null ? null : toDomain(entity);

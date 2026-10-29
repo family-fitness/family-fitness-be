@@ -680,6 +680,22 @@ class FitnessWebTest {
     }
 
     @Test
+    @DisplayName("체력 지도는 식구마다 가장 늦게 잰 회차를 싣는다 — 지난 날짜를 나중에 적어도 늦은 날의 회차다")
+    void 체력_지도는_가장_늦게_잰_회차를_싣는다() throws Exception {
+        registerYouthTest().andExpect(status().isCreated());
+        register(testedOn.minusDays(20), "134", "30", new Item("020", "60"), new Item("028", "10"))
+                .andExpect(status().isCreated());
+        when(profileQuery.summariesOfFamily(familyId))
+                .thenReturn(List.of(summaryOf(childId, familyId, AgeGroup.YOUTH)));
+
+        mvc.perform(get("/api/v1/families/" + familyId + "/fitness-map").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members", hasSize(1)))
+                .andExpect(jsonPath("$.members[0].latest.testedOn").value(testedOn.toString()))
+                .andExpect(jsonPath("$.members[0].latest.weakest.itemCode").value("028"));
+    }
+
+    @Test
     @DisplayName("체력 지도 headline 은 오늘 연령대가 아니라 측정 당시 연령대로 붙는다")
     void 체력_지도_headline_은_오늘_연령대가_아니라_측정_당시_연령대로_붙는다() throws Exception {
         registerYouthTest().andExpect(status().isCreated());
