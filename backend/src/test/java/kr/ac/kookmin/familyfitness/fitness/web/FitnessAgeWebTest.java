@@ -137,7 +137,11 @@ class FitnessAgeWebTest {
                 .andExpect(jsonPath("$.items[0].bound").value("NONE"))
                 .andExpect(jsonPath("$.excludedItems", hasSize(1)))
                 .andExpect(jsonPath("$.excludedItems[0].itemCode").value("012"))
-                .andExpect(jsonPath("$.excludedItems[0].reason").value("NOT_AGE_RELATED"));
+                .andExpect(jsonPath("$.excludedItems[0].reason").value("NOT_AGE_RELATED"))
+                .andExpect(jsonPath("$.missingItems[*].itemCode").value(contains("021", "041")))
+                .andExpect(jsonPath("$.missingItems[0].itemName").value("10m4회왕복달리기"))
+                .andExpect(jsonPath("$.missingItems[0].equipment").value("공간"))
+                .andExpect(jsonPath("$.missingItems[1].equipment").value(nullValue()));
     }
 
     @Test
@@ -162,7 +166,9 @@ class FitnessAgeWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("NO_TEST"))
                 .andExpect(jsonPath("$.testedOn").value(nullValue()))
-                .andExpect(jsonPath("$.items", hasSize(0)));
+                .andExpect(jsonPath("$.items", hasSize(0)))
+                .andExpect(jsonPath("$.missingItems[*].itemCode")
+                        .value(contains("019", "020", "021", "022", "028", "041")));
 
         register(childId, "{\"itemCode\":\"020\",\"value\":42}");
         mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-age")
@@ -170,7 +176,70 @@ class FitnessAgeWebTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("AGE_OUT_OF_RANGE"))
                 .andExpect(jsonPath("$.age").value(11))
-                .andExpect(jsonPath("$.fitnessAge").value(nullValue()));
+                .andExpect(jsonPath("$.fitnessAge").value(nullValue()))
+                .andExpect(jsonPath("$.missingItems", hasSize(0)));
+    }
+
+    private void registerOn(UUID profileId, LocalDate on, String items) throws Exception {
+        mvc.perform(post("/api/v1/profiles/" + profileId + "/fitness-tests")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"testedOn\":\"" + on + "\",\"source\":\"SELF_INPUT\",\"heightCm\":175,"
+                                + "\"weightKg\":72,\"items\":[" + items + "]}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("체력 나이 이력은 회차마다 그때의 나이와 체력 나이를 늦은 회차부터 싣는다. 항목이 모자란 회차는 체력 나이를 비운다")
+    void 체력_나이_이력() throws Exception {
+        registerOn(
+                dadId,
+                testedOn.minusDays(30),
+                "{\"itemCode\":\"020\",\"value\":36},{\"itemCode\":\"012\",\"value\":10}");
+        register(
+                dadId,
+                "{\"itemCode\":\"019\",\"value\":39},{\"itemCode\":\"020\",\"value\":36},"
+                        + "{\"itemCode\":\"022\",\"value\":210},{\"itemCode\":\"028\",\"value\":61.4}");
+
+        mvc.perform(get("/api/v1/profiles/" + dadId + "/fitness-age/history")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(2)))
+                .andExpect(jsonPath("$.tests[0].testedOn").value(testedOn.toString()))
+                .andExpect(jsonPath("$.tests[0].age").value(40))
+                .andExpect(jsonPath("$.tests[0].status").value("OK"))
+                .andExpect(jsonPath("$.tests[0].fitnessAge").value(39))
+                .andExpect(jsonPath("$.tests[0].ageGap").value(-1))
+                .andExpect(jsonPath("$.tests[0].itemCount").value(4))
+                .andExpect(jsonPath("$.tests[1].testedOn")
+                        .value(testedOn.minusDays(30).toString()))
+                .andExpect(jsonPath("$.tests[1].status").value("NOT_ENOUGH_ITEMS"))
+                .andExpect(jsonPath("$.tests[1].fitnessAge").value(nullValue()))
+                .andExpect(jsonPath("$.tests[1].ageGap").value(nullValue()))
+                .andExpect(jsonPath("$.tests[1].itemCount").value(1));
+    }
+
+    @Test
+    @DisplayName("체력 나이 이력도 아이 회차는 AGE_OUT_OF_RANGE, 측정이 없으면 빈 목록, 아이 계정은 403 이다")
+    void 체력_나이_이력의_경계() throws Exception {
+        mvc.perform(get("/api/v1/profiles/" + dadId + "/fitness-age/history")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests", hasSize(0)));
+
+        register(childId, "{\"itemCode\":\"020\",\"value\":42}");
+        mvc.perform(get("/api/v1/profiles/" + childId + "/fitness-age/history")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tests[0].status").value("AGE_OUT_OF_RANGE"))
+                .andExpect(jsonPath("$.tests[0].age").value(11))
+                .andExpect(jsonPath("$.tests[0].itemCount").value(0));
+
+        when(familyAccess.requireMember(kidUserId, familyId)).thenReturn(childAccountOf(UUID.randomUUID(), familyId));
+        mvc.perform(get("/api/v1/profiles/" + dadId + "/fitness-age/history")
+                        .header(HttpHeaders.AUTHORIZATION, auth.bearer(kidUserId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_A_PARENT"));
     }
 
     @Test
