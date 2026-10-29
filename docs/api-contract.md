@@ -136,9 +136,9 @@
 - AI 가 내는 `RUN_IN_PROGRESS`(409) · `RUN_NOT_FOUND`(404)는 편성 실행기 안에서만 쓰이고 클라이언트로 나가지 않는다. 편성은 202 로 접수된 뒤라, 실패는 `CoachRunView.failureCode` 로 알린다(4장).
 - FE 요청서 7장의 「화면이 가르는 코드」 중 서버가 내지 않는 것: `CONSENT_WITHDRAWN`(만들지 않는다 — 동의를 거둬도 `CONSENT_REQUIRED`) · `ALREADY_RUN_THIS_WEEK`(없앴다).
 
-### 구현 상태 (2026-09-29 · `feature/BE-35-launch-readiness`)
+### 구현 상태 (2026-12 · 2학기 최종)
 
-- 경로 50개, 메서드까지 세면 60개(아래 「주소 목록」). 전환기 별칭(경로 5개, 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local, compose, test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local, compose, prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜, 그날 포함)이 지나면 404 `NOT_FOUND` 다.
+- 경로 52개, 메서드까지 세면 61개(아래 「주소 목록」, 개발용 `/dev/clock` 제외). 전환기 별칭(경로 5개, 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local, compose, test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local, compose, prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜, 그날 포함)이 지나면 404 `NOT_FOUND` 다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).
@@ -149,6 +149,7 @@
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
   - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 공단 영상을 AI 새 표 776편으로 고침 — 질환자용 근골격계운동 114편 끔 · 제목 끝 「-1」 「-2」 뗌(`V162`) · 다시 AI 새 표 732편으로 고침 — 오십견 · 요통 같은 질환용 영상 44편 끔 · 요인이 비었던 131편에 요인(`V163`) · 다시 AI 새 표 452편으로 고침 — 기준표에서 빠진 어르신 · 헬스장 · 수영장 · 기구 · 둘 이상 영상 280편 끔, 어르신은 성인(공통) 영상을 받음(`V164`) · AI 담당자 코드의 한 파일 표(910줄)로 다시 실음 — 「공통」 영상을 청소년에게도, 요인 · 단계가 둘인 영상은 줄마다 후보로, 인용 이름은 AI 표 값(`V165`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP(IPv6 /56)마다 한 시간 30번 · 새 계정은 모두 합쳐 한 시간 300개 뒤로는 그 IP 가 만든 계정으로 들임, prod 는 X-Forwarded-For 를 읽음) · 심사용 계정 로그인 본문 `{kind}` — `FAMILY`(기본, 체험 가족) · `FRESH`(가족 없는 새 계정) · `INVITED`(체험 가족 아빠 자리 초대코드를 응답 `inviteCode` 로), 한도가 찬 뒤 다시 내주는 계정은 같은 kind 만.
   - 탈퇴(BE-40): 계정 탈퇴 `DELETE /me`, 오너의 구성원 내보내기 `DELETE /families/{familyId}/profiles/{profileId}`, `ProfileSummary.isOwner`. 탈퇴한 계정의 토큰은 `/me` 에서 401 이다.
+  - 2학기 후반(BE-50 ~ BE-54, PR #54 ~ #58): 성인 체력 나이 `GET /profiles/{profileId}/fitness-age`(더 재면 좋은 항목 `missingItems` 포함)와 회차별 이력 `…/fitness-age/history`. 편성 요청의 `latitude` · `longitude` 와 날씨 안내(`coach_runs.weather_note` `V175`, 실행 조회 `notices` 맨 앞). 주간 요약 · 가족 체력 지도의 N+1 수정(응답은 같다). 1초 넘는 요청 로그. 심사용 계정 정리(매일 04:30, 만든 지 31일).
   - 초대 먼저(BE-42): 보호자가 역할만 정해 내는 가족 초대(`POST /families/{familyId}/invites`, 목록 `GET`, 취소 `DELETE /families/{familyId}/invites/{code}`, 테이블 `family_invites` `V170`). 코드로 들어온 사람이 `POST /profiles/claim` 에 이름, 생년월일, 성별을 함께 보내 자기 프로필을 만든다. 초대코드 미리 보기 응답에 `kind` 칸을 추가했다. 휴대폰 없는 아이처럼 보호자가 정보를 미리 입력해 두는 프로필의 초대코드는 그대로다.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler`, `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`), 편성의 422 `NO_MEASURED_MEMBER`(BE-43. 측정 기록이 없는 아이도 키와 몸무게로 편성을 받는다).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
@@ -159,7 +160,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 52개, 메서드 62개)
+### 주소 목록 (경로 52개, 메서드 61개, 개발용 `/dev/clock` 제외)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
