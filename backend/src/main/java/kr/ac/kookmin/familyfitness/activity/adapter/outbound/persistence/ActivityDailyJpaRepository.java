@@ -23,6 +23,20 @@ public interface ActivityDailyJpaRepository extends JpaRepository<ActivityDailyE
             """)
     ActivitySums sumBetween(UUID profileId, LocalDate from, LocalDate to, Collection<String> verifiedSources);
 
+    /** {@link #sumBetween} 를 여러 프로필에 한 번에(주간 요약의 식구들). 기록이 없는 프로필은 결과에 없다. */
+    @Query("""
+            select new kr.ac.kookmin.familyfitness.activity.adapter.outbound.persistence.ProfileActivitySums(
+                a.profileId,
+                sum(a.steps),
+                sum(a.activeSeconds),
+                sum(case when a.source in :verifiedSources then a.activeSeconds else 0 end))
+            from ActivityDailyEntity a
+            where a.profileId in :profileIds and a.activityDate between :from and :to
+            group by a.profileId
+            """)
+    List<ProfileActivitySums> sumBetweenOf(
+            Collection<UUID> profileIds, LocalDate from, LocalDate to, Collection<String> verifiedSources);
+
     @Query(
             "select coalesce(sum(a.activeSeconds), 0) from ActivityDailyEntity a where a.profileId = :profileId and a.activityDate = :date")
     long sumActiveSecondsOn(UUID profileId, LocalDate date);

@@ -139,6 +139,27 @@ class ActivityServiceTest {
     }
 
     @Test
+    @DisplayName("여러 프로필의 기간 합계를 한 번에 읽으면 프로필마다 totals 와 같고, 기록이 없는 프로필은 0 이다")
+    void 여러_프로필의_기간_합계를_한_번에_읽는다() {
+        UUID sibling = rows.profile(rows.family(), LocalDate.of(2015, 3, 1), Sex.F);
+        UUID nobody = UUID.randomUUID();
+        recorder.overwriteSteps(profileId, monday, 4000);
+        recorder.addActiveMinutes(profileId, monday.plusDays(1), ActivitySource.TIMER, 20);
+        recorder.addActiveMinutes(sibling, monday.plusDays(2), ActivitySource.VIDEO, 12);
+        recorder.addActiveMinutes(sibling, monday.plusDays(7), ActivitySource.VIDEO, 30);
+
+        Map<UUID, ActivityTotals> totals =
+                query.totalsOf(List.of(profileId, sibling, nobody), monday, monday.plusDays(6));
+
+        assertThat(totals).containsOnlyKeys(profileId, sibling, nobody);
+        assertThat(totals.get(profileId)).isEqualTo(query.totals(profileId, monday, monday.plusDays(6)));
+        assertThat(totals.get(profileId)).isEqualTo(new ActivityTotals(4000, 20, 20));
+        assertThat(totals.get(sibling)).isEqualTo(new ActivityTotals(0, 12, 12));
+        assertThat(totals.get(nobody)).isEqualTo(new ActivityTotals(0, 0, 0));
+        assertThat(query.totalsOf(List.of(), monday, monday)).isEmpty();
+    }
+
+    @Test
     @DisplayName("움직인 날은 TIMER · VIDEO 분을 날마다 더해 0 보다 큰 날만, 요약은 기간 없이 날 수와 분 합")
     void 움직인_날은_TIMER_VIDEO_분이_있는_날만() {
         recorder.addActiveMinutes(profileId, monday, ActivitySource.TIMER, 10);

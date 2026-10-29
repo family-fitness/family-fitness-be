@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.coaching.application;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityQuery;
 import kr.ac.kookmin.familyfitness.activity.api.ActivityTotals;
@@ -13,13 +14,16 @@ import kr.ac.kookmin.familyfitness.coaching.domain.Mission;
 import kr.ac.kookmin.familyfitness.identity.api.CheerQuery;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyAccess;
 import kr.ac.kookmin.familyfitness.identity.api.ProfileQuery;
+import kr.ac.kookmin.familyfitness.identity.api.ProfileSummary;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 주간 요약(월~일). 그 주에 겹치는 미션과 구성원 활동, 응원 수를 모은다. */
+/** 주간 요약(월~일). 그 주에 겹치는 미션과 구성원 활동, 응원 수를 모은다. 식구의 활동 합계는 한 번에 읽는다. */
 @Service
 public class WeeklyReportService {
+    private static final ActivityTotals NO_ACTIVITY = new ActivityTotals(0, 0, 0);
+
     private final CoachRunRepository runs;
     private final MissionRepository missions;
     private final FamilyAccess familyAccess;
@@ -59,9 +63,12 @@ public class WeeklyReportService {
         List<Mission> weekMissions = missions.findOverlapping(familyId, weekStart, weekEnd).stream()
                 .map(it -> policy.refreshAll(it, today, now))
                 .toList();
-        List<MemberReportView> members = profileQuery.summariesOfFamily(familyId).stream()
+        List<ProfileSummary> family = profileQuery.summariesOfFamily(familyId);
+        Map<UUID, ActivityTotals> totalsOf = activityQuery.totalsOf(
+                family.stream().map(ProfileSummary::profileId).toList(), weekStart, weekEnd);
+        List<MemberReportView> members = family.stream()
                 .map(member -> {
-                    ActivityTotals totals = activityQuery.totals(member.profileId(), weekStart, weekEnd);
+                    ActivityTotals totals = totalsOf.getOrDefault(member.profileId(), NO_ACTIVITY);
                     int completedMissions = (int) weekMissions.stream()
                             .filter(m -> m.getParticipants().stream()
                                     .anyMatch(it -> it.getProfileId().equals(member.profileId()) && it.isCompleted()))

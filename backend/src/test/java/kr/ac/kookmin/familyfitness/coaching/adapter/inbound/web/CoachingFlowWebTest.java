@@ -40,10 +40,12 @@ import kr.ac.kookmin.familyfitness.coaching.application.CoachRunExecutorConfig;
 import kr.ac.kookmin.familyfitness.coaching.application.CoachRunPipeline;
 import kr.ac.kookmin.familyfitness.coaching.application.StaleCoachRunSweeper;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
+import kr.ac.kookmin.familyfitness.coaching.application.port.WeatherForecast;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalParticipant;
 import kr.ac.kookmin.familyfitness.coaching.domain.ProposalVideo;
+import kr.ac.kookmin.familyfitness.coaching.domain.WeatherOutlook;
 import kr.ac.kookmin.familyfitness.coaching.support.Family;
 import kr.ac.kookmin.familyfitness.coaching.support.Runs;
 import kr.ac.kookmin.familyfitness.coaching.support.Summaries;
@@ -152,6 +154,10 @@ class CoachingFlowWebTest {
     @MockitoBean
     ActivityQuery activityQuery;
 
+    /** 날씨 예보. 기본(null)이면 날씨 없이 짠다. */
+    @MockitoBean
+    WeatherForecast weatherForecast;
+
     /** 시험 프로필의 스텁 게이트웨이를 그대로 부르고, AI 로 보낸 편성 요청만 붙잡아 본다. */
     @MockitoSpyBean
     AiGateway ai;
@@ -173,7 +179,7 @@ class CoachingFlowWebTest {
 
     @BeforeEach
     void setUp() {
-        reset(profileQuery, familyAccess, cheerQuery, fitnessQuery, activityRecorder, activityQuery);
+        reset(profileQuery, familyAccess, cheerQuery, fitnessQuery, activityRecorder, activityQuery, weatherForecast);
         insertFamilyRows();
         LocalDate today = time.today();
         ProfileSummary parentSummary = Summaries.summary(family.parent, today);
@@ -215,6 +221,7 @@ class CoachingFlowWebTest {
         given(activityRecorder.overwriteSteps(any(), any(), anyInt()))
                 .willAnswer(inv -> new DailyActivity(
                         inv.getArgument(0), inv.getArgument(1), ActivitySource.MANUAL, inv.getArgument(2), 0));
+        given(activityQuery.totalsOf(any(), any(), any())).willCallRealMethod();
         given(activityQuery.totals(eq(childId()), any(), any())).willAnswer(inv -> childTotals);
         given(activityQuery.totals(eq(parentId()), any(), any())).willReturn(new ActivityTotals(0, 0, 0));
         given(activityQuery.totals(eq(family.cheerParent.profileId()), any(), any()))
@@ -914,6 +921,60 @@ class CoachingFlowWebTest {
                         .getResponse()
                         .getStatus())
                 .isEqualTo(202);
+    }
+
+    /** 장소를 고르지 않은 몸통. planBody 의 place 를 null 로 바꾸고 extra(예: 위치 칸)를 덧붙인다. */
+    private String planBodyAnywhere(UUID profileId, LocalDate date, String extra) {
+        String body = planBody(profileId, date, false).replace("\"place\":\"HOME\"", "\"place\":null");
+        return extra.isEmpty() ? body : body.substring(0, body.length() - 1) + "," + extra + "}";
+    }
+
+    @Test
+    @DisplayName("비 소식이 있으면 장소를 고르지 않은 편성은 집 운동(place HOME)으로 저장되고, 조회 notices 맨 앞에 날씨 안내가 붙는다")
+    void 비_소식이_있으면_집_운동으로_짜고_날씨_안내를_싣는다() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        LocalDate today = time.today();
+        given(weatherForecast.outlook(any(), any(), eq(today)))
+                .willReturn(new WeatherOutlook(today, 70, WeatherOutlook.Precipitation.RAIN));
+
+        String runId = extract(
+                "\"coachRunId\":\"([^\"]+)\"",
+                startPlan(parent, planBodyAnywhere(childId(), today, "\"latitude\":35.1798,\"longitude\":129.075")));
+
+        verify(weatherForecast).outlook(35.1798, 129.075, today);
+        assertThat(jdbc.sql("select place from coach_runs where id = ?")
+                        .param(UUID.fromString(runId))
+                        .query(String.class)
+                        .single())
+                .isEqualTo("HOME");
+        mockMvc.perform(get("/api/v1/coach/runs/" + runId).header(HttpHeaders.AUTHORIZATION, parent))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AWAITING_APPROVAL"))
+                .andExpect(jsonPath("$.notices[0]").value("오늘 비 예보(강수확률 70%)가 있어 집에서 하는 운동으로 짰어요."));
+    }
+
+    @Test
+    @DisplayName("위치를 보내지 않으면 날씨 어댑터에 null 을 넘긴다(기본 위치). 위치가 우리나라 범위(위도 33~39, 경도 124~132)를 벗어나면 400 이다")
+    void 위치가_없으면_기본_위치_벗어나면_400() throws Exception {
+        String parent = auth.bearer(family.parentUser);
+        LocalDate today = time.today();
+
+        assertThat(startPlan(parent, planBodyAnywhere(childId(), today, ""))
+                        .getResponse()
+                        .getStatus())
+                .isEqualTo(202);
+        verify(weatherForecast).outlook(null, null, today);
+
+        for (String outside : List.of(
+                "\"latitude\":32.9,\"longitude\":127", "\"latitude\":39.1,\"longitude\":127",
+                "\"latitude\":37,\"longitude\":123.9", "\"latitude\":37,\"longitude\":132.1")) {
+            mockMvc.perform(post("/api/v1/families/" + familyId() + "/coach/runs")
+                            .header(HttpHeaders.AUTHORIZATION, parent)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(planBodyAnywhere(childId(), today.plusDays(1), outside)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("BAD_REQUEST"));
+        }
     }
 
     @Test

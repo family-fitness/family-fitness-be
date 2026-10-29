@@ -17,6 +17,7 @@ import org.jspecify.annotations.Nullable;
 public class CoachRun {
     public static final int MAX_REASON = 300;
     public static final int MAX_REFUSAL_REASON = 60;
+    public static final int MAX_FALLBACK_REASON = 40;
     public static final int POLL_AFTER_MS = 1500;
 
     /** 같은 (프로필, 날짜)에 새 편성이 오면 기다리던 제안을 이 사유로 거절한다(결정 1). */
@@ -54,6 +55,20 @@ public class CoachRun {
 
     /** FAILED 의 까닭(화면용 코드). FAILED 가 아니면 null. failureReason 은 같은 실패의 개발자용 원문이다. */
     private @Nullable CoachRunFailureCode failureCode;
+
+    /**
+     * 편성이 어떻게 끝났는지(V173). 사용 기록 분석에만 쓰고 화면에는 내지 않는다.
+     * planSource 는 제안을 누가 짰는지(FAILED 면 null), fallbackReason 은 대체 편성으로 넘어간 까닭(대체 편성 단계 요약에 쓰는 짧은 말),
+     * finishedAt 은 RUNNING 을 벗어난 시각이다. 편성에 걸린 시간은 finishedAt − createdAt 이다.
+     * updatedAt 은 승인 · 거절 때 다시 바뀌어서 이 용도로 쓸 수 없다.
+     */
+    private @Nullable CoachPlanSource planSource;
+
+    private @Nullable String fallbackReason;
+    private @Nullable Instant finishedAt;
+
+    /** 편성을 시작할 때 본 날씨 안내(V175, {@link WeatherAdvice}). 날씨를 보지 않았거나 비 소식이 없으면 null. */
+    private @Nullable String weatherNote;
 
     private Instant updatedAt;
 
@@ -239,6 +254,18 @@ public class CoachRun {
         return failureCode;
     }
 
+    public @Nullable CoachPlanSource getPlanSource() {
+        return planSource;
+    }
+
+    public @Nullable String getFallbackReason() {
+        return fallbackReason;
+    }
+
+    public @Nullable Instant getFinishedAt() {
+        return finishedAt;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }
@@ -322,12 +349,30 @@ public class CoachRun {
             @Nullable String summary,
             @Nullable String modelName,
             Instant at) {
+        complete(steps, proposals, proposalJson, summary, modelName, CoachPlanSource.AI, null, at);
+    }
+
+    /**
+     * 제안을 붙이고 승인 대기로 옮긴다. source 는 누가 짰는지, fallbackReason 은 대체 편성이면 그 까닭이다(AI 가 짰으면 null).
+     */
+    public void complete(
+            List<CoachStep> steps,
+            List<CoachProposalItem> proposals,
+            @Nullable String proposalJson,
+            @Nullable String summary,
+            @Nullable String modelName,
+            CoachPlanSource source,
+            @Nullable String fallbackReason,
+            Instant at) {
         requireRunning();
         this.steps = steps;
         this.proposals = sortedByPosition(proposals);
         this.proposalJson = proposalJson;
         this.summary = summary;
         this.modelName = modelName;
+        planSource = source;
+        this.fallbackReason = fallbackReason == null ? null : take(fallbackReason, MAX_FALLBACK_REASON);
+        finishedAt = at;
         status = CoachRunStatus.AWAITING_APPROVAL;
         updatedAt = at;
     }
@@ -353,6 +398,7 @@ public class CoachRun {
         failureReason = take(reason, MAX_REASON);
         aiRefused = refused;
         aiRefusalReason = refusalReason == null ? null : take(refusalReason, MAX_REFUSAL_REASON);
+        finishedAt = at;
         status = CoachRunStatus.FAILED;
         updatedAt = at;
     }
@@ -459,6 +505,33 @@ public class CoachRun {
                 null,
                 null,
                 at);
+    }
+
+    /**
+     * 저장소에서 복원할 때 편성이 끝난 모습(V173)을 싣는다. {@link #reconstitute} 인자가 이미 많아 따로 받는다.
+     * 규칙 검사를 하지 않으므로 복원 말고는 쓰지 않는다.
+     */
+    public CoachRun restoreOutcome(
+            @Nullable CoachPlanSource planSource, @Nullable String fallbackReason, @Nullable Instant finishedAt) {
+        this.planSource = planSource;
+        this.fallbackReason = fallbackReason;
+        this.finishedAt = finishedAt;
+        return this;
+    }
+
+    /** weather_note 칸 길이(V175). */
+    public static final int WEATHER_NOTE_MAX = 120;
+
+    /**
+     * 시작할 때 본 날씨 안내를 남긴다({@link WeatherAdvice#note}). 저장소에서 복원할 때도 쓴다. 칸보다 길면 자른다.
+     */
+    public CoachRun noteWeather(@Nullable String note) {
+        this.weatherNote = note == null ? null : take(note, WEATHER_NOTE_MAX);
+        return this;
+    }
+
+    public @Nullable String getWeatherNote() {
+        return weatherNote;
     }
 
     /** 저장소에서 복원. 규칙 검사 없이 상태를 그대로 싣는다. */

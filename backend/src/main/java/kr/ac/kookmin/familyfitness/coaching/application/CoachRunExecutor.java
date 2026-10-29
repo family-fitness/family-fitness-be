@@ -190,7 +190,7 @@ public class CoachRunExecutor {
                         false,
                         null);
             } else {
-                pipeline.complete(runId, result);
+                pipeline.completeFallback(runId, result, summary);
             }
         } catch (RuntimeException failure) {
             log.error("대체 편성도 실패: run={}", runId, failure);

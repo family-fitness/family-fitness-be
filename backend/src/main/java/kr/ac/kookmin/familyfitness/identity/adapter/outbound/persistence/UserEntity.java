@@ -37,6 +37,16 @@ public class UserEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** 처음 가입할 때 실려 온 utm 값(V174). 없으면 null. */
+    @Column(name = "signup_utm_source", length = 64)
+    private @Nullable String signupUtmSource;
+
+    @Column(name = "signup_utm_medium", length = 64)
+    private @Nullable String signupUtmMedium;
+
+    @Column(name = "signup_utm_campaign", length = 64)
+    private @Nullable String signupUtmCampaign;
+
     protected UserEntity() {}
 
     public UserEntity(
@@ -90,6 +100,29 @@ public class UserEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public @Nullable String getSignupUtmSource() {
+        return signupUtmSource;
+    }
+
+    public @Nullable String getSignupUtmMedium() {
+        return signupUtmMedium;
+    }
+
+    public @Nullable String getSignupUtmCampaign() {
+        return signupUtmCampaign;
+    }
+
+    /** 세 칸 가운데 하나라도 차 있으면 이미 유입 경로가 있는 계정이다. */
+    public boolean hasSignupSource() {
+        return signupUtmSource != null || signupUtmMedium != null || signupUtmCampaign != null;
+    }
+
+    public void setSignupSource(@Nullable String source, @Nullable String medium, @Nullable String campaign) {
+        this.signupUtmSource = source;
+        this.signupUtmMedium = medium;
+        this.signupUtmCampaign = campaign;
     }
 
     public void setUpdatedAt(Instant updatedAt) {

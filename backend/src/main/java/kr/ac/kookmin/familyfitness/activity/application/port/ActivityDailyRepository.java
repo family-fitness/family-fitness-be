@@ -21,6 +21,9 @@ public interface ActivityDailyRepository {
     /** {@code from}~{@code to} 양끝 포함 합계. */
     ActivityTotals totals(UUID profileId, LocalDate from, LocalDate to);
 
+    /** {@link #totals} 를 여러 프로필에 쿼리 한 번으로. 요청한 프로필마다 한 줄이고, 기록이 없으면 0 이다. */
+    Map<UUID, ActivityTotals> totalsOf(Collection<UUID> profileIds, LocalDate from, LocalDate to);
+
     int activeMinutesOn(UUID profileId, LocalDate activityDate);
 
     /** 이 프로필들 중 누구라도 그날 운동한 초(TIMER · VIDEO)가 있는가. MANUAL(걸음수) 행은 초가 늘 0 이라 세지 않는다. */

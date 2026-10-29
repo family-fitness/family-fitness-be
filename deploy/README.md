@@ -101,6 +101,7 @@ ssh -i ~/.ssh/familyfitness-deploy ubuntu@$IP sudo bash /tmp/deploy/server-setup
 - `APP_CORS_ALLOWED_ORIGINS`: FE 주소(`https://d249o1o9c1vnhc.cloudfront.net`). 꼭 적는다. FE 의 Next 서버를 거쳐 와도 브라우저가 붙인 `Origin` 헤더가 그대로 넘어와서, 빠지면 POST 가 모두 403 「Invalid CORS request」 로 막힌다. 심사용 로그인과 구글 로그인이 이 때문에 안 된 적이 있다(2026-10-01).
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: FE 와 같은 구글 OAuth 클라이언트
 - `APP_AI_BASE_URL=http://<ff-ai 사설 IP>:8000`. 빠지면 app 이 자기 안의 localhost:8000 을 불러 AI 편성이 늘 대체 편성으로 짜인다.
+- `KMA_SERVICE_KEY`: 기상청 단기예보 인증키(공공데이터포털 「기상청_단기예보 ((구)_동네예보) 조회서비스」의 Decoding 키). 빠지면 편성이 날씨를 보지 않고, 나머지 기능은 그대로 된다. 키가 맞는지는 편성을 한 번 시작한 뒤 app 로그에 「기상청 단기예보를 읽지 못했다」가 없는지로 본다.
 
 ### 4. GitHub Secrets
 
@@ -138,6 +139,15 @@ docker compose up -d                                        # .env 를 고친 �
 free -m                                                     # 메모리와 스왑
 ```
 
+### 느린 요청 찾기
+
+API 요청 하나가 1초(`app.web.slow-request-threshold`) 이상 걸리면 app 로그에 「느린 요청」 한 줄이 남는다. 주소는 실제 id 대신 경로 틀로 적힌다.
+
+```bash
+docker compose logs --since 168h app | grep '느린 요청'                                   # 지난 7일
+docker compose logs --since 168h app | grep -o '느린 요청 [A-Z]* [^ ]*' | sort | uniq -c | sort -rn   # 주소별 횟수
+```
+
 ### 되돌리기
 
 ```bash
@@ -153,3 +163,16 @@ bash deploy.sh ghcr.io/family-fitness/family-fitness-be:<되돌릴 커밋 해시
 - Lightsail 자동 스냅샷을 켠다. 서버 디스크 전체(DB 볼륨 포함)를 매일 찍는다. 스냅샷 저장 용량만큼 요금이 붙는다(GB 당 월 0.05달러).
   `aws lightsail enable-add-on --resource-name ff-backend --add-on-request "addOnType=AutoSnapshot,autoSnapshotAddOnRequest={snapshotTimeOfDay=18:00}" --profile ff-backend` (UTC 18시 = 한국 새벽 3시)
 - DB 만 따로 받기: `docker compose exec -T postgres pg_dump -U familyfitness -Fc familyfitness > familyfitness-$(date +%F).dump`
+
+### 이용 지표 집계
+
+`sql/usage-metrics.sql` 이 운영 DB 에서 이용 지표를 뽑는다. 심사용 계정(REVIEW)과 개발용 계정(DEV)이 낀 가족은 모두 빼고,
+개인정보 없이 숫자와 캠페인 이름만 낸다. 기간은 한국 시각 기준으로 `from` 그날 0시부터 `to` 그날 0시 전까지다.
+
+```bash
+docker compose exec -T postgres psql -U familyfitness -d familyfitness \
+  -v from=2026-10-01 -v to=2026-11-01 -f - < sql/usage-metrics.sql
+```
+
+나오는 표: 유입 경로별 가입, AI 제안 승인율(밀려난 제안 제외), 편성 결과(AI, 대체 편성과 까닭, 실패)와 걸린 시간,
+승인된 미션 완료율(아이, 보호자), 가족 운동일 분포, 응원. 편성 결과는 V173, 유입 경로는 V174 뒤의 행부터 찬다.

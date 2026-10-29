@@ -3,6 +3,7 @@ package kr.ac.kookmin.familyfitness.identity.adapter.inbound.web;
 import jakarta.validation.Valid;
 import kr.ac.kookmin.familyfitness.identity.application.AccountDeletionService;
 import kr.ac.kookmin.familyfitness.identity.application.AuthService;
+import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.shared.security.CurrentUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -28,8 +29,11 @@ public class AuthController {
 
     @PostMapping("/auth/google")
     public AuthResponse google(@Valid @RequestBody GoogleLoginRequest request) {
-        return AuthResponse.of(
-                auth.loginWithGoogle(request.authorizationCode(), request.redirectUri(), request.claimCode()));
+        return AuthResponse.of(auth.loginWithGoogle(
+                request.authorizationCode(),
+                request.redirectUri(),
+                request.claimCode(),
+                SignupSource.of(request.utmSource(), request.utmMedium(), request.utmCampaign())));
     }
 
     /** 새 토큰 쌍을 주고, 받은 리프레시 토큰은 폐기한다. 폐기된 토큰을 다시 보내면 그 묶음 전체가 폐기되고 401 이다. */

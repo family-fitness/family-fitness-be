@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +36,11 @@ public class ServiceTokenIssuer {
         this.refreshDecoder = NimbusJwtDecoder.withSecretKey(key)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
+        // 기본 검증기는 시스템 시계로 만료를 본다. 발급은 앱 시계(clock)로 하므로 검증도 같은 시계로 해야 한다 —
+        // 시험의 고정 시계, 개발용 시간 이동에서 발급 시각과 검증 시각이 어긋나 멀쩡한 토큰이 만료로 거부됐다.
+        JwtTimestampValidator timestamps = new JwtTimestampValidator();
+        timestamps.setClock(clock);
+        this.refreshDecoder.setJwtValidator(timestamps);
     }
 
     /** 새 토큰 쌍을 만든다. 저장은 하지 않는다 — 리프레시 토큰의 jti 를 기록하는 일은 identity 가 한다. */

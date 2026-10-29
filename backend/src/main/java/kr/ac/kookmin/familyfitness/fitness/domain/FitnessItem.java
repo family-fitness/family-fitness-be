@@ -281,6 +281,11 @@ public enum FitnessItem {
         return inputGroup;
     }
 
+    /** 측정 센터의 기기(트레드밀 · 스텝 검사 · 반응 시간 측정기)가 있어야 재는 항목인지. 집이나 운동장에서 재라고 권하지 않는다. */
+    public boolean needsCenterDevice() {
+        return Equipment.DEVICE.equals(equipment);
+    }
+
     public @Nullable String getEquipment() {
         return equipment;
     }

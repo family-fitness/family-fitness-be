@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.coaching.application.port.CoachRunRepository;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlace;
+import kr.ac.kookmin.familyfitness.coaching.domain.CoachPlanSource;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachProposalItem;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRun;
 import kr.ac.kookmin.familyfitness.coaching.domain.CoachRunConditions;
@@ -97,6 +98,8 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                         run.getFailureReason(),
                         run.isAiRefused(),
                         run.getAiRefusalReason(),
+                        sourceName(run.getPlanSource()),
+                        run.getFallbackReason(),
                         run.getUpdatedAt())
                 == 1;
         if (finished) replaceItems(run);
@@ -261,11 +264,27 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 conditions == null ? null : conditions.weightKg());
         entity.setLockKey(run.lockKey());
         entity.setFailureCode(codeName(run.getFailureCode()));
+        entity.setOutcome(sourceName(run.getPlanSource()), run.getFallbackReason(), run.getFinishedAt());
+        entity.setWeatherNote(run.getWeatherNote());
         return entity;
     }
 
     private static @Nullable String codeName(@Nullable CoachRunFailureCode code) {
         return code == null ? null : code.name();
+    }
+
+    private static @Nullable String sourceName(@Nullable CoachPlanSource source) {
+        return source == null ? null : source.name();
+    }
+
+    /** 모르는 값(다른 버전이 쓴 이름)은 null 로 읽는다 — 분석용 칸이라 화면이 깨질 까닭이 없다. */
+    private static @Nullable CoachPlanSource sourceOf(@Nullable String name) {
+        if (name == null) return null;
+        try {
+            return CoachPlanSource.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** 모르는 값(다른 버전이 쓴 코드)은 응답이 깨지지 않게 ERROR 로 읽는다. */
@@ -336,7 +355,7 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
             List<CoachRunProposalItemEntity> itemEntities,
             Map<Integer, List<MissionSession>> sessionsByItem) {
         String stepsJson = e.getStepsJson();
-        return CoachRun.reconstitute(
+        CoachRun run = CoachRun.reconstitute(
                 e.getId(),
                 e.getFamilyId(),
                 e.getWeekStart(),
@@ -367,6 +386,8 @@ public class CoachRunPersistenceAdapter implements CoachRunRepository {
                 e.getAiRefusalReason(),
                 codeOf(e.getFailureCode()),
                 e.getUpdatedAt());
+        return run.restoreOutcome(sourceOf(e.getPlanSource()), e.getFallbackReason(), e.getFinishedAt())
+                .noteWeather(e.getWeatherNote());
     }
 
     /** 옛 주간 실행 행(대상이 없음)은 조건도 없다. */

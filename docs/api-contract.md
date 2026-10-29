@@ -62,11 +62,12 @@
 | 캘린더 스티커 | 붙인 시각의 KST 날짜에 선다(자정을 넘기면 다음 날) |
 | `month` 가 없을 때 | 쉬는 날 카드 · 리그는 이번 달(KST) |
 
-정해진 시각에 도는 일은 다섯이다. 모두 여러 번 돌아도 결과가 같다.
+정해진 시각에 도는 일은 여섯이다. 모두 여러 번 돌아도 결과가 같다.
 
 | 언제(KST) | 무엇 | 설정 키 | 기동 때 |
 |---|---|---|---|
 | 매일 04:00 | 리프레시 토큰 기록 정리 — 만료된 행, 폐기한 지 30일 지난 행을 지운다 | `app.auth.refresh-token-cleanup.cron` | 돌지 않는다 |
+| 매일 04:30 | 심사용 계정 정리 — 만든 지 31일(`app.auth.review-cleanup.retention`)이 지난 심사용 계정과 체험 가족을 탈퇴와 같은 길로 지운다. 구글 계정이 낀 가족은 남긴다 | `app.auth.review-cleanup.cron` | 돌지 않는다 |
 | 매일 07:30 | `MISSION_READY` 알림 — 오늘 서는 운동, 아이 프로필만. 오늘 기간이 걸친 미션이 있는 가족만 돈다 | `app.notification.mission-ready-cron` | 07:30 이 지났으면 그날 몫을 한 번 만든다 |
 | 매일 09:00 | `REMEASURE` 알림 — 마지막 측정에서 30일 이상 지난 아이 → 부모 전원. 모든 가족을 돈다 | `app.notification.remeasure-cron` | 09:00 이 지났으면 한 번 만든다 |
 | 매월 1일 00:10 | 리그 월초 정산 — 지난달 방을 정산하고 이번 달 방을 짠다 | `app.league.settle-cron` | 밀린 달을 따라잡는다 |
@@ -135,9 +136,9 @@
 - AI 가 내는 `RUN_IN_PROGRESS`(409) · `RUN_NOT_FOUND`(404)는 편성 실행기 안에서만 쓰이고 클라이언트로 나가지 않는다. 편성은 202 로 접수된 뒤라, 실패는 `CoachRunView.failureCode` 로 알린다(4장).
 - FE 요청서 7장의 「화면이 가르는 코드」 중 서버가 내지 않는 것: `CONSENT_WITHDRAWN`(만들지 않는다 — 동의를 거둬도 `CONSENT_REQUIRED`) · `ALREADY_RUN_THIS_WEEK`(없앴다).
 
-### 구현 상태 (2026-09-29 · `feature/BE-35-launch-readiness`)
+### 구현 상태 (2026-12 · 2학기 최종)
 
-- 경로 50개, 메서드까지 세면 60개(아래 「주소 목록」). 전환기 별칭(경로 5개, 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local, compose, test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local, compose, prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜, 그날 포함)이 지나면 404 `NOT_FOUND` 다.
+- 경로 52개, 메서드까지 세면 61개(아래 「주소 목록」, 개발용 `/dev/clock` 제외). 전환기 별칭(경로 5개, 메서드 6개)은 세지 않았다. `POST /auth/dev-login` 은 local, compose, test 프로필에서만 있다. `POST /auth/review-login` 은 `app.auth.review-login.enabled` 가 켜진 곳(local, compose, prod)에만 있다. prod 는 끝나는 날(`app.auth.review-login.until`, 기본 2026-10-31, Asia/Seoul 날짜, 그날 포함)이 지나면 404 `NOT_FOUND` 다.
   Notion 명세의 `GET /facilities` 는 범위 밖(공공데이터 출처 미확정).
 - 묶음마다 바뀐 것
   - 1차(PR #4~#11): 편성이 「아이 한 명의 하루」 가 됐다. 미션 칸 저장 · 조회, 미션 단건. 측정 등급 85/65/40 · 측정 이력 · 레이더 민첩성. `ProfileSummary.sex`. 계정 없는 아이 이름으로 응원. 모든 오류가 봉투로. AI 영상 48편 · 구간 695개(`V132`).
@@ -148,6 +149,7 @@
   - QA 수정(PR #31~#33): 칸 끝이 미션 행을 잠금 · 칸 없는 분 목표 360분 상한 · 옛 주소와 예측 권한을 「대신」으로 · `canApprove` 에 참여자 동의 · latest 가 미션을 모두 지운 승인 회차를 건너뜀. OpenAPI null 표시 · 낙관적 잠금 409 · AI 응답 해석 실패도 대체 편성 · 보호자(PARENT) 동의 막기(`V151`) · 동시 스티커 · 초대로 붙은 보호자의 `SUPPORT_MODE`. 알림을 커밋 뒤 전용 스레드에서 쓰기 · 다시 재면 `REMEASURE` 지우기 · 쉬는 날 `MISSION_READY` 거르기.
   - 출시 준비(BE-35): FE 이름 전환기 별칭 · 10년 예측 걷음(`V153`) · 항목 등급을 백분위 85/65/40 대신 국민체력100 공식 기준표로(`V154`) · 유소년 044 벽패스 항목 · 규준(`V155`) · 같은 값이 몰린 규준은 가운데 백분위 · 백분위를 AI 또래 분포 표와 계산식으로(`V156` · 예전 표 걷음 `V157`) · 측정에 체지방률 · 허리둘레(`V158`) · 등급을 인증서처럼 한 사람에게 하나로 · 또래 등급 비율(`V159`) · 항목 등급 칸 걷음(`V160`) · 공단 「국민체력100 동영상 정보」 오픈API 영상 890편을 영상 후보에 더함(`V161`, 응답에 `mediaUrl` · `thumbnailUrl`) · 공단 영상을 AI 새 표 776편으로 고침 — 질환자용 근골격계운동 114편 끔 · 제목 끝 「-1」 「-2」 뗌(`V162`) · 다시 AI 새 표 732편으로 고침 — 오십견 · 요통 같은 질환용 영상 44편 끔 · 요인이 비었던 131편에 요인(`V163`) · 다시 AI 새 표 452편으로 고침 — 기준표에서 빠진 어르신 · 헬스장 · 수영장 · 기구 · 둘 이상 영상 280편 끔, 어르신은 성인(공통) 영상을 받음(`V164`) · AI 담당자 코드의 한 파일 표(910줄)로 다시 실음 — 「공통」 영상을 청소년에게도, 요인 · 단계가 둘인 영상은 줄마다 후보로, 인용 이름은 AI 표 값(`V165`) · 심사용 계정 로그인(`POST /auth/review-login` — 부를 때마다 새 계정 · 체험 가족, IP(IPv6 /56)마다 한 시간 30번 · 새 계정은 모두 합쳐 한 시간 300개 뒤로는 그 IP 가 만든 계정으로 들임, prod 는 X-Forwarded-For 를 읽음) · 심사용 계정 로그인 본문 `{kind}` — `FAMILY`(기본, 체험 가족) · `FRESH`(가족 없는 새 계정) · `INVITED`(체험 가족 아빠 자리 초대코드를 응답 `inviteCode` 로), 한도가 찬 뒤 다시 내주는 계정은 같은 kind 만.
   - 탈퇴(BE-40): 계정 탈퇴 `DELETE /me`, 오너의 구성원 내보내기 `DELETE /families/{familyId}/profiles/{profileId}`, `ProfileSummary.isOwner`. 탈퇴한 계정의 토큰은 `/me` 에서 401 이다.
+  - 2학기 후반(BE-50 ~ BE-54, PR #54 ~ #58): 성인 체력 나이 `GET /profiles/{profileId}/fitness-age`(더 재면 좋은 항목 `missingItems` 포함)와 회차별 이력 `…/fitness-age/history`. 편성 요청의 `latitude` · `longitude` 와 날씨 안내(`coach_runs.weather_note` `V175`, 실행 조회 `notices` 맨 앞). 주간 요약 · 가족 체력 지도의 N+1 수정(응답은 같다). 1초 넘는 요청 로그. 심사용 계정 정리(매일 04:30, 만든 지 31일).
   - 초대 먼저(BE-42): 보호자가 역할만 정해 내는 가족 초대(`POST /families/{familyId}/invites`, 목록 `GET`, 취소 `DELETE /families/{familyId}/invites/{code}`, 테이블 `family_invites` `V170`). 코드로 들어온 사람이 `POST /profiles/claim` 에 이름, 생년월일, 성별을 함께 보내 자기 프로필을 만든다. 초대코드 미리 보기 응답에 `kind` 칸을 추가했다. 휴대폰 없는 아이처럼 보호자가 정보를 미리 입력해 두는 프로필의 초대코드는 그대로다.
 - 없앤 것: 일요일 20시 자동 주간 편성(`CoachRunScheduler`, `app.coach.schedule.cron`), `ALREADY_RUN_THIS_WEEK`, 422 `NOT_PARTICIPANT`(→ 403 `NOT_A_PARTICIPANT`), 편성의 422 `NO_MEASURED_MEMBER`(BE-43. 측정 기록이 없는 아이도 키와 몸무게로 편성을 받는다).
   10년 예측(2026-09-16 결정 · FE 도 걷음): `POST /profiles/{id}/predictions` · AI `fitness/trajectory` 호출 · `predictions` · `prediction_points` 표(`V153`) · 422 `NO_FITNESS_TEST` · 404 `FITNESS_TEST_NOT_FOUND`. 개인 시계열이 없어 측정 이력 추이로 대신한다.
@@ -158,7 +160,7 @@
   - 코치 대화 · 영상 진행 · 타이머 · 걸음수는 「대신」 규칙을 지나야 한다. 같은 가족이어도 계정이 붙은 다른 식구 이름으로는 403 `FORBIDDEN` 이다.
   - 칸 있는 미션은 타이머 · 영상 진행으로 분을 쌓아도 진행되지 않는다(진행도는 끝낸 칸 기준).
 
-### 주소 목록 (경로 50개, 메서드 60개)
+### 주소 목록 (경로 52개, 메서드 61개, 개발용 `/dev/clock` 제외)
 
 | 모듈 | 메서드 | 경로(`/api/v1` 뒤) | 권한 | 성공 |
 |---|---|---|---|---|
@@ -187,6 +189,8 @@
 | fitness | GET | `/fitness/items` | 로그인(`profileId` 를 주면 보호자) | 200 |
 | fitness | POST · GET | `/profiles/{profileId}/fitness-tests` | 보호자 · 같은 가족 | 201 · 200 |
 | fitness | GET | `/profiles/{profileId}/fitness-tests/latest` | 같은 가족 | 200 |
+| fitness | GET | `/profiles/{profileId}/fitness-age` | 보호자 | 200 |
+| fitness | GET | `/profiles/{profileId}/fitness-age/history` | 보호자 | 200 |
 | fitness | GET | `/families/{familyId}/fitness-map` | 같은 가족 | 200 |
 | activity | GET · POST | `/families/{familyId}/rest-cards` | 같은 가족 · 보호자 | 200 · 201 |
 | activity | DELETE | `/families/{familyId}/rest-cards/{restDate}` | 보호자 | 200 |
@@ -353,8 +357,9 @@ OpenAPI(`/v3/api-docs`)에는 `deprecated: true` 로 싣고, operationId 는 `<�
 - 가족 초대코드로 들어온 보호자도 `inviteStatus` 가 `CLAIMED` 라 같은 규칙을 따른다.
 
 ### POST /api/v1/auth/google — 토큰 없이
-요청 `{authorizationCode●, redirectUri●, claimCode?}`. 구글 인가코드 교환 → id_token 검증 → (provider=GOOGLE, providerUserId=sub) find-or-create. provider 는 google 하나로 고정, 계정 병합 경로 없음.
+요청 `{authorizationCode●, redirectUri●, claimCode?, utmSource?, utmMedium?, utmCampaign?}`. 구글 인가코드 교환 → id_token 검증 → (provider=GOOGLE, providerUserId=sub) find-or-create. provider 는 google 하나로 고정, 계정 병합 경로 없음.
 응답 200 `AuthResponse`.
+- `utmSource` · `utmMedium` · `utmCampaign` 은 FE 가 처음 들어온 주소의 `utm_source` · `utm_medium` · `utm_campaign` 을 기억했다가 싣는 유입 경로다(V174, `users.signup_utm_*`). 이번 로그인으로 **처음 가입할 때만** 남고, 이미 있는 계정이면 버린다(첫 유입 경로가 남는다). 서버가 앞뒤 공백과 제어 문자를 걷고 64자로 자른다. 200자를 넘으면 400 `BAD_REQUEST`. 안 보내도 된다.
 - `nextStep` 은 위 표대로다. 로그인이 코드로 프로필을 붙이지는 않는다(붙이는 것은 `POST /profiles/claim`).
 - 구글 인가코드 교환(외부 HTTP)은 DB 트랜잭션 밖에서 한다. 가입(find-or-create)과 토큰 발급만 한 트랜잭션이다.
 - 로그인마다 새 리프레시 토큰 묶음(family)을 연다. 한 기기의 로그아웃 · 재사용 감지가 다른 기기를 끊지 않는다.
@@ -629,6 +634,24 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - 「가장 최근」 은 testedOn 이 가장 늦은 회차다. 지난 날짜로 측정을 적으면 방금 적은 회차가 아니라 더 늦은 회차가 나온다.
 오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY`.
 
+### GET /api/v1/profiles/{profileId}/fitness-age — 보호자
+성인(측정일 기준 만 19~64세)의 체력 나이. 가장 최근 측정 회차를 성인 또래 분포 표(V156, 한 살 단위)에 대 보고 셈하며 저장하지 않는다. 아이 계정은 403 `NOT_A_PARENT` 다. 아이 프로필은 체력 나이를 내지 않는다(유소년 측정은 만 11~12세뿐이고 유아기는 개월 단위).
+응답 200 `{status, testedOn|null, age|null, fitnessAge|null, ageGap|null, minItems, range:{min, max}, items:[{itemCode, itemName, unit, value, itemAge, bound}], excludedItems:[{itemCode, itemName, reason}], missingItems:[{itemCode, itemName, unit, equipment|null}]}`.
+- `status`: `OK` · `NO_TEST`(측정 이력 없음) · `AGE_OUT_OF_RANGE`(측정일 기준 19세 미만 · 65세 이상) · `NOT_ENOUGH_ITEMS`(쓸 수 있는 항목이 `minItems`(2) 개 미만). `fitnessAge` · `ageGap` 은 `OK` 일 때만 있다. `ageGap` = 체력 나이 - 측정일 기준 만 나이(음수면 실제보다 젊다).
+- 쓰는 항목: 나이가 들수록 기록이 한 방향으로 나빠지는 항목만 쓴다. 나이와 그 나이 중앙값(백분위 50)의 스피어만 순위상관이 0.8 이상이고 방향이 「나이 들수록 나빠짐」 이어야 한다. V156 기준으로 012 앉아윗몸앞으로굽히기만 빠지고(남 -0.27, 여 -0.22) `excludedItems` 에 `reason: "NOT_AGE_RELATED"` 로 싣는다. 나머지 성인 항목(019 · 020 · 021 · 022 · 028 · 035 · 037 · 040 · 041)은 0.91 이상이다.
+- `itemAge`: 나이마다 그 기록의 백분위(위 「백분위·등급 계산」 과 같은 셈)를 구해 50 에 가장 가까운 나이. 같은 거리가 여럿이면 평균이라 소수 첫째 자리까지 준다. 19세에서도 백분위가 50 을 넘으면 19 · `bound: "YOUNGER"`, 64세에서도 50 에 못 미치면 64 · `bound: "OLDER"`, 아니면 `"NONE"`. 표본 30명 미만 칸은 쓰지 않는다.
+- `fitnessAge`: `itemAge` 평균을 반올림한 값.
+  예: 남 만 40세가 019 39회 · 020 36회 · 022 210cm · 028 61.4% · 012 10cm → `itemAge` 41.5 · 39.5 · 42.0 · 32.0, `fitnessAge` 39, `ageGap` -1, `excludedItems` 012.
+- `missingItems`(13주차): 쓰는 항목 가운데 그 회차에 재지 않은 항목. 화면이 「○○도 재 보세요」 안내에 쓴다. 측정 센터 기기가 있어야 재는 항목(035 · 037 트레드밀 · 스텝검사 VO2max, 040 반응시간)은 권하지 않아 싣지 않는다. `equipment` 는 필요한 공간이나 도구(「공간」, 「악력계」)이고 맨몸 항목은 null 이다. `NO_TEST` 면 권하는 항목 전부(019 · 020 · 021 · 022 · 028 · 041), `AGE_OUT_OF_RANGE` 면 빈 목록이다.
+오류: 404 `PROFILE_NOT_FOUND` · 403 `NOT_SAME_FAMILY` · 403 `NOT_A_PARENT`. 시험: `FitnessAgeTableTest` · `FitnessAgeWebTest`.
+
+### GET /api/v1/profiles/{profileId}/fitness-age/history — 보호자
+측정 회차마다의 체력 나이(13주차). 다시 잰 뒤 체력 나이가 어떻게 바뀌었는지 보여 주려고 둔다. 최근 12회차를 측정일이 늦은 것부터 싣는다.
+응답 200 `{tests:[{testedOn, age, status, fitnessAge|null, ageGap|null, itemCount}]}`. 측정이 없으면 `tests:[]`.
+- 회차마다 위 `fitness-age` 와 같은 셈이다. `age` 는 그 회차의 측정일 기준 만 나이, `itemCount` 는 셈에 쓴 항목 수다(성인 밖 회차는 0).
+- `status` 는 `OK` · `AGE_OUT_OF_RANGE` · `NOT_ENOUGH_ITEMS` 가운데 하나다. `fitnessAge` · `ageGap` 은 `OK` 일 때만 있다.
+오류: 위와 같다.
+
 ### GET /api/v1/families/{familyId}/fitness-map — 같은 가족 (피그잼 F0 `/home` 가족 체력 지도 ★메인)
 홈 화면 한 번의 조회. 응답 200 `{familyId, familyName, members:[{profileId, name, role, ageGroup, sex, hasAccount, supportMode, measurable, consentRequired, consentGiven, headline|null, latest|null:{fitnessTestId, testedOn, overallPercentile|null(항목 백분위 평균), weakest, strongest, coachDirection}}], disclaimer}`.
 - `headline` 예: 「유소년 상위 49%」. 연령대는 **측정 당시** 연령대다. 그래서 오늘 연령대인 `ageGroup` 과 다를 수 있다(11세에 재고 지금 청소년이면 「유소년 …」).
@@ -671,12 +694,16 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 
 ### POST /api/v1/families/{familyId}/coach/runs — 보호자
 한 번의 편성 = **아이 한 명의 하루**(FE 요청서 1장 ②). triggerType 은 `MANUAL`. 자동 편성은 없다.
-요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?, heightCm?(30~230), weightKg?(5~250)}`
+요청 `{profileId●, date●, minutes?(5~60), minutesPerSession?(5~60), quiet?, place?, focusFactor?, withParent?, heightCm?(30~230), weightKg?(5~250), latitude?(33~39), longitude?(124~132)}`
 - `minutes` 가 없을 때만 `minutesPerSession` 을 쓴다(옛 서버용으로 FE 가 같이 보낸다). 둘 다 없으면 400 — 기본 분을 서버가 고르지 않는다.
 - `quiet` · `withParent` 가 없으면 false. `place` 는 `HOME` · `OUTDOOR` · 없음(장소를 가리지 않음). `focusFactor` 는 요인 이름(한글 또는 영문) 또는 null — null 이면 코치가 가장 낮은 요인을 고른다.
 - 옛 칸 `weekStart` · `daysPerWeek` 는 받지 않는다(모르는 칸은 무시).
 - `heightCm`(cm)과 `weightKg`(kg)는 대상의 키와 몸무게다. 넣지 않아도 된다. 범위는 측정 등록과 같고, 벗어나면 400 `BAD_REQUEST` 다. 소수 둘째 자리부터는 반올림해 한 자리로 저장한다.
 - 측정 기록이 없는 아이도 편성을 받는다. 만 4세 이상이어도 422 를 내지 않는다. 이런 아이는 이 두 값을 AI 요청의 `height_cm`, `weight_kg` 로 보낸다(8장). 측정 기록이 있는 아이는 두 값을 저장만 하고, AI 에는 가장 최근 측정 회차의 값을 보낸다.
+- 날씨(V175): `place` 가 `HOME` 이 아니면 그날 낮(07~20시) 기상청 단기예보를 본다. 강수형태(비 · 비나 눈 · 눈 · 소나기)가 있거나 강수확률이 60% 이상이면,
+  `place` 가 없을 때는 `HOME` 으로 바꿔 짜고, `OUTDOOR` 면 그대로 두고 주의만 남긴다. 남긴 문구는 실행 행의 `weather_note` 에 두고 조회의 `notices` 맨 앞에 싣는다.
+  `latitude` · `longitude` 는 날씨를 볼 위치(기기 위치 등)이고, 없으면 서울시청 기준이다. 우리나라 범위를 벗어나면 400 `BAD_REQUEST` 다.
+  예보를 읽지 못하면(인증키 없음 · 기상청 오류 · 사흘 뒤보다 먼 날) 날씨 없이 그대로 짠다. 기상청 호출은 연결 1초 · 읽기 3초까지 기다리고, 격자와 발표 시각마다 한 번만 부른다.
 응답 202 `{coachRunId, status:"RUNNING", pollAfterMs:1500}`.
 판정 차례: 400(몸통) → 404 `FAMILY_NOT_FOUND` → 403 `NOT_SAME_FAMILY` → 403 `NOT_A_PARENT` → 422 `INVALID_DATE`(오늘 KST 보다 앞선 날짜) → 422 `NOT_FAMILY_MEMBER`(대상이 이 가족이 아님) → 422 `CONSENT_REQUIRED`(대상의 동의 없음) → 409 `RUN_IN_PROGRESS` → 429 `TOO_MANY`(심사용 계정만, 하루(KST) 20번을 넘김).
 잠금
@@ -700,7 +727,7 @@ Cheer 는 별도 애그리게잇. JPA 엔티티 그대로 써도 됨.
 - `canApprove` = `AWAITING_APPROVAL` 이고, 호출자가 보호자이고, 만들 항목이 전부 지난 것은 아니고(전부 지났으면 승인이 409), 미션으로 옮길 참여자가 모두 보호자 동의가 있다(없으면 승인이 422 `CONSENT_REQUIRED`).
 - `steps` 는 실행이 끝날 때 한 번에 저장된다(폴링 중에는 비어 있다).
 - `failureCode`: FAILED 일 때만 있다. `NO_CITATIONS`(AI 가 근거가 없다고 거부) · `AI_FAILED`(AI 가 짜지 못했고 대체 편성할 근거도 없음) · `CONSENT_REQUIRED`(요청 뒤 대상의 동의를 거둠) · `BUSY`(편성 풀이 가득 참) · `STALE`(정리 작업이 끝냄) · `ERROR`(AI 400 · 서버가 제안을 저장하다 실패 등. AI 409 는 다시 부른 뒤 대체 편성으로 간다). AI 응답을 읽지 못한 것은 `ERROR` 가 아니라 대체 편성으로 간다(8장). 코드라서 화면 문구는 FE 가 정한다.
-- `notices`: AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
+- `notices`: 맨 앞은 시작할 때 본 날씨 안내(있을 때만. 예: 「오늘 비 예보(강수확률 70%)가 있어 집에서 하는 운동으로 짰어요.」), 이어서 AI 가 제안과 함께 준 알림(예: 또래 자료가 없어 다른 연령대 자료도 골랐다). 늘 배열.
 `proposals[]`: `{position, title, rationale|null, targetMetric, targetValue, startDate, endDate, participants:[{profileId, role, coachRole}], video|null:{videoId, title|null, url, startSec|null, badges[], mediaUrl|null, thumbnailUrl|null}, citations:[{index, label, chunkId, url|null}], sessions:[{position, phase, title, factor|null, minutes, clip|null:{videoId, startSec, endSec|null, title|null, mediaUrl|null, thumbnailUrl|null}}]}`.
 - `sessions`: 제안의 칸. 모양은 미션 칸과 같고, 승인하면 그대로 미션 칸으로 복사된다. 칸 `minutes` 는 서버가 채운다(8장 칸 분 배분). 칸 끝의 `seq` 는 이 `position` 이다.
 - `video`: 영상은 videoId 만 저장한다(`V134` 가 `exercise_videos` FK 를 걷었다). `exercise_videos` 에 있는 영상이면 제목 · 배지를 붙이고, 없으면 `title:null` · 유튜브 주소 · `badges:[]`.

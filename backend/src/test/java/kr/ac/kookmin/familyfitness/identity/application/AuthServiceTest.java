@@ -10,12 +10,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.crypto.spec.SecretKeySpec;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleAuthFailedException;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentity;
 import kr.ac.kookmin.familyfitness.identity.application.port.GoogleIdentityProvider;
 import kr.ac.kookmin.familyfitness.identity.domain.RefreshToken;
+import kr.ac.kookmin.familyfitness.identity.domain.SignupSource;
 import kr.ac.kookmin.familyfitness.identity.domain.User;
 import kr.ac.kookmin.familyfitness.identity.domain.UserStatus;
 import kr.ac.kookmin.familyfitness.shared.config.AppProperties;
@@ -113,6 +115,18 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("구글로 처음 가입할 때 실려 온 유입 경로(utm)를 남기고, 같은 계정으로 다시 들어오면 첫 경로를 그대로 둔다")
+    void 구글로_처음_가입하면_유입_경로를_남기고_다시_들어와도_바꾸지_않는다() {
+        AuthResult first = service.loginWithGoogle(
+                "code", "https://app/redirect", null, SignupSource.of("instagram", "paid", "fitness-age"));
+        service.loginWithGoogle("code", "https://app/redirect", null, SignupSource.of("cafe", null, null));
+
+        assertThat(users.signupSources)
+                .containsExactly(
+                        Map.entry(first.session().userId(), SignupSource.of("instagram", "paid", "fitness-age")));
+    }
+
+    @Test
     @DisplayName("초대 코드를 들고 온 새 계정은 CLAIM 으로, 프로필이 있으면 HOME 으로 보낸다")
     void 초대_코드를_들고_온_새_계정은_CLAIM_으로_프로필이_있으면_HOME_으로_보낸다() {
         AuthResult withCode = service.loginWithGoogle("code", "https://app/redirect", "ABC234");
@@ -134,9 +148,10 @@ class AuthServiceTest {
         List<Boolean> transactionDuringRegistration = new ArrayList<>();
         UserRegistrationService registration = new UserRegistrationService(users) {
             @Override
-            public User registerOrGet(String provider, String providerUserId, @Nullable String email) {
+            public User registerOrGet(
+                    String provider, String providerUserId, @Nullable String email, SignupSource source) {
                 transactionDuringRegistration.add(TransactionSynchronizationManager.isActualTransactionActive());
-                return super.registerOrGet(provider, providerUserId, email);
+                return super.registerOrGet(provider, providerUserId, email, source);
             }
         };
         AuthService transactional = withTransactionAdvice(

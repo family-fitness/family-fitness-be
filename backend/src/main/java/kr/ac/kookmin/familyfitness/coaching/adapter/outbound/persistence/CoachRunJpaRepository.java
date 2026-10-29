@@ -23,7 +23,7 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
     @Query("""
             update CoachRunEntity r
                set r.status = 'FAILED', r.failureCode = 'STALE', r.failureReason = :reason, r.lockKey = null,
-                   r.updatedAt = :at
+                   r.finishedAt = :at, r.updatedAt = :at
              where r.status = 'RUNNING' and r.createdAt < :before
             """)
     int failRunningCreatedBefore(
@@ -34,7 +34,7 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
     @Query("""
             update CoachRunEntity r
                set r.status = 'FAILED', r.failureCode = 'STALE', r.failureReason = :reason, r.lockKey = null,
-                   r.updatedAt = :at
+                   r.finishedAt = :at, r.updatedAt = :at
              where r.lockKey = :lockKey and r.status = 'RUNNING' and r.createdAt < :before
             """)
     int failStaleLock(
@@ -66,7 +66,7 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
     int attachAiRunIfRunning(@Param("id") UUID id, @Param("aiRunId") String aiRunId, @Param("at") Instant at);
 
     /**
-     * 파이프라인 결과(AWAITING_APPROVAL · FAILED)를 RUNNING 일 때만 쓰고 잠금을 푼다.
+     * 파이프라인 결과(AWAITING_APPROVAL · FAILED)를 RUNNING 일 때만 쓰고 잠금을 푼다. 끝난 시각(finished_at)은 :at 이다.
      * 파이프라인이 읽은 뒤 정리 작업 · 새 요청이 먼저 FAILED 로 커밋했으면 0행이다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -75,6 +75,7 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
                set r.status = :status, r.summary = :summary, r.stepsJson = :stepsJson,
                    r.proposalJson = :proposalJson, r.modelName = :modelName, r.failureCode = :failureCode,
                    r.failureReason = :failureReason, r.aiRefused = :aiRefused, r.aiRefusalReason = :aiRefusalReason,
+                   r.planSource = :planSource, r.fallbackReason = :fallbackReason, r.finishedAt = :at,
                    r.lockKey = null, r.updatedAt = :at
              where r.id = :id and r.status = 'RUNNING'
             """)
@@ -89,6 +90,8 @@ public interface CoachRunJpaRepository extends JpaRepository<CoachRunEntity, UUI
             @Param("failureReason") @Nullable String failureReason,
             @Param("aiRefused") boolean aiRefused,
             @Param("aiRefusalReason") @Nullable String aiRefusalReason,
+            @Param("planSource") @Nullable String planSource,
+            @Param("fallbackReason") @Nullable String fallbackReason,
             @Param("at") Instant at);
 
     @Nullable

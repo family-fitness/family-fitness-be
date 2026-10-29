@@ -66,6 +66,21 @@ public class ActivityDailyRepositoryAdapter implements ActivityDailyRepository {
     }
 
     @Override
+    public Map<UUID, ActivityTotals> totalsOf(Collection<UUID> profileIds, LocalDate from, LocalDate to) {
+        if (profileIds.isEmpty()) return Map.of();
+        Map<UUID, ActivityTotals> out = new LinkedHashMap<>();
+        profileIds.forEach(it -> out.put(it, new ActivityTotals(0, 0, 0)));
+        jpa.sumBetweenOf(profileIds, from, to, verifiedSources)
+                .forEach(it -> out.put(
+                        it.profileId(),
+                        new ActivityTotals(
+                                (int) orZero(it.steps()),
+                                minutesOf(orZero(it.activeSeconds())),
+                                minutesOf(orZero(it.verifiedSeconds())))));
+        return Collections.unmodifiableMap(out);
+    }
+
+    @Override
     public int activeMinutesOn(UUID profileId, LocalDate activityDate) {
         return minutesOf(jpa.sumActiveSecondsOn(profileId, activityDate));
     }
