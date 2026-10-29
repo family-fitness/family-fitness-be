@@ -1,5 +1,6 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.api.FamilyDeleting;
@@ -12,6 +13,7 @@ import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
 import kr.ac.kookmin.familyfitness.identity.domain.AccountNotFoundException;
 import kr.ac.kookmin.familyfitness.identity.domain.Family;
 import kr.ac.kookmin.familyfitness.identity.domain.Profile;
+import kr.ac.kookmin.familyfitness.identity.domain.User;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -77,6 +79,48 @@ public class AccountDeletionService {
         }
         erasure.eraseAccount(userId);
         afterCommit(() -> reviewLogins.forget(userId));
+    }
+
+    /** 심사용 계정 하나를 지운 결과. */
+    public enum ReviewErasure {
+        /** 계정(과 그 계정의 가족)을 지웠다. */
+        ERASED,
+        /** 심사용 계정이 아니거나 이미 지워졌다. 아무것도 하지 않았다. */
+        NOT_REVIEW,
+        /** 가족에 심사용이 아닌 계정이 있어 지우지 않았다. */
+        KEPT_REAL_MEMBER
+    }
+
+    /**
+     * 심사용 계정 정리({@link ReviewAccountSweeper}). 심사용 계정과 그 계정이 속한 체험 가족을 통째로 지운다.
+     * <ul>
+     *   <li>가족의 다른 계정(INVITED 의 가짜 보호자, 아빠 자리에 붙은 심사위원)도 모두 심사용이면 함께 지운다.
+     *   <li>가족에 구글 계정처럼 심사용이 아닌 계정이 하나라도 있으면 아무것도 지우지 않는다. 실제 사용자의 기록을 지우지 않기 위해서다.
+     *   <li>탈퇴와 같은 길(가족 삭제 이벤트 → 각 모듈이 자기 행을 지움 → identity 가 가족과 계정을 지움)이라 남는 행이 없다.
+     * </ul>
+     */
+    public ReviewErasure eraseReviewAccount(UUID userId) {
+        if (!isReview(userId)) return ReviewErasure.NOT_REVIEW;
+        List<UUID> accounts = new ArrayList<>(List.of(userId));
+        List<Profile> own = families.profilesOfUser(userId);
+        if (!own.isEmpty()) {
+            Family family = lockedFamily(own.getFirst().getFamilyId());
+            for (Profile member : family.getProfiles()) {
+                UUID account = member.getUserId();
+                if (account == null || account.equals(userId)) continue;
+                if (!isReview(account)) return ReviewErasure.KEPT_REAL_MEMBER;
+                accounts.add(account);
+            }
+            eraseFamily(family);
+        }
+        accounts.forEach(erasure::eraseAccount);
+        afterCommit(() -> accounts.forEach(reviewLogins::forget));
+        return ReviewErasure.ERASED;
+    }
+
+    private boolean isReview(UUID userId) {
+        User user = users.findById(userId);
+        return user != null && User.PROVIDER_REVIEW.equals(user.provider());
     }
 
     /**

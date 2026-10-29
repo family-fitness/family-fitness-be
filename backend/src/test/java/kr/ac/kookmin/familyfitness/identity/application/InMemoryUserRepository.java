@@ -1,6 +1,8 @@
 package kr.ac.kookmin.familyfitness.identity.application;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.kookmin.familyfitness.identity.application.port.UserRepository;
@@ -32,6 +34,16 @@ class InMemoryUserRepository implements UserRepository {
     public User save(User user) {
         users.put(user.id(), user);
         return user;
+    }
+
+    /** 만든 시각을 두지 않으므로 그 제공자의 계정을 넣은 차례대로 준다. */
+    @Override
+    public List<UUID> findIdsByProviderCreatedBefore(String provider, Instant before, int limit) {
+        return users.values().stream()
+                .filter(it -> it.provider().equals(provider))
+                .map(User::id)
+                .limit(limit)
+                .toList();
     }
 
     @Override
