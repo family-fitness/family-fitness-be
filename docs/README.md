@@ -7,6 +7,7 @@
 | [erd.dbml](./erd.dbml) | Flyway 마이그레이션(V1~V161, 표 33개)에서 `backend/scripts/ddl_to_dbml.py` 로 생성한 ERD (dbdiagram.io 에 붙여넣기). 스크립트가 읽는 DDL 과 모르는 DDL 을 만났을 때의 동작은 [backend/README.md](../backend/README.md) 「데이터 스크립트」 참고 |
 | [adr/](./adr/) | 구조 결정 기록 |
 | [public-data-and-ai.md](./public-data-and-ai.md) | 팀 공유용 — 쓰는 공공데이터(측정 · 처방 · 공단 동영상 API)에서 확인한 사실, 보고서에 쓸 AI 설명과 쓰지 말 표현, 세 저장소 진행 상황과 남은 결정 |
+| [handover.md](./handover.md) | 운영 인수인계. 무엇이 어디서 도는지, 정해진 시각에 도는 작업, 운영 환경 변수, 외부 키, 서비스를 닫을 때 지울 것 |
 
 원본 설계는 Notion(API 명세서 · 인터페이스 명세)과 [FigJam 보드](https://www.figma.com/board/w0ap0PjCQhcgbZc7zSyTVf)에 있다.
 계약이 바뀌면 Notion 을 먼저 고치고 `api-contract.md` 와 코드를 맞춘다.
